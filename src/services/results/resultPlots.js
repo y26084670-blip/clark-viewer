@@ -1,4 +1,8 @@
-import { virtualLayout } from "./resultMappings.js";
+import { elementLayout, regionLayout, virtualLayout } from "./resultMappings.js";
+import { fmmAxis, isAnisotropic } from "./fmmCharacteristics.js";
+
+const number = value => Number.isFinite(value) ? String(Number(value.toPrecision(8))) : "—";
+const xyzText = (frame, row) => `XYZ = (${pointAt(frame, row).map(number).join(", ")}) мм`;
 
 export function scalarAt(frame, row, quantity, component = "norm") {
   const offset = row * frame.stride + quantity.offset;
@@ -39,7 +43,8 @@ export function vectorScene(frames, quantity) {
         ls = Math.floor(savedRow / (nPS * nAS)) % record.symLs;
       }
       vectors.push({ origin, vector, magnitude, kind: "magnetization", characteristicSize: 1,
-        source: { schemaId: quantity.group, recordIndex: record.recordIndex }, instance: { ls, as: az, ps } });
+        source: { schemaId: quantity.group, recordIndex: record.recordIndex, name: record.name }, instance: { ls, as: az, ps },
+        quantity: quantity.label, unit: quantity.unit });
     }
     extent = Math.max(extent, Math.hypot(...max.map((v, i) => v - min[i])) || 0);
   }
@@ -48,25 +53,65 @@ export function vectorScene(frames, quantity) {
   return { vectors, maximumMagnitude: { current: 0, magnetization: maximum }, sceneDiagonal: extent };
 }
 
-// Observation region order is LS, dp[0], dp[1]. Never connect separate copies.
-export function lineSeries(frame, record, quantity, component) {
-  const [n1, n2] = record.dp.map(x => x[0]);
-  if (n1 > 1 && n2 > 1) throw new Error("Выберите линейную область с одним направлением сетки");
-  const length = Math.max(n1, n2);
-  const copies = record.symLs;
-  if (length * copies !== frame.count) throw new Error("Сетка линии не совпадает с данными");
-  return Array.from({ length: copies }, (_, copy) => {
-    let distance = 0, previous;
-    const points = [];
-    for (let i = 0; i < length; i++) {
-      const row = copy * length + i;
-      const coordinates = pointAt(frame, row);
-      if (previous) distance += Math.hypot(...coordinates.map((v, j) => v - previous[j]));
-      previous = coordinates;
-      points.push({ x: distance, y: scalarAt(frame, row, quantity, component) });
-    }
-    return { label: `№${record.id} ${record.name || "Область"}${copies > 1 ? ` · LS ${copy + 1}` : ""}`, points };
+// Every fixed index produces a separate curve, including each saved LS copy.
+export function lineSeries(frame, record, quantity, component, direction = "i2") {
+  const layout = regionLayout(record);
+  if (frame.count !== layout.count || (frame.every ?? 1) !== 1) throw new Error("Сетка площадки не совпадает с данными");
+  if (!["i1", "i2"].includes(direction)) throw new Error("Неверное направление линии");
+  const alongFirst = direction === "i1";
+  const length = alongFirst ? layout.n1 : layout.n2;
+  const lines = alongFirst ? layout.n2 : layout.n1;
+  const fixedName = alongFirst ? "i2" : "i1";
+  const series = [];
+  for (let ls = 0; ls < layout.copies; ls++) for (let fixed = 0; fixed < lines; fixed++) {
+    const points = Array.from({ length }, (_, i) => {
+      const row = layout.index(alongFirst ? i : fixed, alongFirst ? fixed : i, ls);
+      return { x: i + 1, y: scalarAt(frame, row, quantity, component), row };
+    });
+    series.push({ label: `№${record.id} ${record.name || "Площадка"} · LS ${ls + 1} · ${fixedName}=${fixed + 1}`, points,
+      tooltip: p => [`${direction}=${p.x}; ${fixedName}=${fixed + 1}; LS=${ls + 1}`,
+        `${quantity.label} = ${number(p.y)} ${quantity.unit}`, xyzText(frame, p.row)] });
+  }
+  return series;
+}
+
+export function workingPointSeries(frame, record, projectedRecord = record) {
+  const layout = elementLayout(record);
+  if (frame.count !== layout.count || (frame.every ?? 1) !== 1) throw new Error("Сетка рабочих точек не совпадает с данными");
+  const anisotropic = isAnisotropic(record);
+  const axes = anisotropic ? Array.from({ length: layout.copies[0] }, (_, ls) => fmmAxis(projectedRecord, ls)) : null;
+  const points = Array.from({ length: frame.count }, (_, row) => {
+    const offset = row * frame.stride;
+    const m = frame.values.subarray(offset + 3, offset + 6), h = frame.values.subarray(offset + 6, offset + 9);
+    const ls = Math.floor(row / (layout.copies[1] * layout.copies[2])) % layout.copies[0];
+    const dot = v => v[0] * axes[ls][0] + v[1] * axes[ls][1] + v[2] * axes[ls][2];
+    const x = anisotropic ? dot(h) : Math.hypot(...h), y = anisotropic ? dot(m) : Math.hypot(...m);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error("Рабочие точки содержат нечисловые значения");
+    return { x, y, row };
   });
+  return { label: `№${record.id} ${record.name || "ФММ"} · рабочие точки`, points, showLine: false, pointRadius: 3,
+    tooltip: p => {
+      const idx = layout.indices(p.row);
+      return [`H=${number(p.x)}; M=${number(p.y)} кА/м`, xyzText(frame, p.row),
+        `i1=${idx.i1 + 1}; i2=${idx.i2 + 1}; i3=${idx.i3 + 1}; LS=${idx.ls + 1}; AS=${idx.as + 1}; PS=${idx.ps + 1}`];
+    } };
+}
+
+// frame contains one contiguous LS block, not an entire virtual volume.
+export function regionSurfaceGrid(frame, record, quantity, component, copy = 0) {
+  const layout = regionLayout(record);
+  if (!Number.isSafeInteger(copy) || copy < 0 || copy >= layout.copies) throw new Error("Образ LS вне сетки площадки");
+  if (frame.count !== layout.planeCount || (frame.every ?? 1) !== 1) throw new Error("Сетка площадки не совпадает с данными");
+  if (layout.n1 < 2 || layout.n2 < 2) throw new Error("Для поверхности нужны хотя бы два узла по каждому направлению. Эта область доступна на вкладке «Поле на линиях».");
+  if (layout.planeCount > 250_000) throw new Error("На площадке больше 250 000 узлов. Уменьшите сетку для просмотра поверхности.");
+  const values = new Float64Array(layout.planeCount), coordinates = new Float64Array(layout.planeCount * 3);
+  for (let row = 0; row < layout.planeCount; row++) {
+    values[row] = scalarAt(frame, row, quantity, component);
+    coordinates.set(pointAt(frame, row), row * 3);
+    if (!Number.isFinite(values[row])) throw new Error("Поверхность содержит нечисловые значения");
+  }
+  return { width: layout.n1, height: layout.n2, values, coordinates, axes: ["i1", "i2"], copy,
+    title: `№${record.id} ${record.name || "Площадка"} · LS ${copy + 1}` };
 }
 
 // The last spatial dimension is NOT contiguous: geometric copies are inner loops.

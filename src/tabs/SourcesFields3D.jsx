@@ -32,7 +32,7 @@ export function SourcesFields3D(props) {
         <ResultsGeometryViewport open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={props.time}
           selections={{ elements: props.elements.map(id => id - 1), regions: props.regions.map(id => id - 1) }}
-          resultVectorScene={result.value()?.scene} resultVectorScale={scale()}
+          resultVectorScene={result.value()?.scene} resultVectorScale={scale()} resultPickingOnly={true}
           resultVectorColor={quantityKey() === "J" ? 0xff5454 : quantityKey() === "M" ? 0x44dd66 : 0x44bbff} />
       </div>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />

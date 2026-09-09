@@ -12,6 +12,7 @@ export function SurfaceChart(props) {
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   function draw() { if (renderer && scene && camera) renderer.render(scene, camera); }
+  function cameraChanged() { setHover(""); draw(); }
   function resize() {
     if (!renderer || !host) return;
     const width = Math.max(1, host.clientWidth), height = Math.max(1, host.clientHeight);
@@ -32,6 +33,7 @@ export function SurfaceChart(props) {
   }
   function view(direction) {
     if (!camera) return;
+    setHover("");
     camera.up.set(0, 0, 1);
     const positions = { iso: [3.3, -4, 3], x: [4, 0, .01], y: [0, -4, .01], z: [0, -.001, 5] };
     camera.position.fromArray(positions[direction]); controls.target.set(0, 0, .3); controls.update(); draw();
@@ -43,18 +45,26 @@ export function SurfaceChart(props) {
     raycaster.setFromCamera(pointer, camera);
     const hit = raycaster.intersectObject(surface)[0];
     if (!hit) { setHover(""); return; }
-    const index = hit.face.a;
+    // Report the nearest saved vertex of the hit triangle, not always face.a.
+    const positions = surface.geometry.getAttribute("position");
+    const vertex = new THREE.Vector3();
+    let index = hit.face.a, distance = Infinity;
+    for (const candidate of [hit.face.a, hit.face.b, hit.face.c]) {
+      vertex.fromBufferAttribute(positions, candidate);
+      const next = vertex.distanceToSquared(hit.point);
+      if (next < distance) { distance = next; index = candidate; }
+    }
     const grid = props.grid;
     const i = Math.floor(index / grid.height), j = index % grid.height;
     const xyz = Array.from(grid.coordinates.subarray(index * 3, index * 3 + 3));
-    setHover(`${grid.axes[0]}=${i + 1}, ${grid.axes[1]}=${j + 1}; xyz=(${xyz.map(v => v.toPrecision(6)).join(", ")}); ${grid.values[index].toPrecision(8)} ${props.unit}`);
+    setHover(`${grid.axes[0]}=${i + 1}, ${grid.axes[1]}=${j + 1}; LS=${(grid.copy ?? 0) + 1}; xyz=(${xyz.map(v => v.toPrecision(6)).join(", ")}) мм; ${grid.values[index].toPrecision(8)} ${props.unit}`);
   }
   onMount(() => {
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
       host.append(renderer.domElement); scene = new THREE.Scene(); scene.background = new THREE.Color(0xfafcfe);
       camera = new THREE.PerspectiveCamera(40, 1, .01, 100);
-      controls = new OrbitControls(camera, renderer.domElement); controls.addEventListener("change", draw);
+      controls = new OrbitControls(camera, renderer.domElement); controls.addEventListener("change", cameraChanged);
       scene.add(new THREE.AmbientLight(0xffffff, 2));
       const light = new THREE.DirectionalLight(0xffffff, 2); light.position.set(3, -4, 5); scene.add(light);
       axes = new THREE.AxesHelper(1.5); axes.position.set(-1.05, -1.05, -.05); scene.add(axes);
@@ -100,7 +110,7 @@ export function SurfaceChart(props) {
     } catch (error) { setError(error.message); }
   });
   onCleanup(() => {
-    observer?.disconnect(); controls?.removeEventListener("change", draw); controls?.dispose();
+    observer?.disconnect(); controls?.removeEventListener("change", cameraChanged); controls?.dispose();
     dispose(surface); dispose(gridLines); dispose(axes); labelObjects.forEach(dispose);
     renderer?.dispose(); renderer?.forceContextLoss(); renderer?.domElement.remove();
   });
@@ -108,7 +118,7 @@ export function SurfaceChart(props) {
     <div class="surface-view-buttons"><button onClick={() => view("iso")}>Вписать</button>
       <button onClick={() => view("x")}>Вид X</button><button onClick={() => view("y")}>Вид Y</button><button onClick={() => view("z")}>Вид Z</button></div>
     <div ref={host} class="surface-canvas" />
-    <Show when={!props.grid}><div class="plot-empty">{props.emptyText || "Выберите виртуальный элемент"}</div></Show>
+    <Show when={!props.grid}><div class="plot-empty">{props.emptyText || "Выберите площадку"}</div></Show>
     <Show when={limits()}><div class="surface-legend"><span>{limits().min.toPrecision(6)}</span><div /><span>{limits().max.toPrecision(6)} {props.unit}</span></div></Show>
     <Show when={error()}><div class="plot-error">{error()}</div></Show>
     <Show when={hover()}><div class="surface-hover">{hover()}</div></Show>

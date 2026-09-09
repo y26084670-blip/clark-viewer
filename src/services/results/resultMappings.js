@@ -52,3 +52,41 @@ export function virtualLayout(record) {
   return { dimensions, copies, copyCount,
     index: (i, j, k, copy = 0) => ((i * dimensions[1] + j) * dimensions[2] + k) * copyCount + copy };
 }
+
+function counts(values) {
+  const result = values.map(value => Number(Array.isArray(value) ? value[0] : value));
+  if (!result.every(n => Number.isSafeInteger(n) && n > 0)
+      || !Number.isSafeInteger(result.reduce((a, b) => a * b, 1))) {
+    throw new Error("Недопустимые размеры расчётной сетки");
+  }
+  return result;
+}
+
+// Saved source order: i1, i2, i3, LS, AS, PS (PS changes fastest).
+export function elementLayout(record, full = false) {
+  const dimensions = full ? virtualLayout(record).dimensions : counts(record.dp);
+  if (dimensions.length !== 3) throw new Error("Для элемента нужны три направления сетки");
+  const copies = counts([record.symLs ?? 1,
+    full || record.symKya === 0 ? record.symAs ?? 1 : 1,
+    full || record.symKyp === 0 ? record.symPs ?? 1 : 1]);
+  const sizes = counts([...dimensions, ...copies]);
+  const count = sizes.reduce((a, b) => a * b, 1);
+  return { dimensions, copies, count, indices(row) {
+    if (!Number.isSafeInteger(row) || row < 0 || row >= count) throw new Error("Узел вне сетки элемента");
+    const result = {};
+    for (let i = 5; i >= 0; i--) {
+      result[["i1", "i2", "i3", "ls", "as", "ps"][i]] = row % sizes[i];
+      row = Math.floor(row / sizes[i]);
+    }
+    return result;
+  } };
+}
+
+// Saved observation order: LS, i1, i2. dp already counts nodes, not intervals.
+export function regionLayout(record) {
+  if (!Array.isArray(record.dp) || record.dp.length !== 2) throw new Error("Для площадки нужны два направления сетки");
+  const [n1, n2, copies] = counts([...record.dp, record.symLs ?? 1]);
+  const planeCount = n1 * n2;
+  return { n1, n2, copies, planeCount, count: planeCount * copies,
+    index(i1, i2, ls = 0) { return (ls * n1 + i1) * n2 + i2; } };
+}

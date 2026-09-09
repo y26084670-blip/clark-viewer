@@ -1,0 +1,404 @@
+.geometry-viewer-window {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  color: #e7edf3;
+  background: #171d23;
+}
+
+.geometry-viewer-window:focus {
+  outline: none;
+}
+
+.geometry-viewer-window:focus-visible {
+  outline: 2px solid #8fc7ff;
+  outline-offset: -2px;
+}
+
+.geometry-viewer-toolbar {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 5px 7px;
+  overflow-x: auto;
+  border-bottom: 1px solid #4e5965;
+  background: #252d35;
+  scrollbar-width: thin;
+}
+
+.geometry-viewer-toolbar-controls {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  align-items: stretch;
+  gap: 7px;
+  width: max-content;
+  min-width: 100%;
+}
+
+.geometry-viewer-menu-button,
+.geometry-viewer-select {
+  min-height: 27px;
+  min-width: max-content;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 3px 8px;
+  border: 1px solid #56626e;
+  border-radius: 3px;
+  background: #303943;
+  color: #edf2f7;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.geometry-viewer-menu-button {
+  cursor: pointer;
+}
+
+.geometry-viewer-menu-button:hover,
+.geometry-viewer-select:hover {
+  background: #3b4651;
+}
+
+.geometry-viewer-menu-button.active {
+  border-color: #70bd85;
+  background: #285b3a;
+  color: #f2fff5;
+}
+
+.geometry-viewer-menu-button:focus-visible,
+.geometry-viewer-select:focus-visible,
+.geometry-viewer-view-command:focus-visible,
+.geometry-viewer-source-settings-button:focus-visible,
+.geometry-viewer-options-panel input:focus-visible,
+.geometry-viewer-time-control input:focus-visible {
+  outline: 2px solid #8fc7ff;
+  outline-offset: 1px;
+}
+
+.geometry-viewer-options-panel {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 248px;
+  max-width: calc(100% - 16px);
+  max-height: min(260px, calc(100% - 54px));
+  box-sizing: border-box;
+  padding: 10px 11px;
+  overflow: auto;
+  border: 1px solid #697683;
+  border-radius: 4px;
+  box-shadow: 0 7px 20px rgba(0, 0, 0, .58);
+  background: #252d35;
+  color: #edf2f7;
+  font-size: 12px;
+}
+
+.geometry-viewer-options-title {
+  margin-bottom: 1px;
+  color: #bfcad4;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.geometry-viewer-options-panel label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 22px;
+  cursor: pointer;
+}
+
+.geometry-viewer-options-panel label.is-disabled {
+  color: #7f8a94;
+  cursor: not-allowed;
+}
+
+.geometry-viewer-options-panel input {
+  margin: 0;
+}
+
+.geometry-viewer-view-command {
+  min-height: 27px;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 1px solid #56626e;
+  border-radius: 3px;
+  background: #303943;
+  color: #edf2f7;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.geometry-viewer-view-command:hover {
+  background: #3b4651;
+}
+
+.geometry-viewer-options-panel.geometry-viewer-source-options {
+  max-height: min(360px, calc(100% - 54px));
+}
+
+.geometry-viewer-source-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.geometry-viewer-source-settings-button {
+  flex: 0 0 27px;
+  min-height: 25px;
+  padding: 1px 4px;
+  border: 1px solid #56626e;
+  border-radius: 3px;
+  background: #303943;
+  color: #edf2f7;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.geometry-viewer-source-settings-button:hover {
+  background: #3b4651;
+}
+
+.geometry-viewer-source-style {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.geometry-viewer-source-style legend {
+  margin-bottom: 3px;
+  color: #bfcad4;
+}
+
+.geometry-viewer-options-panel .geometry-viewer-source-scale {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding-top: 5px;
+  border-top: 1px solid #46515c;
+}
+
+.geometry-viewer-source-scale-heading,
+.geometry-viewer-source-scale-ticks {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.geometry-viewer-source-scale-heading output {
+  min-width: 40px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.geometry-viewer-source-scale input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.geometry-viewer-source-scale.is-current input {
+  accent-color: #ff5959;
+}
+
+.geometry-viewer-source-scale.is-magnetization input {
+  accent-color: #00cc44;
+}
+
+.geometry-viewer-source-scale-ticks {
+  color: #aebbc7;
+  font-size: 10px;
+}
+
+.geometry-viewer-canvas-region {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #141a20;
+}
+
+.geometry-viewer-time-control {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border-top: 1px solid #46515c;
+  background: #252d35;
+  color: #e7edf3;
+  font-size: 12px;
+}
+
+.geometry-viewer-time-control input[type="range"] {
+  flex: 1 1 0;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  accent-color: #8fc7ff;
+  cursor: pointer;
+}
+
+.geometry-viewer-time-control input:disabled {
+  cursor: default;
+  opacity: .5;
+}
+
+.geometry-viewer-time-control output {
+  flex: 0 0 auto;
+  min-width: 52px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.three-geometry-viewport {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #141a20;
+}
+
+.three-geometry-viewport canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.geometry-viewport-tooltip {
+  position: absolute;
+  z-index: 5;
+  max-width: min(390px, calc(100% - 16px));
+  box-sizing: border-box;
+  padding: 5px 7px;
+  border: 1px solid #708090;
+  border-radius: 3px;
+  background: rgba(27, 34, 41, .95);
+  color: #f1f5f8;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+  pointer-events: none;
+}
+
+.geometry-viewport-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  z-index: 2;
+  place-items: center;
+  padding: 18px;
+  color: #aeb9c4;
+  background: rgba(20, 26, 32, .78);
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.geometry-viewport-error,
+.geometry-viewer-error {
+  color: #ffb6b6;
+}
+
+.geometry-viewer-budget-warning {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 3;
+  max-width: min(440px, calc(100% - 16px));
+  box-sizing: border-box;
+  padding: 6px 9px;
+  border: 1px solid #a87932;
+  border-radius: 3px;
+  background: rgba(82, 57, 21, .94);
+  color: #ffe2a8;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.geometry-viewer-error {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-top: 1px solid #8e4747;
+  background: #492929;
+  font-size: 12px;
+}
+
+.geometry-viewer-summary {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 26px;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  overflow-x: auto;
+  border-top: 1px solid #46515c;
+  background: #222a32;
+  color: #bbc5ce;
+  font-size: 11px;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+
+.geometry-viewer-skipped {
+  color: #ffd08a;
+}
+
+.geometry-viewer-diagnostics {
+  flex: 0 0 auto;
+  max-height: 120px;
+  overflow: auto;
+  border-top: 1px solid #46515c;
+  background: #20272e;
+  font-size: 11px;
+}
+
+.geometry-viewer-diagnostics summary {
+  padding: 5px 8px;
+  color: #d7dee5;
+  cursor: pointer;
+}
+
+.geometry-viewer-diagnostics ul {
+  margin: 0;
+  padding: 0 10px 7px 28px;
+}
+
+.geometry-viewer-diagnostics li {
+  margin: 2px 0;
+  color: #ffd08a;
+}
+
+.geometry-viewer-diagnostics li.is-error {
+  color: #ffaaaa;
+}
+
+@media (max-width: 700px) {
+  .geometry-viewer-summary {
+    gap: 8px;
+  }
+}

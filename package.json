@@ -1,0 +1,25 @@
+{
+  "name": "clark-viewer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:release": "vite build --mode production",
+    "build:pages": "vite build --mode production --base=/clark-viewer/",
+    "preview": "vite preview",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "h5wasm": "^0.10.3",
+    "solid-js": "^1.9.12",
+    "tabulator-tables": "^6.5.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "vite": "^8.0.12",
+    "vite-plugin-solid": "^2.11.12"
+  }
+}

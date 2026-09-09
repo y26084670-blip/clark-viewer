@@ -11,19 +11,25 @@ export function LineChart(props) {
   createEffect(() => {
     const series = props.series ?? [];
     const marker = props.marker;
-    const xLabel = props.xLabel, yLabel = props.yLabel;
+    const xLabel = props.xLabel, yLabel = props.yLabel, integerX = props.integerX;
     if (!ready()) return;
     const datasets = series.map((item, index) => ({ label: item.label,
       data: item.points, borderColor: colors[index % colors.length], backgroundColor: colors[index % colors.length],
-      showLine: true, pointRadius: item.points.length === 1 ? 4 : 0, borderWidth: 1.6, spanGaps: false }));
+      showLine: item.showLine ?? true, pointRadius: item.pointRadius ?? (item.points.length === 1 ? 4 : 0),
+      pointHitRadius: 5, borderWidth: item.borderWidth ?? 1.6, spanGaps: false,
+      order: item.showLine === false ? 1 : 2 }));
     if (marker?.points?.length) datasets.push({ label: "Текущий момент", data: marker.points,
       borderColor: "#161616", backgroundColor: "#f0ac24", pointRadius: 6, showLine: false });
     chart?.destroy();
     chart = new Chart(canvas, { type: "scatter", data: { datasets }, options: {
       responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
-      scales: { x: { type: "linear", title: { display: true, text: xLabel } },
+      scales: { x: { type: "linear", ticks: integerX ? { precision: 0 } : {}, title: { display: true, text: xLabel } },
         y: { title: { display: true, text: yLabel } } },
-      plugins: { legend: { display: true, position: "top" } },
+      plugins: { legend: { display: true, position: "top" }, tooltip: { callbacks: {
+        title: items => items[0]?.dataset.label ?? "",
+        label: context => series[context.datasetIndex]?.tooltip?.(context.raw)
+          ?? `${context.parsed.x}, ${context.parsed.y}`,
+      } } },
     } });
   });
   onCleanup(() => chart?.destroy());

@@ -112,7 +112,7 @@ export function ResultsGeometryViewport(props) {
   const [sceneError, setSceneError] = createSignal("");
   const [viewportError, setViewportError] = createSignal("");
   const [viewRequest, setViewRequest] = createSignal(null);
-  const [renderMode, setRenderMode] = createSignal("solid");
+  const [renderMode, setRenderMode] = createSignal("translucent");
   const [orthographicView, setOrthographicView] = createSignal(true);
   const [showEdges, setShowEdges] = createSignal(true);
   const [showVertices, setShowVertices] = createSignal(false);
@@ -864,6 +864,7 @@ export function ResultsGeometryViewport(props) {
           <ThreeGeometryViewport
             scene={displayScene()}
             resultVectorScene={props.resultVectorScene}
+            resultPickingOnly={props.resultPickingOnly}
             resultVectorScale={props.resultVectorScale}
             resultVectorColor={props.resultVectorColor}
             filters={filters()}

@@ -6,8 +6,9 @@ import { join } from "node:path";
 import h5wasm from "h5wasm/node";
 import { Hdf5ResultFile } from "../src/services/results/hdf5ResultFile.js";
 import { checkReadRange, decodeHeader } from "../src/services/results/resultLayout.js";
-import { mapResultObjects, QUANTITIES, virtualLayout } from "../src/services/results/resultMappings.js";
-import { lineSeries, scalarAt, surfaceGrid } from "../src/services/results/resultPlots.js";
+import { elementLayout, regionLayout, mapResultObjects, QUANTITIES, virtualLayout } from "../src/services/results/resultMappings.js";
+import { lineSeries, scalarAt, surfaceGrid, regionSurfaceGrid, vectorScene } from "../src/services/results/resultPlots.js";
+import { formatResultVectorTooltip, resultHitVector } from "../src/services/visualization/geometryPicking.js";
 import { normalizeTaskInput } from "../src/services/taskLoadService.js";
 
 // The fixture uses the on-disk order produced by Julia resWrite: each point
@@ -99,9 +100,61 @@ test("Line copies are disconnected; B has no extra scaling and A converts once",
   const record = { ...base, id: 1, dp: [[1], [2]], symLs: 2 };
   const frame = { stride: 6, count: 4, values: new Float64Array([0,0,0,3,4,0, 3,4,0,0,0,2, 100,0,0,1,0,0, 100,0,12,0,2,0]) };
   const lines = lineSeries(frame, record, QUANTITIES.Bs, "norm");
-  assert.deepEqual(lines.map(x => x.points.map(p => p.x)), [[0, 5], [0, 12]]);
+  assert.deepEqual(lines.map(x => x.points.map(p => p.x)), [[1, 2], [1, 2]]);
   assert.equal(lines[0].points[0].y, 5);
   assert.ok(Math.abs(scalarAt(frame, 0, QUANTITIES.As, "norm") - 5 * 4 * Math.PI * 1e-7) < 1e-20);
+});
+
+test("Area lines follow either node index and never cross LS or fixed indices", () => {
+  const record = { ...base, id: 7, dp: [[2], [3]], symLs: 2 };
+  const rows = [];
+  for (let ls = 0; ls < 2; ls++) for (let i = 0; i < 2; i++) for (let j = 0; j < 3; j++) rows.push(i, j, ls, 100 * ls + 10 * i + j, 0, 0);
+  const frame = { stride: 6, count: 12, values: new Float64Array(rows) };
+  const along1 = lineSeries(frame, record, QUANTITIES.Bs, "0", "i1");
+  assert.deepEqual(along1.map(s => s.points.map(p => p.y)), [[0,10], [1,11], [2,12], [100,110], [101,111], [102,112]]);
+  assert.deepEqual(along1[4].points.map(p => p.x), [1,2]);
+  assert.match(along1[4].label, /LS 2 · i2=2/);
+  assert.match(along1[4].tooltip(along1[4].points[1]).join(" "), /XYZ = \(1, 1, 1\)/);
+  const along2 = lineSeries(frame, record, QUANTITIES.Bs, "0", "i2");
+  assert.deepEqual(along2.map(s => s.points.map(p => p.y)), [[0,1,2], [10,11,12], [100,101,102], [110,111,112]]);
+  const second = { ...record, id: 8, dp: [[3], [2]], symLs: 1 };
+  assert.equal(lineSeries({ ...frame, count: 6, values: frame.values.slice(0,36) }, second, QUANTITIES.Bs, "0", "i1").length, 2);
+  const layout = regionLayout(record);
+  const block = { stride: 6, count: layout.planeCount, values: frame.values.slice(36) };
+  const grid = regionSurfaceGrid(block, record, QUANTITIES.Bs, "0", 1);
+  assert.deepEqual([grid.width, grid.height, grid.copy], [2,3,1]);
+  assert.deepEqual(Array.from(grid.values), [100,101,102,110,111,112]);
+  assert.deepEqual(Array.from(grid.coordinates.slice(-3)), [1,2,1]);
+  assert.throws(() => regionSurfaceGrid({ ...block, count: 3 }, { ...record, dp: [[1],[3]] }, QUANTITIES.Bs, "0"), /два узла/);
+});
+
+test("Saved element indices account for independent and geometric symmetry counts", () => {
+  const record = { ...base, dp: [[2],[3],[4]], symLs: 2, symAs: 3, symPs: 2 };
+  const layout = elementLayout(record);
+  let row = 0;
+  for (let i1 = 0; i1 < 2; i1++) for (let i2 = 0; i2 < 3; i2++) for (let i3 = 0; i3 < 4; i3++)
+    for (let ls = 0; ls < 2; ls++) for (let as = 0; as < 3; as++) for (let ps = 0; ps < 2; ps++) {
+      assert.deepEqual(layout.indices(row++), { i1,i2,i3,ls,as,ps });
+    }
+  assert.equal(row, layout.count);
+  const independent = elementLayout({ ...record, symKya: -1, symKyp: 1 });
+  assert.deepEqual(independent.copies, [2,1,1]);
+  assert.deepEqual(independent.indices(47), { i1:1,i2:2,i3:3,ls:1,as:0,ps:0 });
+  assert.throws(() => independent.indices(48), /вне сетки/);
+});
+
+test("3D tooltip maps all arrow segments to saved node/vector and retains zero nodes", () => {
+  const record = { ...base, id: 1, recordIndex: 0, dp: [[2],[1],[1]] };
+  const frame = { stride: 9, count: 2, values: new Float64Array([1.123456789,2,3, 0,0,0, 0,0,0, 4,5,6, 3,4,0, 0,0,0]) };
+  const scene = vectorScene([{ frame, record }], QUANTITIES.M);
+  assert.equal(scene.vectors.length, 2);
+  assert.equal(scene.vectors[0].magnitude, 0);
+  const object = { userData: { resultVectors: scene.vectors } };
+  for (const index of [10,12,14,16,18]) assert.equal(resultHitVector({ object, index }), scene.vectors[1]);
+  assert.equal(resultHitVector({ object: { ...object, isPoints: true }, index: 0 }), scene.vectors[0]);
+  const text = formatResultVectorTooltip(scene.vectors[1]);
+  assert.equal(text, "X=4; Y=5; Z=6 мм\nНамагниченность M: (3; 4; 0) кА/м");
+  assert.equal(resultHitVector({ object, index: 20 }), null);
 });
 
 test("Input adapter preserves column-major MHJ and motion tables", () => {

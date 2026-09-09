@@ -27,6 +27,8 @@ import {
   findVertexMetadataRange,
   formatDiscretizationPointTooltip,
   formatGeometryTooltip,
+  formatResultVectorTooltip,
+  resultHitVector,
   formatVertexTooltip,
   geometryHitInstance,
   pointHitMetadata,
@@ -142,6 +144,7 @@ function createPrescribedSourceVectors(
 ) {
   const maximum = maximumMagnitude ?? { current: 0, magnetization: 0 };
   const positions = { current: [], magnetization: [] };
+  const thinVectors = { current: [], magnetization: [] };
   const solidArrows = { current: [], magnetization: [] };
   if (maximumMagnitude == null) {
     for (const item of vectors) {
@@ -174,6 +177,7 @@ function createPrescribedSourceVectors(
     }
 
     const target = positions[item.kind];
+    thinVectors[item.kind].push(item);
     origin.fromArray(item.origin);
     direction.set(
       item.vector[0] / item.magnitude,
@@ -283,6 +287,7 @@ function createPrescribedSourceVectors(
       }),
     );
     lines.name = `prescribed-source-${kind}`;
+    lines.userData.resultVectors = thinVectors[kind];
     lines.renderOrder = 14;
     root.add(lines);
   }
@@ -1396,6 +1401,19 @@ export function ThreeGeometryViewport(props) {
     raycaster.params.Line.threshold = unitsPerPixel * 5;
     raycaster.params.Points.threshold = unitsPerPixel * 9;
 
+    if (props.resultPickingOnly) {
+      // Only currently displayed result primitives participate. The actual
+      // intersection lies on a scaled arrow; the tip reports its saved origin.
+      const hits = resultVectorRoot ? raycaster.intersectObject(resultVectorRoot, true) : [];
+      const geometryHit = activeRenderMode === "solid"
+        ? raycaster.intersectObjects(geometryPickTargets, false)[0] : null;
+      const hit = hits.find(candidate => !geometryHit || candidate.distance <= geometryHit.distance + unitsPerPixel * 5);
+      const item = resultHitVector(hit);
+      if (item) showTooltip(formatResultVectorTooltip(item), x, y);
+      else setHoverTooltip(null);
+      return;
+    }
+
     const geometryHit = raycaster.intersectObjects(
       geometryPickTargets,
       false,
@@ -1769,6 +1787,7 @@ export function ThreeGeometryViewport(props) {
   // Apply display filters only; never reapply motion, amplitudes or symmetry.
   const replaceResultVectors = () => {
     if (!THREE || !helperRoot) return;
+    clearHoverTooltip();
     if (resultVectorRoot) {
       helperRoot.remove(resultVectorRoot);
       disposeObject(resultVectorRoot);
@@ -1782,7 +1801,20 @@ export function ThreeGeometryViewport(props) {
         currentResultScene.sceneDiagonal, "thin",
         { current: resultVectorScale, magnetization: resultVectorScale },
         currentResultScene.maximumMagnitude, resultVectorColor);
-      if (resultVectorRoot) helperRoot.add(resultVectorRoot);
+      if (vectors.length) {
+        resultVectorRoot ??= new THREE.Group();
+        const positions = new Float32Array(vectors.length * 3);
+        vectors.forEach((item, index) => positions.set(item.origin, index * 3));
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        const nodes = new THREE.Points(geometry, new THREE.PointsMaterial({
+          color: resultVectorColor, size: 4, sizeAttenuation: false, depthTest: true, depthWrite: false,
+        }));
+        nodes.userData.resultVectors = vectors;
+        nodes.renderOrder = 14;
+        resultVectorRoot.add(nodes);
+        helperRoot.add(resultVectorRoot);
+      }
     }
     requestRender();
   };
@@ -1942,6 +1974,7 @@ export function ThreeGeometryViewport(props) {
 
   const fitAll = () => {
     if (!ready() || !currentBounds) return;
+    clearHoverTooltip();
     fitCameraToBounds(
       THREE,
       camera,

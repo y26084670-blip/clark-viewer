@@ -101,6 +101,18 @@ export function formatGeometryTooltip(source, instance, coordinates) {
     return tooltipText(sourceIdentity(source), instance, coordinates);
 }
 
+/** Solution tips use the saved node and vector, independent of arrow scale. */
+export function formatResultVectorTooltip(item) {
+    return `${formatCoordinates(item.origin)} мм\n${item.quantity}: (${item.vector.map(formatCoordinate).join("; ")}) ${item.unit}`;
+}
+
+/** Thin arrows contain five segments, i.e. ten position vertices each. */
+export function resultHitVector(hit) {
+    const vectors = hit?.object?.userData?.resultVectors;
+    if (!vectors || !Number.isSafeInteger(hit.index) || hit.index < 0) return null;
+    return vectors[hit.object.isPoints ? hit.index : Math.floor(hit.index / 10)] ?? null;
+}
+
 /**
  * Formats the tooltip for a vertex. Both record and vertex indices are
  * zero-based; coordinates can be an Array or any indexable typed array.

@@ -11,15 +11,15 @@ export const GEOMETRY_CAMERA_COMMANDS = Object.freeze({
 const COMMAND_VALUES = new Set(Object.values(GEOMETRY_CAMERA_COMMANDS));
 
 const KEYBOARD_COMMANDS = Object.freeze({
-    x: Object.freeze({
+    KeyX: Object.freeze({
         positive: GEOMETRY_CAMERA_COMMANDS.VIEW_POSITIVE_X,
         negative: GEOMETRY_CAMERA_COMMANDS.VIEW_NEGATIVE_X,
     }),
-    y: Object.freeze({
+    KeyY: Object.freeze({
         positive: GEOMETRY_CAMERA_COMMANDS.VIEW_POSITIVE_Y,
         negative: GEOMETRY_CAMERA_COMMANDS.VIEW_NEGATIVE_Y,
     }),
-    z: Object.freeze({
+    KeyZ: Object.freeze({
         positive: GEOMETRY_CAMERA_COMMANDS.VIEW_POSITIVE_Z,
         negative: GEOMETRY_CAMERA_COMMANDS.VIEW_NEGATIVE_Z,
     }),
@@ -70,14 +70,15 @@ export function geometryCameraFrame(value) {
 }
 
 export function geometryCameraCommandFromKeyboardEvent(event) {
-    if (!event || event.altKey || event.metaKey || event.shiftKey) return null;
+    if (!event || event.defaultPrevented || event.isComposing
+        || event.altKey || event.metaKey || event.shiftKey
+        || !isGeometryCameraShortcutTarget(event.target)) return null;
 
-    const key = String(event.key ?? "").toLowerCase();
-    if (key === "a") {
+    if (event.code === "KeyA") {
         return event.ctrlKey ? null : GEOMETRY_CAMERA_COMMANDS.FIT_ALL;
     }
 
-    const commands = KEYBOARD_COMMANDS[key];
+    const commands = KEYBOARD_COMMANDS[event.code];
     if (!commands) return null;
     return event.ctrlKey ? commands.negative : commands.positive;
 }

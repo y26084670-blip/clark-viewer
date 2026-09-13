@@ -331,7 +331,8 @@ export function ResultsGeometryViewport(props) {
   };
 
   const handleViewerKeyDown = (event) => {
-    if (event.key === "Escape") {
+    if (event.defaultPrevented || event.isComposing) return;
+    if (event.code === "Escape") {
       event.preventDefault();
       if (openPanel() === "sources") {
         closeSourceSettings();
@@ -341,7 +342,6 @@ export function ResultsGeometryViewport(props) {
       return;
     }
 
-    if (!isGeometryCameraShortcutTarget(event.target)) return;
     const command = geometryCameraCommandFromKeyboardEvent(event);
     if (!command) return;
     event.preventDefault();

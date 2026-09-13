@@ -9,8 +9,8 @@ export function scalarAt(frame, row, quantity, component = "norm") {
   const factor = quantity.factor ?? 1;
   if (quantity.productOffsets) {
     const [left, right] = quantity.productOffsets.map(column => row * frame.stride + column);
-    // M/H are kA/m: keep the literal M·H in (kA/m)^2. J is A/mm²
-    // and E is V/m, so the numerical J·E already represents MW/m³.
+    // Apply the display conversion once to the signed product: M/H in kA/m
+    // need 0.4π for μ0 M·H in J/m³; J in A/mm² and E in V/m need 1e-3 for W/mm³.
     let value = 0;
     for (let axis = 0; axis < 3; axis++) value += frame.values[left + axis] * frame.values[right + axis];
     return value * factor;

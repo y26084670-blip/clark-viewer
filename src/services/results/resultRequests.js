@@ -1,6 +1,7 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import { mapResultObjects, QUANTITIES } from "./resultMappings.js";
 import { planResultSampling } from "./resultSampling.js";
+import { isFmm } from "./fmmCharacteristics.js";
 
 export function useAsyncResult(source, load) {
   const [value, setValue] = createSignal(null);
@@ -29,7 +30,7 @@ export function resultObjects(task, quantityKey) {
   if (metadata.error) throw new Error(metadata.error);
   if (!metadata.steps.length) throw new Error(`${quantity.file}.h5: нет сохранённых шагов`);
   return mapResultObjects(task, quantity.file, metadata.header)
-    .filter(item => !quantity.solvedOnly || item.record.targ === 0);
+    .filter(item => (!quantity.solvedOnly || item.record.targ === 0) && (!quantity.fmmOnly || isFmm(item.record)));
 }
 
 export async function readObjectFrames({ task, quantityKey, selected, time, budget }) {

@@ -7,6 +7,14 @@ const xyzText = (frame, row) => `XYZ = (${pointAt(frame, row).map(number).join("
 export function scalarAt(frame, row, quantity, component = "norm") {
   const offset = row * frame.stride + quantity.offset;
   const factor = quantity.factor ?? 1;
+  if (quantity.productOffsets) {
+    const [left, right] = quantity.productOffsets.map(column => row * frame.stride + column);
+    // M/H are kA/m: keep the literal M·H in (kA/m)^2. J is A/mm²
+    // and E is V/m, so the numerical J·E already represents MW/m³.
+    let value = 0;
+    for (let axis = 0; axis < 3; axis++) value += frame.values[left + axis] * frame.values[right + axis];
+    return value * factor;
+  }
   if (quantity.components === 1) return frame.values[offset] * factor;
   if (component !== "norm") return frame.values[offset + Number(component)] * factor;
   return Math.hypot(...frame.values.subarray(offset, offset + 3)) * factor;
@@ -14,6 +22,26 @@ export function scalarAt(frame, row, quantity, component = "norm") {
 
 export function pointAt(frame, row) {
   return Array.from(frame.values.subarray(row * frame.stride, row * frame.stride + 3));
+}
+
+export function scalarScene(frames, quantity) {
+  const points = [];
+  let minimum = Infinity, maximum = -Infinity;
+  const label = quantity.formula ? `${quantity.label} (${quantity.formula})` : quantity.label;
+  for (const { frame, record } of frames) {
+    const layout = elementLayout(record);
+    for (let row = 0; row < frame.count; row++) {
+      const origin = pointAt(frame, row), value = scalarAt(frame, row, quantity);
+      if (![...origin, value].every(Number.isFinite)) throw new Error("Цветовая карта содержит нечисловые координаты или значения");
+      const savedRow = frame.rowIndices?.[row] ?? row * (frame.every ?? 1);
+      const { ls, as, ps } = layout.indices(savedRow);
+      points.push({ origin, value, quantity: label, unit: quantity.unit,
+        source: { schemaId: quantity.group, recordIndex: record.recordIndex, name: record.name }, instance: { ls, as, ps } });
+      minimum = Math.min(minimum, value); maximum = Math.max(maximum, value);
+    }
+  }
+  return { points, minimum: points.length ? minimum : 0, maximum: points.length ? maximum : 0,
+    quantity: label, unit: quantity.unit };
 }
 
 export function vectorScene(frames, quantity) {

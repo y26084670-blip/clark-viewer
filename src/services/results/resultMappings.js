@@ -4,8 +4,12 @@ export const MU0 = 4 * Math.PI * 1e-7;
 export const QUANTITIES = Object.freeze({
   M: { label: "Намагниченность M", unit: "кА/м", file: "MH", offset: 3, components: 3, group: "elements" },
   H: { label: "Напряжённость H", unit: "кА/м", file: "MH", offset: 6, components: 3, group: "elements", solvedOnly: true },
+  MHdot: { label: "Плотность энергии ФММ", formula: "M·H", unit: "(кА/м)²", file: "MH", offset: 3,
+    components: 1, productOffsets: [3, 6], group: "elements", solvedOnly: true, fmmOnly: true },
   J: { label: "Плотность тока J", unit: "А/мм²", file: "JE", offset: 3, components: 3, group: "elements" },
   E: { label: "Напряжённость E", unit: "В/м", file: "JE", offset: 6, components: 3, group: "elements", solvedOnly: true },
+  JEdot: { label: "Потери на токи проводимости", formula: "J·E", unit: "МВт/м³", file: "JE", offset: 3,
+    components: 1, productOffsets: [3, 6], group: "elements", solvedOnly: true },
   Bs: { label: "Индукция B — области", unit: "Тл", file: "HS", offset: 3, components: 3, group: "regions" },
   As: { label: "Векторный потенциал A — области", unit: "Тл·м", file: "AS", offset: 3, components: 3, group: "regions", factor: MU0 },
   Bv: { label: "Индукция B — виртуальные элементы", unit: "Тл", file: "HV", offset: 3, components: 3, group: "elements" },

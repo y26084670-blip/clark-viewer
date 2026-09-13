@@ -842,6 +842,7 @@ export function ResultsGeometryViewport(props) {
           <ThreeGeometryViewport
             scene={displayScene()}
             resultVectorScene={props.resultVectorScene}
+            resultScalarScene={props.resultScalarScene}
             resultPickingOnly={props.resultPickingOnly}
             resultVectorScale={props.resultVectorScale}
             resultVectorColor={props.resultVectorColor}

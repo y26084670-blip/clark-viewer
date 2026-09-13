@@ -106,6 +106,17 @@ export function formatResultVectorTooltip(item) {
     return `${formatCoordinates(item.origin)} мм\n${item.quantity}: (${item.vector.map(formatCoordinate).join("; ")}) ${item.unit}`;
 }
 
+/** Scalar values belong to the same saved nodes as their vector factors. */
+export function formatResultScalarTooltip(item) {
+    return `${formatCoordinates(item.origin)} мм\n${item.quantity}: ${formatCoordinate(item.value)} ${item.unit}`;
+}
+
+export function resultHitScalar(hit) {
+    const points = hit?.object?.userData?.resultScalars;
+    if (!hit?.object?.isPoints || !points || !Number.isSafeInteger(hit.index) || hit.index < 0) return null;
+    return points[hit.index] ?? null;
+}
+
 /** A thin vector is one segment, i.e. two position vertices. */
 export function resultHitVector(hit) {
     const vectors = hit?.object?.userData?.resultVectors;

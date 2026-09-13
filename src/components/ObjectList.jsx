@@ -1,16 +1,39 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { TabulatorFull } from "tabulator-tables";
+import { isListShortcutTarget, selectAllListItems } from "../services/listKeyboard.js";
 
 export function ObjectList(props) {
   let host, table, applying = false, revision = 0;
   const [built, setBuilt] = createSignal(false);
   function synchronizeSelection(selected = props.selected ?? []) {
-    const wanted = selected.filter(id => (props.records ?? []).some(row => row.id === id));
+    const available = new Set((props.records ?? []).map(row => row.id));
+    const wanted = selected.filter(id => available.has(id));
+    const wantedIds = new Set(wanted);
     const actual = table.getSelectedData().map(row => row.id);
-    if (actual.length === wanted.length && actual.every(id => wanted.includes(id))) return;
+    if (actual.length === wanted.length && actual.every(id => wantedIds.has(id))) return;
     applying = true;
-    table.deselectRow(); table.selectRow(wanted);
-    applying = false;
+    try { table.deselectRow(); table.selectRow(wanted); }
+    finally { applying = false; }
+  }
+  function handleKeyDown(event) {
+    if (!built()) return;
+    selectAllListItems(event, {
+      records: props.records ?? [], multiple: props.multiple !== false,
+      onSelect: selected => {
+        if (!applying) {
+          applying = true;
+          // Tabulator selects its complete row collection in one batch.
+          try { table.selectRow(); } finally { applying = false; }
+        }
+        // Keep the desired selection even while replaceData is pending.
+        props.onSelect?.(selected);
+      },
+    });
+  }
+  function focusList(event) {
+    if (event.button === 0 && isListShortcutTarget(event.target)) {
+      event.currentTarget.focus({ preventScroll: true });
+    }
   }
   function clearSelectionOnEmptyClick(event) {
     const holder = event.target.closest?.(".tabulator-tableholder");
@@ -55,5 +78,9 @@ export function ObjectList(props) {
     if (built() && !applying) synchronizeSelection(selected);
   });
   onCleanup(() => { revision++; table?.destroy(); });
-  return <section class="object-list"><div class="list-heading">{props.title}</div><div class="object-table" ref={host} onClick={clearSelectionOnEmptyClick} /></section>;
+  return <section class="object-list" tabIndex="0" aria-label={props.title}
+    onPointerDown={focusList} onKeyDown={handleKeyDown}>
+    <div class="list-heading">{props.title}</div>
+    <div class="object-table" ref={host} onClick={clearSelectionOnEmptyClick} />
+  </section>;
 }

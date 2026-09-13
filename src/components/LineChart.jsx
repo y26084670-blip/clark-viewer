@@ -21,7 +21,9 @@ export function LineChart(props) {
   }
   // Keep the chosen range when time or data changes, but reset it for different axes.
   createEffect(on(() => [props.xLabel, props.yLabel, props.integerX], resetLimits));
-  const cancelOnEscape = event => { if (event.key === "Escape") cancelSelection(); };
+  const cancelOnEscape = event => {
+    if (!event.defaultPrevented && !event.isComposing && event.code === "Escape") cancelSelection();
+  };
   onMount(() => { window.addEventListener("keydown", cancelOnEscape); setReady(true); });
   createEffect(() => {
     const series = props.series ?? [];

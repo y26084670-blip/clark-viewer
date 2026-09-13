@@ -29,7 +29,7 @@ input[type=range] { accent-color: #2077b5; cursor: pointer; }
 .task-list { flex: 1; min-height: 100px; overflow: auto; background: #fff; border: 1px solid #9aa7b2; }
 .task-list button { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid #e0e5e9; border-radius: 0; font-size: .875rem; padding: 9px 10px; }
 .task-list button.selected { background: #cde4f6; box-shadow: inset 3px 0 #247cbb; }
-.load-button { margin-top: 5px; background: #f3e9c0; font-weight: bold; }
+.load-button { margin-top: 5px; background: #f3e9c0; color: #c62828; font-weight: bold; }
 .loaded-note { color: #186d3b; font-size: .875rem; }
 .task-error { color: #9c2924; padding: 8px; background: #fff0ef; border: 1px solid #d99994; font-size: .875rem; overflow-wrap: anywhere; }
 .task-geometry-preview { flex: 1 1 48%; min-height: 170px; position: relative; background: #171d23; }
@@ -43,6 +43,7 @@ textarea[readonly] { resize: none; width: 100%; margin: 0; padding: 12px; border
 .split-list-column > .object-list { flex: 1 1 50%; }
 .split-list-column > .object-list:first-child { resize: vertical; flex: 0 0 50%; overflow: auto; min-height: 85px; max-height: 80%; }
 .object-list { display: flex; flex-direction: column; min-height: 0; border: 1px solid #9eabb6; background: #fff; }
+.object-list:focus-within { outline: 2px solid #2184d1; outline-offset: -2px; }
 .list-heading { padding: 8px 10px; background: #dfe5ea; border-bottom: 1px solid #a4afba; font-weight: bold; font-size: .875rem; flex: none; }
 .object-table { flex: 1; min-height: 0; overflow: hidden; }
 .tabulator { border: 0; font-size: .875rem; }

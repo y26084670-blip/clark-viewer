@@ -22,18 +22,31 @@ const rows = [
   [31, 32, 33, 1, 0, 0, 0, 9, 0],
 ];
 const frame = { count: 3, stride: 9, every: 1, values: new Float64Array(rows.flat()) };
+const expectedProducts = {
+  MHdot: [2.5132741228718345, -13.823007675795091, 0],
+  JEdot: [0.002, -0.011, 0],
+};
+function assertValues(actual, expected) {
+  assert.equal(actual.length, expected.length);
+  actual.forEach((value, index) => {
+    if (expected[index] === 0) assert.equal(value, 0);
+    else assert.ok(Math.abs(value - expected[index]) <= Math.abs(expected[index]) * 1e-12,
+      `${value} != ${expected[index]}`);
+  });
+}
 
-test("Derived quantities use signed vector products and the saved component units", () => {
+test("Derived quantities convert signed products to J/m³ and W/mm³ exactly once", () => {
   for (const key of ["MHdot", "JEdot"]) {
-    assert.deepEqual(rows.map((_, row) => scalarAt(frame, row, QUANTITIES[key])), [2, -11, 0]);
-    assert.equal(scalarAt(frame, 0, QUANTITIES[key], "2"), 2);
+    assertValues(rows.map((_, row) => scalarAt(frame, row, QUANTITIES[key])), expectedProducts[key]);
+    assertValues([scalarAt(frame, 0, QUANTITIES[key], "2")], [expectedProducts[key][0]]);
   }
-  assert.equal(QUANTITIES.MHdot.unit, "(кА/м)²");
-  assert.equal(QUANTITIES.JEdot.unit, "МВт/м³");
-  // A/mm² × V/m = MW/m³ numerically: neither a second 10^6 nor µ0 applies.
+  assert.equal(QUANTITIES.MHdot.unit, "Дж/м³");
+  assert.equal(QUANTITIES.JEdot.unit, "Вт/мм³");
+  // Parallel unit inputs: μ0 × (1000 A/m)² = 1.256637... J/m³;
+  // (1 A/mm²) × (1 V/m) = (1 A/mm²) × (0.001 V/mm) = 0.001 W/mm³.
   const unitFrame = { count: 1, stride: 9, values: new Float64Array([0, 0, 0, 1, 0, 0, 1, 0, 0]) };
-  assert.equal(scalarAt(unitFrame, 0, QUANTITIES.MHdot), 1);
-  assert.equal(scalarAt(unitFrame, 0, QUANTITIES.JEdot), 1);
+  assertValues([scalarAt(unitFrame, 0, QUANTITIES.MHdot)], [1.2566370614359173]);
+  assert.equal(scalarAt(unitFrame, 0, QUANTITIES.JEdot), 0.001);
 });
 
 function metadata(counts) {
@@ -73,13 +86,13 @@ test("Scalar scenes retain saved coordinates, signed extrema and sampled symmetr
   const sampled = { ...frame, every: 3, rowIndices: new Float64Array([7, 12, 20]) };
   const scene = scalarScene([{ frame: sampled, record }], QUANTITIES.MHdot);
   assert.deepEqual(scene.points.map(point => point.origin), rows.map(row => row.slice(0, 3)));
-  assert.deepEqual(scene.points.map(point => point.value), [2, -11, 0]);
+  assertValues(scene.points.map(point => point.value), expectedProducts.MHdot);
   assert.deepEqual(scene.points.map(point => point.instance),
     [{ ls: 1, as: 1, ps: 1 }, { ls: 0, as: 0, ps: 0 }, { ls: 2, as: 0, ps: 0 }]);
-  assert.deepEqual([scene.minimum, scene.maximum], [-11, 2]);
+  assertValues([scene.minimum, scene.maximum], [expectedProducts.MHdot[1], expectedProducts.MHdot[0]]);
   assert.equal(scene.points[0].source.recordIndex, material.recordIndex);
   assert.equal(scene.points[0].source.schemaId, "elements");
-  assert.equal(scene.points[0].quantity, "Плотность энергии ФММ (M·H)");
+  assert.equal(scene.points[0].quantity, "Плотность энергии ФММ (0,4π·(M·H))");
   assert.equal(scene.points[0].unit, QUANTITIES.MHdot.unit);
 });
 
@@ -113,9 +126,10 @@ for (const Type of [Float32Array, Float64Array]) {
           assert.ok(frames[0].frame.values instanceof Type);
           const scene = scalarScene(frames, QUANTITIES[quantityKey]);
           assert.deepEqual(requestedFiles, [name]);
-          assert.deepEqual(scene.points.map(point => point.value), [4, -22, 0]);
+          const expected = expectedProducts[quantityKey].map(value => value * 2);
+          assertValues(scene.points.map(point => point.value), expected);
           assert.deepEqual(scene.points.map(point => point.origin), nextRows.map(row => row.slice(0, 3)));
-          assert.deepEqual([scene.minimum, scene.maximum], [-22, 4]);
+          assertValues([scene.minimum, scene.maximum], [expected[1], expected[0]]);
         } finally { handle?.close(); }
       }
     } finally { await rm(directory, { recursive: true, force: true }); }
@@ -143,6 +157,8 @@ test("Scalar picking reports only saved nodes and keeps zero and negative values
   assert.equal(resultHitScalar({ object: { isMesh: true, userData: { resultScalars: scene.points } }, index: 0 }), null);
   const tooltip = formatResultScalarTooltip(scene.points[1]);
   assert.match(tooltip, /X=21.*Y=22.*Z=23.*мм\n/);
-  assert.match(tooltip, /Потери на токи проводимости.*-11.*МВт\/м³/);
-  assert.match(formatResultScalarTooltip(scene.points[2]), /:\s*0\s+МВт\/м³/);
+  assert.match(tooltip, /Потери на токи проводимости.*-0\.011.*Вт\/мм³/);
+  assert.match(formatResultScalarTooltip(scene.points[2]), /:\s*0\s+Вт\/мм³/);
+  const energy = scalarScene([{ frame, record: material }], QUANTITIES.MHdot);
+  assert.match(formatResultScalarTooltip(energy.points[0]), /0,4π·\(M·H\).*2\.513274\s+Дж\/м³/);
 });

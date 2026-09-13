@@ -1,4 +1,4 @@
-import { createMemo, Show } from "solid-js";
+import { createMemo } from "solid-js";
 import { ObjectList } from "../components/ObjectList.jsx";
 import { LineChart } from "../components/LineChart.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
@@ -51,11 +51,14 @@ export function WorkingPoints(props) {
   return <div class="results-layout">
     <ObjectList title="Элементы ФММ" records={records()} selected={props.elements} onSelect={props.setElements} />
     <section class="plot-panel">
-      <div class="plot-toolbar"><strong>M(H)</strong><span>Изотропные ФММ: модули · Анизотропные: проекции на ось намагничивания</span></div>
-      <div class="plot-status" role="status">{points.loading() || curves.loading() ? "Чтение рабочих точек и характеристик…" : `Рабочих точек: ${points.value()?.count ?? 0}`}
-        <Show when={warnings()}><span> · {warnings()}</span></Show>
-      </div>
       <LineChart series={[...(curves.value()?.series ?? []), ...(points.value()?.series ?? [])]}
+        toolbar={<><strong>M(H)</strong><span class="chart-toolbar-note"
+          title="Изотропные ФММ: модули · Анизотропные: проекции на ось намагничивания">
+          Изотропные ФММ: модули · Анизотропные: проекции на ось намагничивания
+        </span></>}
+        toolbarEnd={<span class="chart-toolbar-status" role="status">{points.loading() || curves.loading()
+          ? "Чтение…" : `Рабочих точек: ${points.value()?.count ?? 0}`}</span>}
+        status={warnings()}
         xLabel="H, кА/м" yLabel="M, кА/м" emptyText={warnings() || "Выберите элементы ФММ"} />
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
     </section>

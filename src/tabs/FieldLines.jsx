@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, on, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, on } from "solid-js";
 import { ObjectList } from "../components/ObjectList.jsx";
 import { LineChart } from "../components/LineChart.jsx";
 import { QuantitySelect } from "../components/QuantitySelect.jsx";
@@ -42,7 +42,8 @@ export function FieldLines(props) {
   return <div class="results-layout">
     <ObjectList title="Площадки" records={records()} selected={props.regions} onSelect={props.setRegions} />
     <section class="plot-panel">
-      <div class="plot-toolbar"><QuantitySelect options={["Bs", "As"]} value={quantityKey()} onChange={setQuantity} component={component()} onComponentChange={setComponent} />
+      <LineChart series={result.value()?.series ?? []}
+        toolbar={<><QuantitySelect options={["Bs", "As"]} value={quantityKey()} onChange={setQuantity} component={component()} onComponentChange={setComponent} />
         <label>По оси X <select value={direction()} onChange={event => setDirection(event.currentTarget.value)}><option value="i1">i1</option><option value="i2">i2</option></select></label>
         <label>Локальный образ <input type="number" min="1" max={copyCount()} step="1" value={localCopy() + 1}
           aria-label="Номер локального образа LS" disabled={allCopies() || !selectedRecords().length}
@@ -52,9 +53,8 @@ export function FieldLines(props) {
             event.currentTarget.value = String(next); setCopy(next - 1);
           }} /><span>из {copyCount()}</span></label>
         <label><input type="checkbox" checked={allCopies()} onChange={event => setAllCopies(event.currentTarget.checked)} />Все локальные образы</label>
-      </div>
-      <Show when={status()}><div class="plot-status" role="status">{status()}</div></Show>
-      <LineChart series={result.value()?.series ?? []}
+        </>}
+        status={status()}
         xLabel={allCopies() ? `Сквозной номер узла ${direction()} по LS` : `Номер узла ${direction()}`} integerX={true}
         yLabel={`${QUANTITIES[quantityKey()].label}, ${QUANTITIES[quantityKey()].unit}`} emptyText={result.error()} />
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />

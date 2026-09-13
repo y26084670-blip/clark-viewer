@@ -170,10 +170,15 @@ export function LineChart(props) {
     setMenu(null);
   }
   return <div class="line-chart" onClick={() => setMenu(null)}>
-    <div class="chart-scale-controls">
-      <button type="button" onClick={resetLimits} title="Автоматические пределы по обеим осям">Авто</button>
-      <label><input type="checkbox" checked={showLegend()} onChange={event => setShowLegend(event.currentTarget.checked)} />Показать легенду</label>
+    <div class="plot-toolbar chart-toolbar">
+      {props.toolbar}
+      <div class="chart-scale-controls">
+        {props.toolbarEnd}
+        <button type="button" onClick={resetLimits} title="Автоматические пределы по обеим осям">Авто</button>
+        <label><input type="checkbox" checked={showLegend()} onChange={event => setShowLegend(event.currentTarget.checked)} />Показать легенду</label>
+      </div>
     </div>
+    <Show when={props.status}><div class="plot-status" role="status">{props.status}</div></Show>
     <div class="line-chart-canvas" onPointerDown={() => { skipContextMenu = false; }} onContextMenu={handleContextMenu}>
       <canvas ref={canvas} aria-label={`${props.yLabel ?? "График"} от ${props.xLabel ?? "координаты"}`}
         classList={{ "chart-panning": panning() }}

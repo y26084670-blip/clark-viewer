@@ -102,7 +102,6 @@ export function ResultsGeometryViewport(props) {
   let optionsPanelElement;
   let activePanelButton;
   let viewerResizeObserver;
-  let renderModeBeforeSources = null;
   let sourceSettingsButton;
   let sourceSettingsBackButton;
   let timeAnimationFrame;
@@ -112,7 +111,7 @@ export function ResultsGeometryViewport(props) {
   const [sceneError, setSceneError] = createSignal("");
   const [viewportError, setViewportError] = createSignal("");
   const [viewRequest, setViewRequest] = createSignal(null);
-  const [renderMode, setRenderMode] = createSignal("translucent");
+  const [geometryTransparency, setGeometryTransparency] = createSignal(58);
   const [orthographicView, setOrthographicView] = createSignal(true);
   const [showEdges, setShowEdges] = createSignal(true);
   const [showVertices, setShowVertices] = createSignal(false);
@@ -223,16 +222,6 @@ export function ResultsGeometryViewport(props) {
   });
 
   const changePrescribedSources = (checked) => {
-    if (checked === showPrescribedSources()) return;
-    if (checked) {
-      renderModeBeforeSources = renderMode();
-      setRenderMode("translucent");
-    } else {
-      if (renderModeBeforeSources !== null) {
-        setRenderMode(renderModeBeforeSources);
-      }
-      renderModeBeforeSources = null;
-    }
     setShowPrescribedSources(checked);
   };
 
@@ -462,20 +451,15 @@ export function ResultsGeometryViewport(props) {
               Общие опции
             </button>
 
-            <select
-              class="geometry-viewer-select"
-              value={renderMode()}
-              aria-label="Режим представления"
-              title="Режим представления геометрии"
-              onChange={(event) => {
-                renderModeBeforeSources = null;
-                setRenderMode(event.currentTarget.value);
-              }}
-            >
-              <option value="solid">Сплошной</option>
-              <option value="translucent">Полупрозрачный</option>
-              <option value="wireframe">Каркас</option>
-            </select>
+            <label class="geometry-viewer-transparency"
+              title="Прозрачность геометрии и рёбер: 0% — сплошные, 100% — невидимые">
+              <span>Прозрачность <output>{geometryTransparency()}%</output></span>
+              <input type="range" min="0" max="100" step="1"
+                value={geometryTransparency()}
+                aria-label="Прозрачность геометрии и рёбер"
+                aria-valuetext={`${geometryTransparency()}%`}
+                onInput={event => setGeometryTransparency(event.currentTarget.valueAsNumber)} />
+            </label>
 
             <button
               type="button"
@@ -711,16 +695,10 @@ export function ResultsGeometryViewport(props) {
                 />
                 Ортогональный вид
               </label>
-              <label
-                classList={{ "is-disabled": renderMode() === "wireframe" }}
-                title={renderMode() === "wireframe"
-                  ? "Рёбра обязательны в режиме «Каркас»"
-                  : undefined}
-              >
+              <label>
                 <input
                   type="checkbox"
-                  checked={renderMode() === "wireframe" || showEdges()}
-                  disabled={renderMode() === "wireframe"}
+                  checked={showEdges()}
                   onChange={(event) => setShowEdges(event.currentTarget.checked)}
                 />
                 Рёбра
@@ -868,7 +846,8 @@ export function ResultsGeometryViewport(props) {
             resultVectorScale={props.resultVectorScale}
             resultVectorColor={props.resultVectorColor}
             filters={filters()}
-            mode={renderMode()}
+            mode="solid"
+            geometryOpacity={1 - geometryTransparency() / 100}
             showEdges={showEdges()}
             showVertices={showVertices()}
             showDiscretizationLines={showDiscretizationLines()}

@@ -143,6 +143,33 @@ test("Saved element indices account for independent and geometric symmetry count
   assert.throws(() => independent.indices(48), /вне сетки/);
 });
 
+test("Local-image lines support a selected HDF5 block and full node unfolding with XYZ", () => {
+  const record = { ...base, id: 7, dp: [[2], [3]], symLs: 3 };
+  const rows = [];
+  for (let ls = 0; ls < 3; ls++) for (let i1 = 0; i1 < 2; i1++) for (let i2 = 0; i2 < 3; i2++) {
+    rows.push(100 * ls + i1, i2 + .5, -ls, 100 * ls + 10 * i1 + i2, 0, 0);
+  }
+  const frame = { stride: 6, count: 18, values: new Float64Array(rows) };
+  const block = { stride: 6, count: 6, values: frame.values.slice(72) };
+  const selected = lineSeries(block, record, QUANTITIES.Bs, "0", "i2", { copy: 2 });
+  assert.equal(selected.length, 2);
+  assert.deepEqual(selected[1].points.map(p => [p.x, p.y]), [[1,210], [2,211], [3,212]]);
+  assert.match(selected[1].tooltip(selected[1].points[2]).join(" "), /i2=3; i1=2; LS=3.*XYZ = \(201, 2.5, -2\)/);
+  for (const [direction, length, fixedCount] of [["i1", 2, 3], ["i2", 3, 2]]) {
+    const unfolded = lineSeries(frame, record, QUANTITIES.Bs, "0", direction, { unfold: true });
+    assert.equal(unfolded.length, 3 * fixedCount);
+    for (let ls = 0; ls < 3; ls++) {
+      assert.deepEqual(unfolded[ls * fixedCount].points.map(p => p.x), Array.from({ length }, (_, i) => ls * length + i + 1));
+    }
+    const last = unfolded.at(-1), point = last.points.at(-1);
+    assert.equal(point.y, 212);
+    assert.match(last.tooltip(point).join(" "), /LS=3.*XYZ = \(201, 2.5, -2\)/);
+    assert.match(last.tooltip(point)[0], new RegExp(`Узел ${3 * length}; ${direction}=${length}`));
+  }
+  for (const copy of [-1, 3, .5, NaN]) assert.throws(() => lineSeries(block, record, QUANTITIES.Bs, "0", "i2", { copy }), /Образ LS/);
+  assert.throws(() => lineSeries(frame, record, QUANTITIES.Bs, "0", "i2", { copy: 1 }), /Сетка площадки/);
+});
+
 test("3D tooltip maps vector sticks to saved nodes and retains zero nodes", () => {
   const record = { ...base, id: 1, recordIndex: 0, dp: [[2],[1],[1]] };
   const frame = { stride: 9, count: 2, values: new Float64Array([1.123456789,2,3, 0,0,0, 0,0,0, 4,5,6, 3,4,0, 0,0,0]) };

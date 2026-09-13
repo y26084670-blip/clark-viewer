@@ -53,13 +53,13 @@ export default function App() {
   };
   return <div class="app-container">
     <header class="task-info-bar">
-      <button class="program-button" onClick={() => setInformation(!information())} title="О программе">Clark Viewer <small>{version}</small></button>
+      <button class="program-button" onClick={() => setInformation(!information())} title="О программе">E3D Viewer <small>{version}</small></button>
       <div class="task-path" title={path()}>{path() || "Задание не загружено"}</div>
       <label class="admin-control" title="Открывать каталоги проектов с произвольным именем"><input type="checkbox" checked={admin()} onChange={event => setAdmin(event.currentTarget.checked)} />Админ</label>
     </header>
-    <Show when={information()}><div class="program-information" role="dialog" aria-label="О программе Clark Viewer">
+    <Show when={information()}><div class="program-information" role="dialog" aria-label="О программе E3D Viewer">
       <button class="dialog-close" onClick={() => setInformation(false)} aria-label="Закрыть">×</button>
-      <strong>Clark Viewer {version}</strong><p>Просмотр результатов расчётов clark.AI.</p>
+      <strong>E3D Viewer {version}</strong><p>Просмотр результатов расчётов clark.AI.</p>
       <p>Выберите каталог clark.projects, проект и задание. Нажмите «Загрузить для просмотра».</p>
       <p>Исходные данные читаются из input3XX, результаты — из output3XX. Для доступа к каталогу используйте Chrome или Edge по HTTPS либо localhost.</p>
       <p>Разработчик: ChatGPT · Куратор: Кулаев Ю. · 2026 г.</p>

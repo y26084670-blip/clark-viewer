@@ -155,11 +155,6 @@ function createPrescribedSourceVectors(
   const direction = new THREE.Vector3();
   const origin = new THREE.Vector3();
   const tip = new THREE.Vector3();
-  const headBase = new THREE.Vector3();
-  const wing = new THREE.Vector3();
-  const axis = new THREE.Vector3();
-  const side = new THREE.Vector3();
-  const secondSide = new THREE.Vector3();
   const sceneLimit = sceneDiagonal > 0 ? 0.06 * sceneDiagonal : Infinity;
 
   for (const item of vectors) {
@@ -186,21 +181,7 @@ function createPrescribedSourceVectors(
     );
     tip.copy(origin).addScaledVector(direction, length);
     target.push(origin.x, origin.y, origin.z, tip.x, tip.y, tip.z);
-
-    // Four wings retain a visible arrowhead from every viewing direction.
-    const headLength = length * 0.25;
-    const headRadius = headLength * 0.5;
-    headBase.copy(tip).addScaledVector(direction, -headLength);
-    axis.set(Math.abs(direction.y) < 0.9 ? 0 : 1,
-      Math.abs(direction.y) < 0.9 ? 1 : 0, 0);
-    side.crossVectors(direction, axis).normalize();
-    secondSide.crossVectors(direction, side).normalize();
-    for (const tangent of [side, secondSide]) {
-      for (const sign of [-1, 1]) {
-        wing.copy(headBase).addScaledVector(tangent, sign * headRadius);
-        target.push(tip.x, tip.y, tip.z, wing.x, wing.y, wing.z);
-      }
-    }
+    // Thin vectors are single sticks. Extra arrowhead segments obscure dense fields.
   }
 
   if (

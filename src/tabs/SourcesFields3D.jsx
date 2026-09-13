@@ -23,7 +23,7 @@ export function SourcesFields3D(props) {
     </aside>
     <section class="plot-panel">
       <div class="plot-toolbar"><QuantitySelect options={["M", "H", "J", "E", "Bs", "As", "Bv", "Av"]} value={quantityKey()} onChange={setQuantity} />
-        <label>Стрелки <input type="range" min="-1" max="1" step="0.05" value={Math.log10(scale())} onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} /></label>
+        <label>Векторы <input type="range" min="-1" max="1" step="0.05" value={Math.log10(scale())} onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} /></label>
       </div>
       <div class="plot-status" role="status">{result.loading() ? "Чтение результатов…" : result.error() || "Результаты в сохранённых узлах"}
         <Show when={result.value()}><span> · max {result.value().scene.maximumMagnitude.magnetization.toPrecision(6)} {quantity().unit}{result.value().sampled ? " · показана выборка узлов" : ""}</span></Show>

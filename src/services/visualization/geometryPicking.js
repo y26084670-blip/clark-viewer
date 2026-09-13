@@ -106,11 +106,11 @@ export function formatResultVectorTooltip(item) {
     return `${formatCoordinates(item.origin)} мм\n${item.quantity}: (${item.vector.map(formatCoordinate).join("; ")}) ${item.unit}`;
 }
 
-/** Thin arrows contain five segments, i.e. ten position vertices each. */
+/** A thin vector is one segment, i.e. two position vertices. */
 export function resultHitVector(hit) {
     const vectors = hit?.object?.userData?.resultVectors;
     if (!vectors || !Number.isSafeInteger(hit.index) || hit.index < 0) return null;
-    return vectors[hit.object.isPoints ? hit.index : Math.floor(hit.index / 10)] ?? null;
+    return vectors[hit.object.isPoints ? hit.index : Math.floor(hit.index / 2)] ?? null;
 }
 
 /**

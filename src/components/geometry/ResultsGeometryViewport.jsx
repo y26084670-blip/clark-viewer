@@ -266,7 +266,7 @@ export function ResultsGeometryViewport(props) {
     if (sourceScene()?.imagesTruncated) {
       messages.push(
         "Показ заданных источников с учётом симметрии ограничен " +
-        `${SOURCE_VECTOR_LIMIT} стрелками. Измените режимы показа.`,
+        `${SOURCE_VECTOR_LIMIT} векторами. Измените режимы показа.`,
       );
     }
     return messages.join(" ");
@@ -508,7 +508,7 @@ export function ResultsGeometryViewport(props) {
               : openPanel() === "general"
                 ? "Общие опции отображения"
                 : openPanel() === "sources"
-                  ? "Настройка стрелок заданных источников"
+                  ? "Настройка векторов заданных источников"
                   : openPanel() === "symmetry"
                     ? "Показ симметрий"
                     : `Показ ${openPanel() === "elements" ? "элементов" : "областей"}`}
@@ -766,8 +766,8 @@ export function ResultsGeometryViewport(props) {
                   ref={(element) => (sourceSettingsButton = element)}
                   type="button"
                   class="geometry-viewer-source-settings-button"
-                  title="Настройка стрелок"
-                  aria-label="Настройка стрелок заданных источников"
+                  title="Настройка векторов"
+                  aria-label="Настройка векторов заданных источников"
                   onClick={openSourceSettings}
                 >
                   ⚙
@@ -784,9 +784,9 @@ export function ResultsGeometryViewport(props) {
               >
                 ← Общие опции
               </button>
-              <div class="geometry-viewer-options-title">Стрелки заданных источников</div>
+              <div class="geometry-viewer-options-title">Векторы заданных источников</div>
               <fieldset class="geometry-viewer-source-style">
-                <legend>Вид стрелок</legend>
+                <legend>Вид векторов</legend>
                 <label>
                   <input
                     type="radio"
@@ -794,7 +794,7 @@ export function ResultsGeometryViewport(props) {
                     checked={prescribedSourceStyle() === "thin"}
                     onChange={() => setPrescribedSourceStyle("thin")}
                   />
-                  Тонкие
+                  Палочки
                 </label>
                 <label>
                   <input
@@ -817,7 +817,7 @@ export function ResultsGeometryViewport(props) {
                   max="1"
                   step="0.01"
                   value={Math.log10(currentSourceScale())}
-                  aria-label="Масштаб длины стрелок плотности тока"
+                  aria-label="Масштаб длины векторов плотности тока"
                   aria-valuetext={sourceScaleLabel(currentSourceScale())}
                   onInput={(event) =>
                     setCurrentSourceScale(10 ** event.currentTarget.valueAsNumber)}
@@ -837,7 +837,7 @@ export function ResultsGeometryViewport(props) {
                   max="1"
                   step="0.01"
                   value={Math.log10(magnetizationSourceScale())}
-                  aria-label="Масштаб длины стрелок намагниченности"
+                  aria-label="Масштаб длины векторов намагниченности"
                   aria-valuetext={sourceScaleLabel(magnetizationSourceScale())}
                   onInput={(event) =>
                     setMagnetizationSourceScale(10 ** event.currentTarget.valueAsNumber)}

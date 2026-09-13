@@ -64,7 +64,14 @@ textarea[readonly] { resize: none; width: 100%; margin: 0; padding: 12px; border
 .time-slider input { flex: 1; min-width: 30px; }
 .time-slider output { min-width: 75px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .line-chart, .surface-chart { flex: 1; min-height: 120px; min-width: 0; position: relative; overflow: hidden; }
-.line-chart { padding: 10px 16px; }
+.line-chart { display: flex; flex-direction: column; }
+.line-chart-canvas { flex: 1; min-height: 0; min-width: 0; position: relative; margin: 10px 16px; }
+.line-chart-canvas > canvas { display: block; }
+.chart-scale-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 7px 10px; background: #f3f6f9; border-bottom: 1px solid #b8c3cc; font-size: .8rem; flex: none; }
+.chart-scale-controls label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.chart-scale-controls input[type=number] { width: 94px; min-width: 0; }
+.chart-scale-controls button { padding: 4px 9px; }
+.chart-scale-error { flex-basis: 100%; color: #9c2924; overflow-wrap: anywhere; }
 .plot-empty { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #6b7d8c; text-align: center; pointer-events: none; width: 85%; font-size: .875rem; }
 .task-geometry-preview > .plot-empty { color: #b6c2ce; }
 .chart-menu { position: absolute; z-index: 12; min-width: 195px; background: #fff; box-shadow: 0 4px 14px #0004; border: 1px solid #a7b3bd; padding: 4px; }

@@ -143,18 +143,19 @@ test("Saved element indices account for independent and geometric symmetry count
   assert.throws(() => independent.indices(48), /вне сетки/);
 });
 
-test("3D tooltip maps all arrow segments to saved node/vector and retains zero nodes", () => {
+test("3D tooltip maps vector sticks to saved nodes and retains zero nodes", () => {
   const record = { ...base, id: 1, recordIndex: 0, dp: [[2],[1],[1]] };
   const frame = { stride: 9, count: 2, values: new Float64Array([1.123456789,2,3, 0,0,0, 0,0,0, 4,5,6, 3,4,0, 0,0,0]) };
   const scene = vectorScene([{ frame, record }], QUANTITIES.M);
   assert.equal(scene.vectors.length, 2);
   assert.equal(scene.vectors[0].magnitude, 0);
   const object = { userData: { resultVectors: scene.vectors } };
-  for (const index of [10,12,14,16,18]) assert.equal(resultHitVector({ object, index }), scene.vectors[1]);
+  assert.equal(resultHitVector({ object, index: 0 }), scene.vectors[0]);
+  assert.equal(resultHitVector({ object, index: 2 }), scene.vectors[1]);
   assert.equal(resultHitVector({ object: { ...object, isPoints: true }, index: 0 }), scene.vectors[0]);
   const text = formatResultVectorTooltip(scene.vectors[1]);
   assert.equal(text, "X=4; Y=5; Z=6 мм\nНамагниченность M: (3; 4; 0) кА/м");
-  assert.equal(resultHitVector({ object, index: 20 }), null);
+  assert.equal(resultHitVector({ object, index: 4 }), null);
 });
 
 test("Input adapter preserves column-major MHJ and motion tables", () => {

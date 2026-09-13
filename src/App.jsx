@@ -5,14 +5,17 @@ import { ResultService } from "./services/resultService.js";
 import { mapResultObjects } from "./services/results/resultMappings.js";
 import { AboutDialog } from "./components/AboutDialog.jsx";
 
-const tabs = ["Выбор задания", "Источники/Поля 3D", "Рабочие точки", "Поле на линиях", "Поле в областях"];
+const tabs = ["Выбор задания", "Источники/Поля 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Потоки", "Силы/Моменты"];
 const SourcesFields3D = lazy(() => import("./tabs/SourcesFields3D.jsx").then(module => ({ default: module.SourcesFields3D })));
 const WorkingPoints = lazy(() => import("./tabs/WorkingPoints.jsx").then(module => ({ default: module.WorkingPoints })));
 const FieldLines = lazy(() => import("./tabs/FieldLines.jsx").then(module => ({ default: module.FieldLines })));
 const FieldAreas = lazy(() => import("./tabs/FieldAreas.jsx").then(module => ({ default: module.FieldAreas })));
+const Fluxes = lazy(() => import("./tabs/Fluxes.jsx").then(module => ({ default: module.Fluxes })));
+const ForcesMoments = lazy(() => import("./tabs/ForcesMoments.jsx").then(module => ({ default: module.ForcesMoments })));
 export default function App() {
   const [active, setActive] = createSignal(0), [task, setTask] = createSignal(null), [path, setPath] = createSignal("");
   const [time, setTime] = createSignal(0), [elements, setElements] = createSignal([]), [regions, setRegions] = createSignal([]);
+  const [coils, setCoils] = createSignal(null);
   const [admin, setAdmin] = createSignal(false), [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
   let loadRevision = 0, activeReader;
   function handleAdminUnlock(password) {
@@ -40,7 +43,7 @@ export default function App() {
         }
       }
       activeReader?.close(); activeReader = reader;
-      setTime(0); setElements(data.elements.length ? [data.elements[0].id] : []); setRegions(data.regions.length ? [data.regions[0].id] : []);
+      setTime(0); setElements(data.elements.length ? [data.elements[0].id] : []); setRegions(data.regions.length ? [data.regions[0].id] : []); setCoils(null);
       setTask({ ...data, reader, metadata }); setPath(newPath);
     } catch (error) {
       reader?.close(); if (revision === loadRevision) setError(`Не удалось загрузить задание: ${error.message}`);
@@ -54,6 +57,7 @@ export default function App() {
     get task() { return task(); }, get time() { return time(); }, setTime: changeTime,
     get elements() { return elements(); }, setElements,
     get regions() { return regions(); }, setRegions,
+    get coils() { return coils(); }, setCoils,
   };
   return <div class="app-container">
     <header class="task-info-bar">
@@ -76,6 +80,8 @@ export default function App() {
             <Match when={active() === 2}><WorkingPoints {...shared} /></Match>
             <Match when={active() === 3}><FieldLines {...shared} /></Match>
             <Match when={active() === 4}><FieldAreas {...shared} /></Match>
+            <Match when={active() === 5}><Fluxes {...shared} /></Match>
+            <Match when={active() === 6}><ForcesMoments {...shared} /></Match>
           </Switch></Suspense>
         </Show>
       </Show>

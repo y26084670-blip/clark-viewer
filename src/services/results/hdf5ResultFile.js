@@ -22,13 +22,18 @@ export class Hdf5ResultFile {
     }
     this.steps = timeDatasets(handle.keys());
     this.byStep = new Map();
+    this.pointCount = null;
     for (const step of this.steps) {
       if (this.byStep.has(step.index)) throw new Error("Неоднозначные номера шагов HDF5");
-      validateShape(handle.get(step.key).shape, this.header);
+      const points = validateShape(handle.get(step.key).shape, this.header);
+      if (this.pointCount !== null && points !== this.pointCount) {
+        throw new Error(`${name}.h5: число строк меняется между сохранёнными шагами`);
+      }
+      this.pointCount = points;
       this.byStep.set(step.index, step.key);
     }
   }
-  get metadata() { return { header: this.header, steps: this.steps }; }
+  get metadata() { return { header: this.header, steps: this.steps, pointCount: this.pointCount }; }
   read({ step, start, count, every = 1 }) {
     const key = this.byStep.get(step);
     if (!key) throw new Error(`${this.name}.h5: нет данных для момента ${step}`);

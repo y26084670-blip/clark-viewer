@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, on } from "solid-js";
+import { createEffect, createMemo, createSignal, on, Show } from "solid-js";
 import { ObjectList } from "../components/ObjectList.jsx";
 import { LineChart } from "../components/LineChart.jsx";
 import { QuantitySelect } from "../components/QuantitySelect.jsx";
@@ -37,6 +37,8 @@ export function FieldLines(props) {
     }));
     return { series: series.flat(), skipped: objects.filter(item => !available.includes(item)).map(item => `№${item.record.id}`) };
   });
+  const status = () => result.loading() ? "Чтение поля…" : result.error()
+    || (result.value()?.skipped.length ? `LS ${localCopy() + 1} отсутствует у площадок ${result.value().skipped.join(", ")}` : "");
   return <div class="results-layout">
     <ObjectList title="Площадки" records={records()} selected={props.regions} onSelect={props.setRegions} />
     <section class="plot-panel">
@@ -51,8 +53,7 @@ export function FieldLines(props) {
           }} /><span>из {copyCount()}</span></label>
         <label><input type="checkbox" checked={allCopies()} onChange={event => setAllCopies(event.currentTarget.checked)} />Все локальные образы</label>
       </div>
-      <div class="plot-status" role="status">{result.loading() ? "Чтение поля…" : result.error()
-        || (result.value()?.skipped.length ? `LS ${localCopy() + 1} отсутствует у площадок ${result.value().skipped.join(", ")}` : "")}</div>
+      <Show when={status()}><div class="plot-status" role="status">{status()}</div></Show>
       <LineChart series={result.value()?.series ?? []}
         xLabel={allCopies() ? `Сквозной номер узла ${direction()} по LS` : `Номер узла ${direction()}`} integerX={true}
         yLabel={`${QUANTITIES[quantityKey()].label}, ${QUANTITIES[quantityKey()].unit}`} emptyText={result.error()} />

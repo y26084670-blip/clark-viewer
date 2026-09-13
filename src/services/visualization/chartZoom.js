@@ -18,3 +18,21 @@ export function chartZoomLimits(start, end, area, scales, minimumSize = 6) {
   const limits = { xMin: Math.min(...x), xMax: Math.max(...x), yMin: Math.min(...y), yMax: Math.max(...y) };
   return limits.xMin < limits.xMax && limits.yMin < limits.yMax ? limits : null;
 }
+
+// Translate the starting linear ranges, keeping their scale fixed throughout the
+// gesture. Captured pointers may leave the canvas, so pan positions are not clamped.
+export function chartPanLimits(start, end, area, limits) {
+  if (![start?.x, start?.y, end?.x, end?.y, area?.left, area?.right, area?.top, area?.bottom,
+    limits?.xMin, limits?.xMax, limits?.yMin, limits?.yMax].every(Number.isFinite)) return null;
+  const width = area.right - area.left, height = area.bottom - area.top;
+  const xSpan = limits.xMax - limits.xMin, ySpan = limits.yMax - limits.yMin;
+  if (![width, height, xSpan, ySpan].every(value => Number.isFinite(value) && value > 0)) return null;
+  const dx = (end.x - start.x) / width * xSpan;
+  const dy = (end.y - start.y) / height * ySpan;
+  const next = {
+    xMin: limits.xMin - dx, xMax: limits.xMax - dx,
+    yMin: limits.yMin + dy, yMax: limits.yMax + dy,
+  };
+  return Object.values(next).every(Number.isFinite) && next.xMin < next.xMax && next.yMin < next.yMax
+    ? next : null;
+}

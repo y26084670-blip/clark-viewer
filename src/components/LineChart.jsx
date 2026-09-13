@@ -7,15 +7,16 @@ const colors = ["#1776bd", "#d94943", "#289447", "#994bbc", "#db8b19", "#15a2a2"
 function drawOverlayLegend(chart, series) {
   const area = chart.chartArea;
   const entries = series.flatMap((item, index) => item.points.length
-    ? [{ label: item.legendLabel ?? item.label, color: colors[index % colors.length] }] : []);
-  if (!area || !entries.length || area.width <= 12 || area.height <= 12) return;
-  const ctx = chart.ctx, padding = 7, swatchWidth = 22, gap = 7, rowHeight = 18;
+    ? [{ index, label: item.legendLabel ?? item.label, color: colors[index % colors.length], hidden: !chart.isDatasetVisible(index) }] : []);
+  if (!area || !entries.length || area.width <= 12 || area.height <= 12) return [];
+  const hitBoxes = [];
+  const ctx = chart.ctx, padding = 7, squareSize = 12, gap = 7, rowHeight = 18;
   ctx.save();
   try {
     ctx.font = "12px Arial, sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    const width = Math.min(area.width - 12, 2 * padding + swatchWidth + gap
+    const width = Math.min(area.width - 12, 2 * padding + squareSize + gap
       + Math.max(...entries.map(item => ctx.measureText(item.label).width)));
     const height = Math.min(area.height - 12, 2 * padding + rowHeight * entries.length);
     const left = area.right - 6 - width, top = area.top + 6;
@@ -23,19 +24,35 @@ function drawOverlayLegend(chart, series) {
     ctx.beginPath(); ctx.rect(left, top, width, height); ctx.clip();
     ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
     ctx.fillRect(left, top, width, height);
-    const textWidth = width - 2 * padding - swatchWidth - gap;
+    const textWidth = width - 2 * padding - squareSize - gap;
     entries.forEach((item, index) => {
       const y = top + padding + rowHeight * (index + 0.5);
-      ctx.strokeStyle = item.color; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(left + padding, y); ctx.lineTo(left + padding + swatchWidth, y); ctx.stroke();
-      ctx.fillStyle = "#303b44";
-      if (textWidth > 0) ctx.fillText(item.label, left + padding + swatchWidth + gap, y, textWidth);
+      const xBox = left + padding, yBox = y - squareSize / 2;
+      ctx.fillStyle = item.color; ctx.strokeStyle = item.color; ctx.lineWidth = 1;
+      ctx.fillRect(xBox, yBox, squareSize, squareSize);
+      ctx.strokeRect(xBox + 0.5, yBox + 0.5, squareSize - 1, squareSize - 1);
+      // Only the visible part of each square is interactive, including when
+      // every dataset is hidden or the chart is too small for the full legend.
+      const box = { index: item.index, left: xBox, top: Math.max(top, yBox),
+        right: Math.min(left + width, xBox + squareSize), bottom: Math.min(top + height, yBox + squareSize) };
+      if (box.right > box.left && box.bottom > box.top) hitBoxes.push(box);
+      ctx.fillStyle = "#666";
+      if (textWidth > 0) {
+        const xText = xBox + squareSize + gap;
+        ctx.fillText(item.label, xText, y, textWidth);
+        if (item.hidden) {
+          ctx.strokeStyle = "#666";
+          ctx.beginPath(); ctx.moveTo(xText, y);
+          ctx.lineTo(xText + Math.min(textWidth, ctx.measureText(item.label).width), y); ctx.stroke();
+        }
+      }
     });
   } finally { ctx.restore(); }
+  return hitBoxes;
 }
 
 export function LineChart(props) {
-  let canvas, chart, drag, skipContextMenu = false;
+  let canvas, chart, drag, skipContextMenu = false, legendHitBoxes = [];
   const [ready, setReady] = createSignal(false);
   const [menu, setMenu] = createSignal(null);
   const [message, setMessage] = createSignal("");
@@ -43,6 +60,7 @@ export function LineChart(props) {
   const [showLegend, setShowLegend] = createSignal(false);
   const [selection, setSelection] = createSignal(null);
   const [panning, setPanning] = createSignal(false);
+  const [legendHover, setLegendHover] = createSignal(false);
   function applyChartLimits(range) {
     if (!chart) return;
     Object.assign(chart.options.scales.x, { min: range.xMin, max: range.xMax });
@@ -51,7 +69,7 @@ export function LineChart(props) {
   }
   function releaseSelection() {
     const finished = drag, pointerId = finished?.pointerId;
-    drag = null; setSelection(null); setPanning(false);
+    drag = null; setSelection(null); setPanning(false); setLegendHover(false);
     // Some browsers emit contextmenu on press, others after pointerup.
     if (finished?.mode === "pan") {
       skipContextMenu = !finished.contextMenuSeen;
@@ -87,10 +105,11 @@ export function LineChart(props) {
       borderColor: "#161616", backgroundColor: "#f0ac24", pointRadius: 6, showLine: false });
     const range = untrack(limits);
     cancelSelection();
+    legendHitBoxes = [];
     chart?.destroy();
     chart = new Chart(canvas, { type: "scatter", data: { datasets },
       plugins: [{ id: "selectionFrame", beforeEvent: () => drag ? false : undefined },
-        ...(overlayLegend ? [{ id: "overlayLegend", afterDatasetsDraw: current => drawOverlayLegend(current, series) }] : [])], options: {
+        ...(overlayLegend ? [{ id: "overlayLegend", afterDatasetsDraw: current => { legendHitBoxes = drawOverlayLegend(current, series); } }] : [])], options: {
       responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
       onResize: cancelSelection,
       scales: { x: { type: "linear", min: range.xMin, max: range.xMax,
@@ -118,23 +137,34 @@ export function LineChart(props) {
     return { x: (event.clientX - bounds.left) * chart.width / bounds.width,
       y: (event.clientY - bounds.top) * chart.height / bounds.height };
   }
+  function legendItemAt(point) {
+    return legendHitBoxes.find(box => point.x >= box.left && point.x <= box.right
+      && point.y >= box.top && point.y <= box.bottom);
+  }
   function startSelection(event) {
     skipContextMenu = false;
     if (![0, 2].includes(event.button) || event.isPrimary === false || !chart?.chartArea || !props.series?.some(series => series.points.length)) return;
     const point = chartPoint(event), area = chart.chartArea;
     if (point.x < area.left || point.x > area.right || point.y < area.top || point.y > area.bottom) return;
+    const legendItem = event.button === 0 ? legendItemAt(point) : null;
     cancelSelection(); setMenu(null); event.preventDefault();
-    const mode = event.button === 2 ? "pan" : "zoom";
-    drag = { pointerId: event.pointerId, mode, start: point, area: { ...area },
+    const mode = legendItem ? "legend" : event.button === 2 ? "pan" : "zoom";
+    drag = { pointerId: event.pointerId, mode, datasetIndex: legendItem?.index, start: point, area: { ...area },
       previousLimits: { ...untrack(limits) },
       startLimits: { xMin: chart.scales.x.min, xMax: chart.scales.x.max,
         yMin: chart.scales.y.min, yMax: chart.scales.y.max } };
     setPanning(mode === "pan");
+    setLegendHover(mode === "legend");
     canvas.setPointerCapture(event.pointerId);
     chart.setActiveElements([]); chart.tooltip?.setActiveElements([], point); chart.draw();
     updateDrag(point);
   }
   function updateDrag(current) {
+    if (drag.mode === "legend") {
+      // A drag that returns to its starting square is still not a click.
+      if (Math.hypot(current.x - drag.start.x, current.y - drag.start.y) >= 3) drag.moved = true;
+      return;
+    }
     if (drag.mode === "pan") {
       if (!drag.moved && Math.hypot(current.x - drag.start.x, current.y - drag.start.y) < 3) return;
       const range = chartPanLimits(drag.start, current, drag.area, drag.startLimits);
@@ -155,13 +185,30 @@ export function LineChart(props) {
       height: `${100 * Math.abs(point.y - drag.start.y) / chart.height}%` });
   }
   function updateSelection(event) {
-    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag) {
+      setLegendHover(Boolean(chart && legendItemAt(chartPoint(event))));
+      return;
+    }
+    if (drag.pointerId !== event.pointerId) return;
     event.preventDefault();
     if (!(event.buttons & (drag.mode === "pan" ? 2 : 1))) { cancelSelection(); return; }
     updateDrag(chartPoint(event));
   }
   function finishSelection(event) {
     if (!drag || drag.pointerId !== event.pointerId) return;
+    if (drag.mode === "legend") {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const point = chartPoint(event);
+      updateDrag(point);
+      const item = legendItemAt(point), finished = releaseSelection();
+      if (!finished.moved && item?.index === finished.datasetIndex) {
+        chart.setDatasetVisibility(item.index, !chart.isDatasetVisible(item.index));
+        chart.update("none");
+      }
+      setLegendHover(Boolean(legendItemAt(point)));
+      return;
+    }
     if (drag.mode === "pan") {
       event.preventDefault(); updateDrag(chartPoint(event));
       const finished = releaseSelection();
@@ -216,9 +263,10 @@ export function LineChart(props) {
     <Show when={props.status}><div class="plot-status" role="status">{props.status}</div></Show>
     <div class="line-chart-canvas" onPointerDown={() => { skipContextMenu = false; }} onContextMenu={handleContextMenu}>
       <canvas ref={canvas} aria-label={`${props.yLabel ?? "График"} от ${props.xLabel ?? "координаты"}`}
-        classList={{ "chart-panning": panning() }}
-        title="Левая кнопка — рамка увеличения; удерживайте правую кнопку для перемещения. Правый щелчок — копирование. Esc — отмена, Авто — весь график."
+        classList={{ "chart-panning": panning(), "chart-legend-hover": legendHover() }}
+        title={`${props.legendMode === "overlay" ? "Щелчок по цветному квадратику легенды — скрыть или показать кривую. " : ""}Левая кнопка — рамка увеличения; удерживайте правую кнопку для перемещения. Правый щелчок — копирование. Esc — отмена, Авто — весь график.`}
         onPointerDown={startSelection} onPointerMove={updateSelection} onPointerUp={finishSelection}
+        onPointerLeave={() => setLegendHover(false)}
         onPointerCancel={cancelPointerSelection} onLostPointerCapture={cancelPointerSelection} />
       <Show when={selection()}><div class="chart-selection-frame" style={selection()} /></Show>
       <Show when={!(props.series?.length)}><div class="plot-empty">{props.emptyText || "Выберите объект и величину"}</div></Show>

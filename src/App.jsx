@@ -3,7 +3,7 @@ import { Tasks } from "./tabs/Tasks.jsx";
 import { loadTask } from "./services/taskLoadService.js";
 import { ResultService } from "./services/resultService.js";
 import { mapResultObjects } from "./services/results/resultMappings.js";
-import { version } from "../package.json";
+import { AboutDialog } from "./components/AboutDialog.jsx";
 
 const tabs = ["Выбор задания", "Источники/Поля 3D", "Рабочие точки", "Поле на линиях", "Поле в областях"];
 const SourcesFields3D = lazy(() => import("./tabs/SourcesFields3D.jsx").then(module => ({ default: module.SourcesFields3D })));
@@ -14,8 +14,12 @@ export default function App() {
   const [active, setActive] = createSignal(0), [task, setTask] = createSignal(null), [path, setPath] = createSignal("");
   const [time, setTime] = createSignal(0), [elements, setElements] = createSignal([]), [regions, setRegions] = createSignal([]);
   const [admin, setAdmin] = createSignal(false), [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
-  const [information, setInformation] = createSignal(false);
   let loadRevision = 0, activeReader;
+  function handleAdminUnlock(password) {
+    if (password !== "_qwerty123") return false;
+    setAdmin(true);
+    return true;
+  }
   async function load(handle, newPath) {
     const revision = ++loadRevision;
     setBusy(true); setError("");
@@ -53,17 +57,10 @@ export default function App() {
   };
   return <div class="app-container">
     <header class="task-info-bar">
-      <button class="program-button" onClick={() => setInformation(!information())} title="О программе">E3D Viewer <small>{version}</small></button>
+      <span class="program-name">E3D Viewer</span>
       <div class="task-path" title={path()}>{path() || "Задание не загружено"}</div>
-      <label class="admin-control" title="Открывать каталоги проектов с произвольным именем"><input type="checkbox" checked={admin()} onChange={event => setAdmin(event.currentTarget.checked)} />Админ</label>
+      <AboutDialog admin={admin()} onAdminUnlock={handleAdminUnlock} />
     </header>
-    <Show when={information()}><div class="program-information" role="dialog" aria-label="О программе E3D Viewer">
-      <button class="dialog-close" onClick={() => setInformation(false)} aria-label="Закрыть">×</button>
-      <strong>E3D Viewer {version}</strong><p>Просмотр результатов расчётов clark.AI.</p>
-      <p>Выберите каталог clark.projects, проект и задание. Нажмите «Загрузить для просмотра».</p>
-      <p>Исходные данные читаются из input3XX, результаты — из output3XX. Для доступа к каталогу используйте Chrome или Edge по HTTPS либо localhost.</p>
-      <p>Разработчик: ChatGPT · Куратор: Кулаев Ю. · 2026 г.</p>
-    </div></Show>
     <nav class="tabs-header" aria-label="Вкладки просмотра">
       <For each={tabs}>{(title, i) => <button classList={{ active: active() === i() }} aria-current={active() === i() ? "page" : undefined}
         onClick={() => setActive(i())}>{title}</button>}</For>

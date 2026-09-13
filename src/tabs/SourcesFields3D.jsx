@@ -5,16 +5,20 @@ import { ResultsGeometryViewport } from "../components/geometry/ResultsGeometryV
 import { TimeSlider } from "../components/TimeSlider.jsx";
 import { QUANTITIES } from "../services/results/resultMappings.js";
 import { readObjectFrames, useAsyncResult } from "../services/results/resultRequests.js";
-import { vectorScene } from "../services/results/resultPlots.js";
+import { scalarScene, vectorScene } from "../services/results/resultPlots.js";
 
 export function SourcesFields3D(props) {
   const [quantityKey, setQuantity] = createSignal("M");
   const [scale, setScale] = createSignal(1);
   const quantity = () => QUANTITIES[quantityKey()];
+  const isScalar = () => quantity().components === 1;
   const result = useAsyncResult(() => props.task && ({ task: props.task, quantityKey: quantityKey(),
     selected: quantity().group === "elements" ? props.elements : props.regions, time: props.time, budget: 5000 }), async request => {
     const frames = await readObjectFrames(request);
-    return { scene: vectorScene(frames, QUANTITIES[request.quantityKey]), sampled: frames.some(x => x.frame.count < x.originalCount) };
+    const quantity = QUANTITIES[request.quantityKey];
+    return { scene: quantity.components === 1 ? null : vectorScene(frames, quantity),
+      scalarScene: quantity.components === 1 ? scalarScene(frames, quantity) : null,
+      sampled: frames.some(x => x.frame.count < x.originalCount) };
   });
   return <div class="results-layout">
     <aside class="split-list-column">
@@ -22,17 +26,23 @@ export function SourcesFields3D(props) {
       <ObjectList title="Области" records={props.task?.regions} selected={props.regions} onSelect={props.setRegions} />
     </aside>
     <section class="plot-panel">
-      <div class="plot-toolbar"><QuantitySelect options={["M", "H", "J", "E", "Bs", "As", "Bv", "Av"]} value={quantityKey()} onChange={setQuantity} />
-        <label>Векторы <input type="range" min="-1" max="1" step="0.05" value={Math.log10(scale())} onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} /></label>
+      <div class="plot-toolbar"><QuantitySelect options={["M", "H", "MHdot", "J", "E", "JEdot", "Bs", "As", "Bv", "Av"]} value={quantityKey()} onChange={setQuantity} />
+        <Show when={!isScalar()}><label>Векторы <input type="range" min="-1" max="1" step="0.05" value={Math.log10(scale())} onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} /></label></Show>
+        <Show when={isScalar()}><span>{quantity().formula} · цветовая карта узлов</span></Show>
       </div>
       <div class="plot-status" role="status">{result.loading() ? "Чтение результатов…" : result.error() || "Результаты в сохранённых узлах"}
-        <Show when={result.value()}><span> · max {result.value().scene.maximumMagnitude.magnetization.toPrecision(6)} {quantity().unit}{result.value().sampled ? " · показана выборка узлов" : ""}</span></Show>
+        <Show when={result.value()}><span>
+          {result.value().scalarScene
+            ? ` · ${result.value().scalarScene.minimum.toPrecision(6)} … ${result.value().scalarScene.maximum.toPrecision(6)}`
+            : ` · max ${result.value().scene.maximumMagnitude.magnetization.toPrecision(6)}`} {quantity().unit}{result.value().sampled ? " · показана выборка узлов" : ""}
+        </span></Show>
       </div>
       <div class="embedded-geometry">
         <ResultsGeometryViewport open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={props.time}
           selections={{ elements: props.elements.map(id => id - 1), regions: props.regions.map(id => id - 1) }}
           resultVectorScene={result.value()?.scene} resultVectorScale={scale()} resultPickingOnly={true}
+          resultScalarScene={result.value()?.scalarScene}
           resultVectorColor={quantityKey() === "J" ? 0xff5454 : quantityKey() === "M" ? 0x44dd66 : 0x44bbff} />
       </div>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />

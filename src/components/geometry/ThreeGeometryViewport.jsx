@@ -22,12 +22,15 @@ import {
   geometryCameraFrame,
   normalizeGeometryCameraCommand,
 } from "../../services/visualization/geometryCameraView.js";
+import { fitCameraToVisibleObjects } from "../../services/visualization/geometryCameraFit.js";
 import {
   findPointMetadataRange,
   findVertexMetadataRange,
   formatDiscretizationPointTooltip,
   formatGeometryTooltip,
+  formatResultScalarTooltip,
   formatResultVectorTooltip,
+  resultHitScalar,
   resultHitVector,
   formatVertexTooltip,
   geometryHitInstance,
@@ -38,6 +41,10 @@ import {
   GEOMETRY_MATERIAL_KINDS,
   geometryMaterialStyle as resolveGeometryMaterialStyle,
 } from "../../services/visualization/geometryMaterialStyle.js";
+import {
+  resultScalarColor,
+  resultScalarLegendBackground,
+} from "../../services/visualization/resultScalarColors.js";
 
 export const GEOMETRY_INSTANCE_BUDGET = 20_000;
 export const GEOMETRY_RENDER_OBJECT_BUDGET = 1_000;
@@ -49,7 +56,6 @@ export const GEOMETRY_DISCRETIZATION_POINT_BUDGET =
 const INSTANCE_CATEGORIES = Object.freeze(["base", "copy", "mirror"]);
 const DEFAULT_PROJECTION = "orthographic";
 const PERSPECTIVE_FOV = 45;
-const CAMERA_FRAME_PADDING = 1.08;
 const AXES_GIZMO_SIZE = 104;
 const AXES_GIZMO_MARGIN = 8;
 const VERTEX_POINT_SIZE = 9;
@@ -278,6 +284,45 @@ function createPrescribedSourceVectors(
 function prescribedSourceScale(value) {
   const scale = Number(value ?? 1);
   return Number.isFinite(scale) ? Math.max(0.1, Math.min(10, scale)) : 1;
+}
+
+function createResultScalarPoints(THREE, points, minimum, maximum) {
+  const positions = new Float32Array(points.length * 3);
+  const colors = new Float32Array(positions.length);
+  const color = new THREE.Color();
+  points.forEach((item, index) => {
+    positions.set(item.origin, index * 3);
+    color.setRGB(...resultScalarColor(item.value, minimum, maximum), THREE.SRGBColorSpace);
+    color.toArray(colors, index * 3);
+  });
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geometry.computeBoundingSphere();
+
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 32;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#ffffff";
+  context.beginPath();
+  context.arc(16, 16, 15.5, 0, Math.PI * 2);
+  context.fill();
+  const material = new THREE.PointsMaterial({
+    map: new THREE.CanvasTexture(canvas),
+    vertexColors: true,
+    size: 9,
+    sizeAttenuation: false,
+    alphaTest: 0.5,
+    transparent: true,
+    depthTest: true,
+    depthWrite: true,
+    toneMapped: false,
+  });
+  const nodes = new THREE.Points(geometry, material);
+  nodes.name = "result-scalar-nodes";
+  nodes.userData.resultScalars = points;
+  nodes.renderOrder = 14;
+  return nodes;
 }
 
 function validMatrix(value) {
@@ -1001,68 +1046,6 @@ function worldUnitsPerPixel(camera, target, viewportHeight) {
   return 2 * distance * Math.tan(verticalFov / 2) / height;
 }
 
-function normalizeFramePadding(value) {
-  return Number.isFinite(value) && value >= 1
-    ? value
-    : CAMERA_FRAME_PADDING;
-}
-
-function fitCameraToBounds(
-  THREE,
-  camera,
-  controls,
-  bounds,
-  targetOverride,
-  framePadding,
-) {
-  if (!bounds || bounds.isEmpty()) return false;
-
-  const sphere = bounds.getBoundingSphere(new THREE.Sphere());
-  const target = targetOverride?.clone?.() ?? sphere.center;
-  const padding = normalizeFramePadding(framePadding);
-  const radius = Math.max(
-    sphere.radius + sphere.center.distanceTo(target),
-    1e-6,
-  );
-  let distance;
-
-  if (camera.isOrthographicCamera) {
-    const aspect = Math.max(
-      (camera.right - camera.left) / (camera.top - camera.bottom),
-      1e-6,
-    );
-    const halfHeight = padding * radius * Math.max(1, 1 / aspect);
-    camera.left = -halfHeight * aspect;
-    camera.right = halfHeight * aspect;
-    camera.top = halfHeight;
-    camera.bottom = -halfHeight;
-    camera.zoom = 1;
-    distance = Math.max(radius * 3, 1);
-  } else {
-    const verticalFov = THREE.MathUtils.degToRad(camera.fov);
-    const horizontalFov = 2 * Math.atan(
-      Math.tan(verticalFov / 2) * camera.aspect,
-    );
-    distance = padding * Math.max(
-      radius / Math.tan(verticalFov / 2),
-      radius / Math.tan(Math.max(horizontalFov, 1e-6) / 2),
-    );
-    if (sphere.radius === 0) distance = Math.max(distance, 1);
-  }
-
-  const direction = camera.position.clone().sub(controls.target);
-  if (direction.lengthSq() < 1e-12) direction.set(1, 1, 1);
-  direction.normalize();
-
-  controls.target.copy(target);
-  camera.position.copy(target).addScaledVector(direction, distance);
-  camera.near = Math.max(radius / 10_000, 1e-5);
-  camera.far = Math.max(distance + radius * 10, radius * 1_000, 1);
-  camera.updateProjectionMatrix();
-  controls.update();
-  return true;
-}
-
 function createCamera(THREE, projection, aspect) {
   const camera = projection === "perspective"
     ? new THREE.PerspectiveCamera(
@@ -1109,6 +1092,8 @@ export function ThreeGeometryViewport(props) {
   let helperRoot;
   let resultVectorRoot = null;
   let currentResultScene = null;
+  let resultScalarRoot = null;
+  let currentScalarScene = null;
   let resultVectorScale = 1;
   let resultVectorColor = 0x44ccff;
   let activeResultFilters = {};
@@ -1182,6 +1167,7 @@ export function ThreeGeometryViewport(props) {
   const [error, setError] = createSignal("");
   const [renderedCount, setRenderedCount] = createSignal(0);
   const [hoverTooltip, setHoverTooltip] = createSignal(null);
+  const [scalarLegend, setScalarLegend] = createSignal(null);
 
   const reportError = (value) => {
     const message = value instanceof Error ? value.message : String(value);
@@ -1275,14 +1261,16 @@ export function ThreeGeometryViewport(props) {
     if (
       props.autoFit === true
       && controls
-      && currentBounds
-      && !currentBounds.isEmpty()
     ) {
-      fitCameraToBounds(THREE, camera, controls, currentBounds);
+      fitVisibleObjects();
     }
     setHoverTooltip(null);
     requestRender();
   };
+
+  const fitVisibleObjects = (target, padding) => fitCameraToVisibleObjects(
+    THREE, camera, controls, [geometryRoot, helperRoot], { target, padding },
+  );
 
   const cancelPendingPick = () => {
     pendingPointer = null;
@@ -1385,14 +1373,16 @@ export function ThreeGeometryViewport(props) {
     raycaster.params.Points.threshold = unitsPerPixel * 9;
 
     if (props.resultPickingOnly) {
-      // Only currently displayed result primitives participate. The actual
-      // intersection lies on a scaled arrow; the tip reports its saved origin.
-      const hits = resultVectorRoot ? raycaster.intersectObject(resultVectorRoot, true) : [];
+      // Report saved nodes, including for an intersection on a scaled vector.
+      const resultRoots = [resultVectorRoot, resultScalarRoot].filter(Boolean);
+      const hits = raycaster.intersectObjects(resultRoots, true);
       const geometryHit = activeRenderMode === "solid" && (geometryOpacity ?? 1) >= 1
         ? raycaster.intersectObjects(geometryPickTargets, false)[0] : null;
       const hit = hits.find(candidate => !geometryHit || candidate.distance <= geometryHit.distance + unitsPerPixel * 5);
-      const item = resultHitVector(hit);
-      if (item) showTooltip(formatResultVectorTooltip(item), x, y);
+      const scalar = resultHitScalar(hit);
+      const vector = resultHitVector(hit);
+      if (scalar) showTooltip(formatResultScalarTooltip(scalar), x, y);
+      else if (vector) showTooltip(formatResultVectorTooltip(vector), x, y);
       else setHoverTooltip(null);
       return;
     }
@@ -1517,7 +1507,7 @@ export function ThreeGeometryViewport(props) {
     }
   };
 
-  // Geometry and its overlays fade together. Result/prescribed vectors live
+  // Geometry and its overlays fade together. Result nodes and vectors live
   // in separate helper roots and retain their material settings. Updating
   // this layer never rebuilds geometry, vectors, or the current camera.
   const updateGeometryOpacity = () => {
@@ -1763,15 +1753,7 @@ export function ThreeGeometryViewport(props) {
     activeProjection = projection;
     controls.object = camera;
 
-    if (currentBounds && !currentBounds.isEmpty()) {
-      fitCameraToBounds(
-        THREE,
-        camera,
-        controls,
-        currentBounds,
-        preservedTarget,
-      );
-    } else {
+    if (!fitVisibleObjects(preservedTarget)) {
       controls.update();
     }
     requestRender();
@@ -1840,6 +1822,31 @@ export function ThreeGeometryViewport(props) {
     requestRender();
   };
 
+  const replaceResultScalars = () => {
+    if (!THREE || !helperRoot) return;
+    clearHoverTooltip();
+    setScalarLegend(null);
+    if (resultScalarRoot) {
+      helperRoot.remove(resultScalarRoot);
+      disposeObject(resultScalarRoot);
+      resultScalarRoot = null;
+    }
+    if (currentScalarScene) {
+      const points = currentScalarScene.points.filter(item =>
+        Number.isFinite(item.value) && item.origin?.length === 3
+        && Array.from(item.origin).every(Number.isFinite)
+        && primitiveVisible(item, activeResultFilters.objectModes, activeResultFilters.selections)
+        && instanceVisible(item.instance, activeResultFilters.symmetry));
+      const { minimum, maximum, quantity, unit } = currentScalarScene;
+      if (points.length && Number.isFinite(minimum) && Number.isFinite(maximum)) {
+        resultScalarRoot = createResultScalarPoints(THREE, points, minimum, maximum);
+        helperRoot.add(resultScalarRoot);
+        setScalarLegend({ minimum, maximum, quantity, unit });
+      }
+    }
+    requestRender();
+  };
+
   const replaceGeometry = (sceneModel, filters, mode, showEdges) => {
     if (!ready() || !THREE || !threeScene) return;
     activeRenderMode = mode;
@@ -1855,6 +1862,7 @@ export function ThreeGeometryViewport(props) {
     }
     prescribedSourceRoot = null;
     resultVectorRoot = null;
+    resultScalarRoot = null;
     acceptedSourceInstances = new Set();
 
     geometryRoot = new THREE.Group();
@@ -1960,14 +1968,6 @@ export function ThreeGeometryViewport(props) {
     }
 
     currentBounds = new THREE.Box3().setFromObject(geometryRoot);
-    if (!currentBounds.isEmpty()) {
-      if (!hasFramedGeometry || props.autoFit === true) {
-        fitCameraToBounds(THREE, camera, controls, currentBounds);
-        hasFramedGeometry = true;
-      }
-    } else {
-      hasFramedGeometry = false;
-    }
 
     const truncated = selectedInstances - invalidInstances > renderedInstances;
     baseRenderStats = {
@@ -1985,7 +1985,13 @@ export function ThreeGeometryViewport(props) {
     if (discretizationPointsVisible) materializeDiscretizationPoints();
     replacePrescribedSources();
     replaceResultVectors();
+    replaceResultScalars();
     updateGeometryOpacity();
+    if (!hasFramedGeometry || props.autoFit === true) {
+      hasFramedGeometry = fitVisibleObjects();
+    } else if (currentBounds.isEmpty() && !resultVectorRoot && !resultScalarRoot) {
+      hasFramedGeometry = false;
+    }
     publishRenderStats();
     if (!contextLost) {
       setError("");
@@ -1995,22 +2001,15 @@ export function ThreeGeometryViewport(props) {
   };
 
   const fitAll = () => {
-    if (!ready() || !currentBounds) return;
+    if (!ready()) return;
     clearHoverTooltip();
-    fitCameraToBounds(
-      THREE,
-      camera,
-      controls,
-      currentBounds,
-      undefined,
-      props.fitAllPadding,
-    );
+    fitVisibleObjects(undefined, props.fitAllPadding);
     requestRender();
   };
 
   const applyViewRequest = (request) => {
     const command = normalizeGeometryCameraCommand(request?.command);
-    if (!ready() || !currentBounds || !command) return;
+    if (!ready() || !command) return;
     if (command === GEOMETRY_CAMERA_COMMANDS.FIT_ALL) {
       fitAll();
       return;
@@ -2021,7 +2020,7 @@ export function ThreeGeometryViewport(props) {
     camera.up.fromArray(frame.up);
     camera.position.fromArray(frame.offset).add(controls.target);
     rebuildOrbitControls();
-    fitCameraToBounds(THREE, camera, controls, currentBounds);
+    fitVisibleObjects();
     clearHoverTooltip();
     requestRender();
   };
@@ -2184,6 +2183,12 @@ export function ThreeGeometryViewport(props) {
   });
 
   createEffect(() => {
+    currentScalarScene = props.resultScalarScene ?? null;
+    if (!ready()) return;
+    try { replaceResultScalars(); } catch (error) { reportError(error); }
+  });
+
+  createEffect(() => {
     const opacity = props.geometryOpacity;
     geometryOpacity = typeof opacity === "number" && Number.isFinite(opacity)
       ? Math.max(0, Math.min(1, opacity)) : null;
@@ -2278,6 +2283,18 @@ export function ThreeGeometryViewport(props) {
         <div class="geometry-viewport-overlay geometry-viewport-error" role="alert">
           3D-представление недоступно: {error()}
         </div>
+      </Show>
+      <Show when={!error() && scalarLegend()} keyed>
+        {(legend) => (
+          <div class="geometry-scalar-legend" aria-label={`Цветовая шкала: ${legend.quantity}, ${legend.unit}`}>
+            <div>{legend.quantity}, {legend.unit}</div>
+            <div class="geometry-scalar-legend-gradient" style={{ background: resultScalarLegendBackground(legend.minimum, legend.maximum) }} />
+            <div class="geometry-scalar-legend-limits">
+              <span>{Number(legend.minimum.toPrecision(6)).toString()}</span>
+              <span>{Number(legend.maximum.toPrecision(6)).toString()}</span>
+            </div>
+          </div>
+        )}
       </Show>
       <Show when={hoverTooltip()} keyed>
         {(tooltip) => (

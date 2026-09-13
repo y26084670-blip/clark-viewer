@@ -332,6 +332,37 @@
   pointer-events: none;
 }
 
+.geometry-scalar-legend {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  width: 260px;
+  max-width: calc(100% - 20px);
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid #708090;
+  border-radius: 3px;
+  background: rgba(27, 34, 41, .95);
+  color: #f1f5f8;
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.geometry-scalar-legend-gradient {
+  height: 12px;
+  margin-top: 5px;
+  border: 1px solid #8a959f;
+}
+
+.geometry-scalar-legend-limits {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
 .geometry-viewport-overlay {
   position: absolute;
   inset: 0;

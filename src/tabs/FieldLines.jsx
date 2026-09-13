@@ -53,7 +53,7 @@ export function FieldLines(props) {
       </div>
       <div class="plot-status" role="status">{result.loading() ? "Чтение поля…" : result.error()
         || (result.value()?.skipped.length ? `LS ${localCopy() + 1} отсутствует у площадок ${result.value().skipped.join(", ")}` : "")}</div>
-      <LineChart series={result.value()?.series ?? []} showLegend={!allCopies()}
+      <LineChart series={result.value()?.series ?? []}
         xLabel={allCopies() ? `Сквозной номер узла ${direction()} по LS` : `Номер узла ${direction()}`} integerX={true}
         yLabel={`${QUANTITIES[quantityKey()].label}, ${QUANTITIES[quantityKey()].unit}`} emptyText={result.error()} />
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />

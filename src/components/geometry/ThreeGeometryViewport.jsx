@@ -1152,6 +1152,8 @@ export function ThreeGeometryViewport(props) {
   let discretizationLinesMaterialized = false;
   let discretizationPointsMaterialized = false;
   let activeRenderMode = "solid";
+  let geometryOpacity = null;
+  const geometryMaterialDefaults = new WeakMap();
   let baseRenderStats = {
     budget: GEOMETRY_INSTANCE_BUDGET,
     invalidInstances: 0,
@@ -1386,7 +1388,7 @@ export function ThreeGeometryViewport(props) {
       // Only currently displayed result primitives participate. The actual
       // intersection lies on a scaled arrow; the tip reports its saved origin.
       const hits = resultVectorRoot ? raycaster.intersectObject(resultVectorRoot, true) : [];
-      const geometryHit = activeRenderMode === "solid"
+      const geometryHit = activeRenderMode === "solid" && (geometryOpacity ?? 1) >= 1
         ? raycaster.intersectObjects(geometryPickTargets, false)[0] : null;
       const hit = hits.find(candidate => !geometryHit || candidate.distance <= geometryHit.distance + unitsPerPixel * 5);
       const item = resultHitVector(hit);
@@ -1395,19 +1397,19 @@ export function ThreeGeometryViewport(props) {
       return;
     }
 
-    const geometryHit = raycaster.intersectObjects(
-      geometryPickTargets,
-      false,
-    )[0] ?? null;
+    const geometryHit = geometryOpacity !== 0
+      ? raycaster.intersectObjects(geometryPickTargets, false)[0] ?? null
+      : null;
     const discretizationHit =
-      discretizationPointsVisible && discretizationPoints
+      discretizationPoints?.visible
         ? raycaster.intersectObject(discretizationPoints, false)[0] ?? null
         : null;
-    const vertexHit = verticesVisible && vertexPoints
+    const vertexHit = vertexPoints?.visible
       ? raycaster.intersectObject(vertexPoints, false)[0] ?? null
       : null;
     const pointIsVisible = (hit) =>
       activeRenderMode !== "solid" ||
+      (geometryOpacity ?? 1) < 1 ||
       !geometryHit ||
       hit.distance <= geometryHit.distance + unitsPerPixel * 9;
 
@@ -1515,6 +1517,41 @@ export function ThreeGeometryViewport(props) {
     }
   };
 
+  // Geometry and its overlays fade together. Result/prescribed vectors live
+  // in separate helper roots and retain their material settings. Updating
+  // this layer never rebuilds geometry, vectors, or the current camera.
+  const updateGeometryOpacity = () => {
+    const opacity = geometryOpacity ?? 1;
+    for (const [root, enabled] of [
+      [geometryRoot, true],
+      [vertexPoints, verticesVisible],
+      [discretizationLines, discretizationLinesVisible],
+      [discretizationPoints, discretizationPointsVisible],
+    ]) {
+      if (!root) continue;
+      root.visible = enabled && opacity > 0;
+      root.traverse(object => {
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        for (const material of materials) {
+          if (!material) continue;
+          let defaults = geometryMaterialDefaults.get(material);
+          if (!defaults) {
+            if (geometryOpacity === null) continue;
+            defaults = { opacity: material.opacity, transparent: material.transparent, depthWrite: material.depthWrite };
+            geometryMaterialDefaults.set(material, defaults);
+          }
+          material.opacity = defaults.opacity * opacity;
+          material.depthWrite = defaults.depthWrite && opacity >= 1;
+          const transparent = defaults.transparent || material.opacity < 1;
+          if (material.transparent !== transparent) {
+            material.transparent = transparent;
+            material.needsUpdate = true;
+          }
+        }
+      });
+    }
+  };
+
   const materializeVertexPoints = () => {
     if (!THREE || !helperRoot || vertexPoints) return;
 
@@ -1535,6 +1572,7 @@ export function ThreeGeometryViewport(props) {
     if (vertexPoints) {
       vertexPoints.visible = verticesVisible;
       helperRoot.add(vertexPoints);
+      updateGeometryOpacity();
     }
   };
 
@@ -1624,6 +1662,7 @@ export function ThreeGeometryViewport(props) {
     if (discretizationLines) {
       discretizationLines.visible = discretizationLinesVisible;
       helperRoot.add(discretizationLines);
+      updateGeometryOpacity();
     }
     discretizationStats.lineSegments = positions.length / 6;
     discretizationStats.linesTruncated = truncated;
@@ -1694,6 +1733,7 @@ export function ThreeGeometryViewport(props) {
     if (discretizationPoints) {
       discretizationPoints.visible = discretizationPointsVisible;
       helperRoot.add(discretizationPoints);
+      updateGeometryOpacity();
     }
     discretizationStats.points = positions.length / 3;
     discretizationStats.pointsTruncated = truncated;
@@ -1945,6 +1985,7 @@ export function ThreeGeometryViewport(props) {
     if (discretizationPointsVisible) materializeDiscretizationPoints();
     replacePrescribedSources();
     replaceResultVectors();
+    updateGeometryOpacity();
     publishRenderStats();
     if (!contextLost) {
       setError("");
@@ -2077,6 +2118,7 @@ export function ThreeGeometryViewport(props) {
     if (!ready()) return;
     if (verticesVisible && !vertexPoints) materializeVertexPoints();
     if (vertexPoints) vertexPoints.visible = verticesVisible;
+    updateGeometryOpacity();
     clearHoverTooltip();
     requestRender();
   });
@@ -2093,6 +2135,7 @@ export function ThreeGeometryViewport(props) {
     if (discretizationLines) {
       discretizationLines.visible = discretizationLinesVisible;
     }
+    updateGeometryOpacity();
     updateSurfacePolygonOffset();
     clearHoverTooltip();
     publishRenderStats();
@@ -2111,6 +2154,7 @@ export function ThreeGeometryViewport(props) {
     if (discretizationPoints) {
       discretizationPoints.visible = discretizationPointsVisible;
     }
+    updateGeometryOpacity();
     updateSurfacePolygonOffset();
     clearHoverTooltip();
     publishRenderStats();
@@ -2137,6 +2181,16 @@ export function ThreeGeometryViewport(props) {
     resultVectorColor = props.resultVectorColor ?? 0x44ccff;
     if (!ready()) return;
     try { replaceResultVectors(); } catch (error) { reportError(error); }
+  });
+
+  createEffect(() => {
+    const opacity = props.geometryOpacity;
+    geometryOpacity = typeof opacity === "number" && Number.isFinite(opacity)
+      ? Math.max(0, Math.min(1, opacity)) : null;
+    if (!ready()) return;
+    updateGeometryOpacity();
+    clearHoverTooltip();
+    requestRender();
   });
 
   createEffect(() => {

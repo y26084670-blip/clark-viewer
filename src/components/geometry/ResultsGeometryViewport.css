@@ -59,6 +59,33 @@
   cursor: pointer;
 }
 
+.geometry-viewer-transparency {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 150px;
+  color: #edf2f7;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.geometry-viewer-transparency > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.geometry-viewer-transparency output {
+  font-variant-numeric: tabular-nums;
+}
+
+.geometry-viewer-transparency input {
+  width: 100%;
+  margin: 0;
+  accent-color: #8fc7ff;
+}
+
 .geometry-viewer-menu-button:hover,
 .geometry-viewer-select:hover {
   background: #3b4651;
@@ -75,6 +102,7 @@
 .geometry-viewer-view-command:focus-visible,
 .geometry-viewer-source-settings-button:focus-visible,
 .geometry-viewer-options-panel input:focus-visible,
+.geometry-viewer-transparency input:focus-visible,
 .geometry-viewer-time-control input:focus-visible {
   outline: 2px solid #8fc7ff;
   outline-offset: 1px;

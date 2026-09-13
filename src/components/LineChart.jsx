@@ -24,7 +24,7 @@ export function LineChart(props) {
   createEffect(() => {
     const series = props.series ?? [];
     const marker = props.marker;
-    const xLabel = props.xLabel, yLabel = props.yLabel, integerX = props.integerX;
+    const xLabel = props.xLabel, yLabel = props.yLabel, integerX = props.integerX, showLegend = props.showLegend !== false;
     if (!ready()) return;
     const datasets = series.map((item, index) => ({ label: item.label,
       data: item.points, borderColor: colors[index % colors.length], backgroundColor: colors[index % colors.length],
@@ -40,7 +40,7 @@ export function LineChart(props) {
       scales: { x: { type: "linear", min: range.xMin, max: range.xMax,
         ticks: integerX ? { precision: 0 } : {}, title: { display: true, text: xLabel } },
         y: { min: range.yMin, max: range.yMax, title: { display: true, text: yLabel } } },
-      plugins: { legend: { display: true, position: "top" }, tooltip: { callbacks: {
+      plugins: { legend: { display: showLegend, position: "top" }, tooltip: { callbacks: {
         title: items => items[0]?.dataset.label ?? "",
         label: context => series[context.datasetIndex]?.tooltip?.(context.raw)
           ?? `${context.parsed.x}, ${context.parsed.y}`,

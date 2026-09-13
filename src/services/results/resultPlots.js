@@ -30,7 +30,7 @@ export function vectorScene(frames, quantity) {
       if (![...origin, ...vector, magnitude].every(Number.isFinite)) continue;
       origin.forEach((value, axis) => { min[axis] = Math.min(min[axis], value); max[axis] = Math.max(max[axis], value); });
       maximum = Math.max(maximum, magnitude);
-      const savedRow = row * (frame.every ?? 1);
+      const savedRow = frame.rowIndices?.[row] ?? row * (frame.every ?? 1);
       let ls = 0, az = 0, ps = 0;
       if (quantity.group === "regions") {
         ls = Math.floor(savedRow / (record.dp[0][0] * record.dp[1][0]));
@@ -53,23 +53,25 @@ export function vectorScene(frames, quantity) {
   return { vectors, maximumMagnitude: { current: 0, magnetization: maximum }, sceneDiagonal: extent };
 }
 
-// Every fixed index produces a separate curve, including each saved LS copy.
-export function lineSeries(frame, record, quantity, component, direction = "i2") {
+// A selected copy is read as one contiguous LS block. Full unfolding shifts
+// node numbers for each copy, keeping distinct spatial lines disconnected.
+export function lineSeries(frame, record, quantity, component, direction = "i2", { copy = null, unfold = false } = {}) {
   const layout = regionLayout(record);
-  if (frame.count !== layout.count || (frame.every ?? 1) !== 1) throw new Error("Сетка площадки не совпадает с данными");
+  if (copy !== null && (!Number.isSafeInteger(copy) || copy < 0 || copy >= layout.copies)) throw new Error("Образ LS вне сетки площадки");
+  if (frame.count !== (copy === null ? layout.count : layout.planeCount) || (frame.every ?? 1) !== 1) throw new Error("Сетка площадки не совпадает с данными");
   if (!["i1", "i2"].includes(direction)) throw new Error("Неверное направление линии");
   const alongFirst = direction === "i1";
   const length = alongFirst ? layout.n1 : layout.n2;
   const lines = alongFirst ? layout.n2 : layout.n1;
   const fixedName = alongFirst ? "i2" : "i1";
   const series = [];
-  for (let ls = 0; ls < layout.copies; ls++) for (let fixed = 0; fixed < lines; fixed++) {
+  for (let ls = copy ?? 0; ls < (copy === null ? layout.copies : copy + 1); ls++) for (let fixed = 0; fixed < lines; fixed++) {
     const points = Array.from({ length }, (_, i) => {
-      const row = layout.index(alongFirst ? i : fixed, alongFirst ? fixed : i, ls);
-      return { x: i + 1, y: scalarAt(frame, row, quantity, component), row };
+      const row = layout.index(alongFirst ? i : fixed, alongFirst ? fixed : i, copy === null ? ls : 0);
+      return { x: (unfold ? ls * length : 0) + i + 1, y: scalarAt(frame, row, quantity, component), row, node: i + 1 };
     });
     series.push({ label: `№${record.id} ${record.name || "Площадка"} · LS ${ls + 1} · ${fixedName}=${fixed + 1}`, points,
-      tooltip: p => [`${direction}=${p.x}; ${fixedName}=${fixed + 1}; LS=${ls + 1}`,
+      tooltip: p => [`${unfold ? `Узел ${p.x}; ` : ""}${direction}=${p.node}; ${fixedName}=${fixed + 1}; LS=${ls + 1}`,
         `${quantity.label} = ${number(p.y)} ${quantity.unit}`, xyzText(frame, p.row)] });
   }
   return series;

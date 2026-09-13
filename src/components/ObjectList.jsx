@@ -12,6 +12,21 @@ export function ObjectList(props) {
     table.deselectRow(); table.selectRow(wanted);
     applying = false;
   }
+  function clearSelectionOnEmptyClick(event) {
+    const holder = event.target.closest?.(".tabulator-tableholder");
+    if (!built() || !holder || event.target.closest?.(".tabulator-row")) return;
+    // Header controls and rows are excluded above; scrollbar clicks must not
+    // clear the selection either.
+    const bounds = holder.getBoundingClientRect();
+    const x = event.clientX - bounds.left - holder.clientLeft;
+    const y = event.clientY - bounds.top - holder.clientTop;
+    if (x < 0 || y < 0 || x >= holder.clientWidth || y >= holder.clientHeight) return;
+    const previousApplying = applying;
+    applying = true;
+    try { table.deselectRow(); } finally { applying = previousApplying; }
+    // Also update the desired selection while replaceData is pending.
+    props.onSelect?.([]);
+  }
   onMount(() => {
     table = new TabulatorFull(host, {
       height: "100%", layout: "fitColumns", index: "id",
@@ -40,5 +55,5 @@ export function ObjectList(props) {
     if (built() && !applying) synchronizeSelection(selected);
   });
   onCleanup(() => { revision++; table?.destroy(); });
-  return <section class="object-list"><div class="list-heading">{props.title}</div><div class="object-table" ref={host} /></section>;
+  return <section class="object-list"><div class="list-heading">{props.title}</div><div class="object-table" ref={host} onClick={clearSelectionOnEmptyClick} /></section>;
 }

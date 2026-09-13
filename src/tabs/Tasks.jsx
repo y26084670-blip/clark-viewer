@@ -58,7 +58,14 @@ export function Tasks(props) {
           <option value="">Выберите проект</option><For each={projects()}>{item => <option value={item.name}>{item.name}</option>}</For>
         </select>
         <div class="field-label">Список заданий</div>
-        <div class="task-list" role="listbox" aria-label="Список заданий">
+        <div class="task-list" role="listbox" aria-label="Список заданий" onClick={event => {
+          const list = event.currentTarget;
+          if (event.target !== list) return;
+          const bounds = list.getBoundingClientRect();
+          const x = event.clientX - bounds.left - list.clientLeft;
+          const y = event.clientY - bounds.top - list.clientTop;
+          if (x >= 0 && y >= 0 && x < list.clientWidth && y < list.clientHeight) setCandidate(null);
+        }}>
           <For each={tasks()}>{item => <button role="option" aria-selected={candidate()?.handle === item.handle}
             classList={{ selected: candidate()?.handle === item.handle }} onClick={() => setCandidate({ ...item })}>{item.name}</button>}</For>
         </div>

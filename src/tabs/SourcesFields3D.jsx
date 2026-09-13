@@ -14,7 +14,7 @@ export function SourcesFields3D(props) {
   const result = useAsyncResult(() => props.task && ({ task: props.task, quantityKey: quantityKey(),
     selected: quantity().group === "elements" ? props.elements : props.regions, time: props.time, budget: 5000 }), async request => {
     const frames = await readObjectFrames(request);
-    return { scene: vectorScene(frames, QUANTITIES[request.quantityKey]), sampled: frames.some(x => x.frame.every > 1) };
+    return { scene: vectorScene(frames, QUANTITIES[request.quantityKey]), sampled: frames.some(x => x.frame.count < x.originalCount) };
   });
   return <div class="results-layout">
     <aside class="split-list-column">

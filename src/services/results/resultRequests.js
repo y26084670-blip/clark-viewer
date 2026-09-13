@@ -1,5 +1,6 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import { mapResultObjects, QUANTITIES } from "./resultMappings.js";
+import { planResultSampling } from "./resultSampling.js";
 
 export function useAsyncResult(source, load) {
   const [value, setValue] = createSignal(null);
@@ -35,11 +36,26 @@ export async function readObjectFrames({ task, quantityKey, selected, time, budg
   const quantity = QUANTITIES[quantityKey];
   const objects = resultObjects(task, quantityKey).filter(item => selected.includes(item.record.id));
   if (!objects.length) throw new Error("Для выбранных объектов нет этой величины");
-  if (budget && objects.length > budget) throw new Error("Для показа выбрано слишком много объектов. Сократите выделение.");
-  const allowance = Math.max(1, Math.floor((budget ?? Infinity) / objects.length));
-  return Promise.all(objects.map(async object => {
-    const every = Math.max(1, Math.ceil(object.count / allowance));
-    const frame = await task.reader.read({ name: quantity.file, step: time, start: object.start, count: object.count, every });
+  const plans = budget == null ? objects.map(object => ({ object, ranges: [{ start: object.start, count: object.count, every: 1 }] }))
+    : planResultSampling(objects, quantity, budget);
+  return Promise.all(plans.map(async ({ object, ranges }) => {
+    const parts = await Promise.all(ranges.map(range => task.reader.read({ name: quantity.file, step: time, ...range })));
+    let frame = parts[0];
+    if (ranges.length > 1 || frame.every !== 1) {
+      const count = parts.reduce((sum, part) => sum + part.count, 0);
+      const stride = frame.stride;
+      const values = new frame.values.constructor(count * stride);
+      const rowIndices = new Float64Array(count);
+      let offset = 0;
+      parts.forEach((part, index) => {
+        if (part.stride !== stride || part.values.constructor !== values.constructor) throw new Error("Несогласованный формат выборок HDF5");
+        values.set(part.values, offset * stride);
+        const range = ranges[index];
+        for (let row = 0; row < part.count; row++) rowIndices[offset + row] = range.start - object.start + row * range.every;
+        offset += part.count;
+      });
+      frame = { values, rowIndices, stride, count, start: object.start, every: 1 };
+    }
     return { frame, record: object.record, originalCount: object.count };
   }));
 }

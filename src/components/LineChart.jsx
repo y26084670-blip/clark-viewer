@@ -3,6 +3,37 @@ import Chart from "chart.js/auto";
 import { chartPanLimits, chartZoomLimits, clampChartPoint } from "../services/visualization/chartZoom.js";
 
 const colors = ["#1776bd", "#d94943", "#289447", "#994bbc", "#db8b19", "#15a2a2"];
+
+function drawOverlayLegend(chart, series) {
+  const area = chart.chartArea;
+  const entries = series.flatMap((item, index) => item.points.length
+    ? [{ label: item.legendLabel ?? item.label, color: colors[index % colors.length] }] : []);
+  if (!area || !entries.length || area.width <= 12 || area.height <= 12) return;
+  const ctx = chart.ctx, padding = 7, swatchWidth = 22, gap = 7, rowHeight = 18;
+  ctx.save();
+  try {
+    ctx.font = "12px Arial, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    const width = Math.min(area.width - 12, 2 * padding + swatchWidth + gap
+      + Math.max(...entries.map(item => ctx.measureText(item.label).width)));
+    const height = Math.min(area.height - 12, 2 * padding + rowHeight * entries.length);
+    const left = area.right - 6 - width, top = area.top + 6;
+    // Clip the overlay itself: even a tiny chart keeps the legend inside its plot.
+    ctx.beginPath(); ctx.rect(left, top, width, height); ctx.clip();
+    ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+    ctx.fillRect(left, top, width, height);
+    const textWidth = width - 2 * padding - swatchWidth - gap;
+    entries.forEach((item, index) => {
+      const y = top + padding + rowHeight * (index + 0.5);
+      ctx.strokeStyle = item.color; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(left + padding, y); ctx.lineTo(left + padding + swatchWidth, y); ctx.stroke();
+      ctx.fillStyle = "#303b44";
+      if (textWidth > 0) ctx.fillText(item.label, left + padding + swatchWidth + gap, y, textWidth);
+    });
+  } finally { ctx.restore(); }
+}
+
 export function LineChart(props) {
   let canvas, chart, drag, skipContextMenu = false;
   const [ready, setReady] = createSignal(false);
@@ -44,6 +75,7 @@ export function LineChart(props) {
   createEffect(() => {
     const series = props.series ?? [];
     const marker = props.marker;
+    const overlayLegend = props.legendMode === "overlay";
     const xLabel = props.xLabel, yLabel = props.yLabel, integerX = props.integerX;
     if (!ready()) return;
     const datasets = series.map((item, index) => ({ label: item.label,
@@ -57,13 +89,14 @@ export function LineChart(props) {
     cancelSelection();
     chart?.destroy();
     chart = new Chart(canvas, { type: "scatter", data: { datasets },
-      plugins: [{ id: "selectionFrame", beforeEvent: () => drag ? false : undefined }], options: {
+      plugins: [{ id: "selectionFrame", beforeEvent: () => drag ? false : undefined },
+        ...(overlayLegend ? [{ id: "overlayLegend", afterDatasetsDraw: current => drawOverlayLegend(current, series) }] : [])], options: {
       responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
       onResize: cancelSelection,
       scales: { x: { type: "linear", min: range.xMin, max: range.xMax,
         ticks: integerX ? { precision: 0 } : {}, title: { display: true, text: xLabel } },
         y: { min: range.yMin, max: range.yMax, title: { display: true, text: yLabel } } },
-      plugins: { legend: { display: untrack(showLegend), position: "top" }, tooltip: { callbacks: {
+      plugins: { legend: { display: !overlayLegend && untrack(showLegend), position: "top" }, tooltip: { callbacks: {
         title: items => items[0]?.dataset.label ?? "",
         label: context => series[context.datasetIndex]?.tooltip?.(context.raw)
           ?? `${context.parsed.x}, ${context.parsed.y}`,
@@ -71,7 +104,7 @@ export function LineChart(props) {
     } });
   });
   createEffect(() => {
-    const range = limits(), legend = showLegend();
+    const range = limits(), legend = props.legendMode !== "overlay" && showLegend();
     if (!ready() || !chart) return;
     cancelSelection();
     chart.options.plugins.legend.display = legend;
@@ -175,7 +208,9 @@ export function LineChart(props) {
       <div class="chart-scale-controls">
         {props.toolbarEnd}
         <button type="button" onClick={resetLimits} title="Автоматические пределы по обеим осям">Авто</button>
-        <label><input type="checkbox" checked={showLegend()} onChange={event => setShowLegend(event.currentTarget.checked)} />Показать легенду</label>
+        <Show when={props.legendMode !== "overlay"}>
+          <label><input type="checkbox" checked={showLegend()} onChange={event => setShowLegend(event.currentTarget.checked)} />Показать легенду</label>
+        </Show>
       </div>
     </div>
     <Show when={props.status}><div class="plot-status" role="status">{props.status}</div></Show>

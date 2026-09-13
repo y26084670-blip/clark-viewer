@@ -22,6 +22,7 @@ import {
   geometryCameraFrame,
   normalizeGeometryCameraCommand,
 } from "../../services/visualization/geometryCameraView.js";
+import { fitCameraToVisibleObjects } from "../../services/visualization/geometryCameraFit.js";
 import {
   findPointMetadataRange,
   findVertexMetadataRange,
@@ -55,7 +56,6 @@ export const GEOMETRY_DISCRETIZATION_POINT_BUDGET =
 const INSTANCE_CATEGORIES = Object.freeze(["base", "copy", "mirror"]);
 const DEFAULT_PROJECTION = "orthographic";
 const PERSPECTIVE_FOV = 45;
-const CAMERA_FRAME_PADDING = 1.08;
 const AXES_GIZMO_SIZE = 104;
 const AXES_GIZMO_MARGIN = 8;
 const VERTEX_POINT_SIZE = 9;
@@ -1046,68 +1046,6 @@ function worldUnitsPerPixel(camera, target, viewportHeight) {
   return 2 * distance * Math.tan(verticalFov / 2) / height;
 }
 
-function normalizeFramePadding(value) {
-  return Number.isFinite(value) && value >= 1
-    ? value
-    : CAMERA_FRAME_PADDING;
-}
-
-function fitCameraToBounds(
-  THREE,
-  camera,
-  controls,
-  bounds,
-  targetOverride,
-  framePadding,
-) {
-  if (!bounds || bounds.isEmpty()) return false;
-
-  const sphere = bounds.getBoundingSphere(new THREE.Sphere());
-  const target = targetOverride?.clone?.() ?? sphere.center;
-  const padding = normalizeFramePadding(framePadding);
-  const radius = Math.max(
-    sphere.radius + sphere.center.distanceTo(target),
-    1e-6,
-  );
-  let distance;
-
-  if (camera.isOrthographicCamera) {
-    const aspect = Math.max(
-      (camera.right - camera.left) / (camera.top - camera.bottom),
-      1e-6,
-    );
-    const halfHeight = padding * radius * Math.max(1, 1 / aspect);
-    camera.left = -halfHeight * aspect;
-    camera.right = halfHeight * aspect;
-    camera.top = halfHeight;
-    camera.bottom = -halfHeight;
-    camera.zoom = 1;
-    distance = Math.max(radius * 3, 1);
-  } else {
-    const verticalFov = THREE.MathUtils.degToRad(camera.fov);
-    const horizontalFov = 2 * Math.atan(
-      Math.tan(verticalFov / 2) * camera.aspect,
-    );
-    distance = padding * Math.max(
-      radius / Math.tan(verticalFov / 2),
-      radius / Math.tan(Math.max(horizontalFov, 1e-6) / 2),
-    );
-    if (sphere.radius === 0) distance = Math.max(distance, 1);
-  }
-
-  const direction = camera.position.clone().sub(controls.target);
-  if (direction.lengthSq() < 1e-12) direction.set(1, 1, 1);
-  direction.normalize();
-
-  controls.target.copy(target);
-  camera.position.copy(target).addScaledVector(direction, distance);
-  camera.near = Math.max(radius / 10_000, 1e-5);
-  camera.far = Math.max(distance + radius * 10, radius * 1_000, 1);
-  camera.updateProjectionMatrix();
-  controls.update();
-  return true;
-}
-
 function createCamera(THREE, projection, aspect) {
   const camera = projection === "perspective"
     ? new THREE.PerspectiveCamera(
@@ -1323,14 +1261,16 @@ export function ThreeGeometryViewport(props) {
     if (
       props.autoFit === true
       && controls
-      && currentBounds
-      && !currentBounds.isEmpty()
     ) {
-      fitCameraToBounds(THREE, camera, controls, currentBounds);
+      fitVisibleObjects();
     }
     setHoverTooltip(null);
     requestRender();
   };
+
+  const fitVisibleObjects = (target, padding) => fitCameraToVisibleObjects(
+    THREE, camera, controls, [geometryRoot, helperRoot], { target, padding },
+  );
 
   const cancelPendingPick = () => {
     pendingPointer = null;
@@ -1813,15 +1753,7 @@ export function ThreeGeometryViewport(props) {
     activeProjection = projection;
     controls.object = camera;
 
-    if (currentBounds && !currentBounds.isEmpty()) {
-      fitCameraToBounds(
-        THREE,
-        camera,
-        controls,
-        currentBounds,
-        preservedTarget,
-      );
-    } else {
+    if (!fitVisibleObjects(preservedTarget)) {
       controls.update();
     }
     requestRender();
@@ -2036,14 +1968,6 @@ export function ThreeGeometryViewport(props) {
     }
 
     currentBounds = new THREE.Box3().setFromObject(geometryRoot);
-    if (!currentBounds.isEmpty()) {
-      if (!hasFramedGeometry || props.autoFit === true) {
-        fitCameraToBounds(THREE, camera, controls, currentBounds);
-        hasFramedGeometry = true;
-      }
-    } else {
-      hasFramedGeometry = false;
-    }
 
     const truncated = selectedInstances - invalidInstances > renderedInstances;
     baseRenderStats = {
@@ -2063,6 +1987,11 @@ export function ThreeGeometryViewport(props) {
     replaceResultVectors();
     replaceResultScalars();
     updateGeometryOpacity();
+    if (!hasFramedGeometry || props.autoFit === true) {
+      hasFramedGeometry = fitVisibleObjects();
+    } else if (currentBounds.isEmpty() && !resultVectorRoot && !resultScalarRoot) {
+      hasFramedGeometry = false;
+    }
     publishRenderStats();
     if (!contextLost) {
       setError("");
@@ -2072,22 +2001,15 @@ export function ThreeGeometryViewport(props) {
   };
 
   const fitAll = () => {
-    if (!ready() || !currentBounds) return;
+    if (!ready()) return;
     clearHoverTooltip();
-    fitCameraToBounds(
-      THREE,
-      camera,
-      controls,
-      currentBounds,
-      undefined,
-      props.fitAllPadding,
-    );
+    fitVisibleObjects(undefined, props.fitAllPadding);
     requestRender();
   };
 
   const applyViewRequest = (request) => {
     const command = normalizeGeometryCameraCommand(request?.command);
-    if (!ready() || !currentBounds || !command) return;
+    if (!ready() || !command) return;
     if (command === GEOMETRY_CAMERA_COMMANDS.FIT_ALL) {
       fitAll();
       return;
@@ -2098,7 +2020,7 @@ export function ThreeGeometryViewport(props) {
     camera.up.fromArray(frame.up);
     camera.position.fromArray(frame.offset).add(controls.target);
     rebuildOrbitControls();
-    fitCameraToBounds(THREE, camera, controls, currentBounds);
+    fitVisibleObjects();
     clearHoverTooltip();
     requestRender();
   };

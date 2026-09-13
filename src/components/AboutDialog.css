@@ -1,0 +1,224 @@
+.about-button {
+    flex: 0 0 30px;
+    width: 30px;
+    height: 27px;
+    min-height: 0;
+    margin-left: auto;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.about-button:focus-visible {
+    outline: 2px solid #466c91;
+    outline-offset: 1px;
+}
+
+.about-button-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.about-button:hover .about-button-image {
+    filter: brightness(1.08);
+}
+
+.about-button:active .about-button-image {
+    transform: translateY(1px);
+}
+
+.about-dialog {
+    box-sizing: border-box;
+    width: max-content;
+    max-width: calc(100vw - 48px);
+    margin: auto;
+    padding: 18px 20px;
+    border: 1px solid #596773;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+    background: #20262d;
+    color: #f0f4f7;
+}
+
+.about-dialog[open] {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+}
+
+.about-dialog::backdrop {
+    background: rgba(0, 0, 0, .42);
+}
+
+.about-title {
+    margin: 0;
+    font-size: 20px;
+}
+
+.about-description {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.45;
+    text-align: center;
+}
+
+.about-description > span {
+    display: block;
+    white-space: nowrap;
+}
+
+.about-separator {
+    align-self: stretch;
+    height: 0;
+    margin: 0 6px;
+    border-top: 1px dashed rgba(240, 244, 247, .38);
+}
+
+.about-version {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.about-credits {
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 14px;
+    text-align: center;
+}
+
+.about-curator-stack {
+    align-self: center;
+    display: grid;
+    grid-template-columns: max-content;
+    gap: 4px;
+}
+
+.about-close-button {
+    box-sizing: border-box;
+    width: 100%;
+    margin-top: 8px;
+    padding: 4px 16px;
+    border: 1px solid #7f8d99;
+    border-radius: 3px;
+    color: #f0f4f7;
+    background: #3a4650;
+    cursor: pointer;
+}
+
+.about-close-button:hover,
+.about-close-button:focus-visible {
+    border-color: #a9bac7;
+    background: #4a5965;
+}
+
+.about-admin-button {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 2px 8px;
+    border: 0;
+    color: rgba(240, 244, 247, .55);
+    background: transparent;
+    font-size: 10px;
+    cursor: pointer;
+}
+
+.about-admin-button:hover:not(:disabled),
+.about-admin-button:focus-visible {
+    color: rgba(240, 244, 247, .9);
+    text-decoration: underline;
+}
+
+.about-admin-button:disabled {
+    opacity: .45;
+    cursor: default;
+}
+
+.admin-dialog {
+    box-sizing: border-box;
+    width: min(320px, calc(100vw - 48px));
+    margin: auto;
+    padding: 18px 20px;
+    border: 1px solid #596773;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+    background: #20262d;
+    color: #f0f4f7;
+}
+
+.admin-dialog::backdrop {
+    background: rgba(0, 0, 0, .42);
+}
+
+.admin-form {
+    display: grid;
+    gap: 10px;
+}
+
+.admin-form h2 {
+    margin: 0 0 4px;
+    font-size: 18px;
+    text-align: center;
+}
+
+.admin-form label {
+    font-size: 13px;
+}
+
+.admin-form input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 5px 7px;
+    border: 1px solid #7f8d99;
+    border-radius: 3px;
+    color: #111;
+    background: #fff;
+}
+
+.admin-error {
+    min-height: 16px;
+    color: #ffb4ab;
+    font-size: 12px;
+    text-align: center;
+}
+
+.admin-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.admin-actions button {
+    padding: 4px 12px;
+    border: 1px solid #7f8d99;
+    border-radius: 3px;
+    color: #f0f4f7;
+    background: #3a4650;
+    cursor: pointer;
+}
+
+.admin-actions button:hover,
+.admin-actions button:focus-visible {
+    border-color: #a9bac7;
+    background: #4a5965;
+}
+
+/* Override the viewer's shared button sizing and hover background. */
+.about-close-button,
+.about-admin-button,
+.admin-actions button {
+    min-height: 0;
+}
+
+.about-button:hover,
+.about-admin-button:hover {
+    background: transparent;
+}

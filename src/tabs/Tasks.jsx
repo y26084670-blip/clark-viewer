@@ -45,6 +45,7 @@ export function Tasks(props) {
       error: model.status === "rejected" ? model.reason.message : "" };
   });
   async function load() {
+    if (props.busy) return;
     const item = candidate();
     if (item) props.onLoad(item.handle, `${root().name}/${project()}/${item.name}`);
   }
@@ -67,7 +68,9 @@ export function Tasks(props) {
           if (x >= 0 && y >= 0 && x < list.clientWidth && y < list.clientHeight) setCandidate(null);
         }}>
           <For each={tasks()}>{item => <button role="option" aria-selected={candidate()?.handle === item.handle}
-            classList={{ selected: candidate()?.handle === item.handle }} onClick={() => setCandidate({ ...item })}>{item.name}</button>}</For>
+            classList={{ selected: candidate()?.handle === item.handle }} onClick={() => setCandidate({ ...item })}
+            onDblClick={() => { if (candidate()?.handle === item.handle) void load(); }}
+            title="Двойной щелчок — загрузить задание для просмотра">{item.name}</button>}</For>
         </div>
         <button class="load-button" disabled={!candidate() || props.busy} onClick={load}>{props.busy ? "Загрузка…" : "Загрузить для просмотра"}</button>
         <Show when={props.loadedHandle === candidate()?.handle && props.loadedHandle}><div class="loaded-note">✓ Задание загружено</div></Show>

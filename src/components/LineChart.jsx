@@ -53,6 +53,7 @@ function drawOverlayLegend(chart, series) {
 
 export function LineChart(props) {
   let canvas, chart, drag, skipContextMenu = false, legendHitBoxes = [];
+  let currentSeries = [], overlayLegend = false, autoPending = true;
   const [ready, setReady] = createSignal(false);
   const [menu, setMenu] = createSignal(null);
   const [message, setMessage] = createSignal("");
@@ -81,11 +82,20 @@ export function LineChart(props) {
     const finished = releaseSelection();
     if (finished?.mode === "pan" && finished.currentLimits) applyChartLimits(finished.previousLimits);
   }
+  function captureAutoLimits() {
+    if (!props.freezeAutoScale || !autoPending || !chart
+      || !currentSeries.some(series => series.points.some(point => Number.isFinite(point.x) && Number.isFinite(point.y)))) return;
+    autoPending = false;
+    setLimits({ xMin: chart.scales.x.min, xMax: chart.scales.x.max,
+      yMin: chart.scales.y.min, yMax: chart.scales.y.max });
+  }
   function resetLimits() {
-    cancelSelection(); setLimits({});
+    cancelSelection(); autoPending = true; setLimits({});
   }
   // Keep the chosen range when time or data changes, but reset it for different axes.
-  createEffect(on(() => [props.xLabel, props.yLabel, props.integerX], resetLimits));
+  createEffect(on(() => [props.xLabel, props.yLabel, props.integerX], () => {
+    if (!props.freezeAutoScale) resetLimits();
+  }));
   const cancelOnEscape = event => {
     if (!event.defaultPrevented && !event.isComposing && event.code === "Escape") cancelSelection();
   };
@@ -93,23 +103,25 @@ export function LineChart(props) {
   createEffect(() => {
     const series = props.series ?? [];
     const marker = props.marker;
-    const overlayLegend = props.legendMode === "overlay";
+    overlayLegend = props.legendMode === "overlay";
+    currentSeries = series;
     const xLabel = props.xLabel, yLabel = props.yLabel, integerX = props.integerX;
     if (!ready()) return;
-    const datasets = series.map((item, index) => ({ label: item.label,
+    const datasets = series.map((item, index) => ({ _seriesKey: `series:${item.label}:${index}`, label: item.label,
       data: item.points, borderColor: colors[index % colors.length], backgroundColor: colors[index % colors.length],
       showLine: item.showLine ?? true, pointRadius: item.pointRadius ?? (item.points.length === 1 ? 4 : 0),
       pointHitRadius: 5, borderWidth: item.borderWidth ?? 1.6, spanGaps: false,
       order: item.showLine === false ? 1 : 2 }));
-    if (marker?.points?.length) datasets.push({ label: "Текущий момент", data: marker.points,
+    if (marker?.points?.length) datasets.push({ _seriesKey: "marker", label: "Текущий момент", data: marker.points,
       borderColor: "#161616", backgroundColor: "#f0ac24", pointRadius: 6, showLine: false });
     const range = untrack(limits);
     cancelSelection();
     legendHitBoxes = [];
-    chart?.destroy();
-    chart = new Chart(canvas, { type: "scatter", data: { datasets },
+    if (!chart) chart = new Chart(canvas, { type: "scatter", data: { datasets },
       plugins: [{ id: "selectionFrame", beforeEvent: () => drag ? false : undefined },
-        ...(overlayLegend ? [{ id: "overlayLegend", afterDatasetsDraw: current => { legendHitBoxes = drawOverlayLegend(current, series); } }] : [])], options: {
+        { id: "overlayLegend", afterDatasetsDraw: current => {
+          legendHitBoxes = overlayLegend ? drawOverlayLegend(current, currentSeries) : [];
+        } }], options: {
       responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
       onResize: cancelSelection,
       scales: { x: { type: "linear", min: range.xMin, max: range.xMax,
@@ -117,10 +129,21 @@ export function LineChart(props) {
         y: { min: range.yMin, max: range.yMax, title: { display: true, text: yLabel } } },
       plugins: { legend: { display: !overlayLegend && untrack(showLegend), position: "top" }, tooltip: { callbacks: {
         title: items => items[0]?.dataset.label ?? "",
-        label: context => series[context.datasetIndex]?.tooltip?.(context.raw)
+        label: context => currentSeries[context.datasetIndex]?.tooltip?.(context.raw)
           ?? `${context.parsed.x}, ${context.parsed.y}`,
       } } },
     } });
+    else {
+      // Keep the canvas, Chart instance and dataset metadata (including visibility).
+      const previous = new Map(chart.data.datasets.map(dataset => [dataset._seriesKey, dataset]));
+      chart.data.datasets = datasets.map(dataset => Object.assign(previous.get(dataset._seriesKey) ?? {}, dataset));
+      chart.options.scales.x.title.text = xLabel;
+      chart.options.scales.y.title.text = yLabel;
+      chart.options.scales.x.ticks = integerX ? { precision: 0 } : {};
+      chart.options.plugins.legend.display = !overlayLegend && untrack(showLegend);
+      applyChartLimits(range);
+    }
+    captureAutoLimits();
   });
   createEffect(() => {
     const range = limits(), legend = props.legendMode !== "overlay" && showLegend();
@@ -128,6 +151,7 @@ export function LineChart(props) {
     cancelSelection();
     chart.options.plugins.legend.display = legend;
     applyChartLimits(range);
+    captureAutoLimits();
   });
   onCleanup(() => {
     cancelSelection(); window.removeEventListener("keydown", cancelOnEscape); chart?.destroy();
@@ -254,7 +278,7 @@ export function LineChart(props) {
       {props.toolbar}
       <div class="chart-scale-controls">
         {props.toolbarEnd}
-        <button type="button" onClick={resetLimits} title="Автоматические пределы по обеим осям">Авто</button>
+        <button type="button" onClick={resetLimits} title={props.freezeAutoScale ? "Подобрать пределы по показанным данным и сохранить их при смене времени" : "Автоматические пределы по обеим осям"}>Авто</button>
         <Show when={props.legendMode !== "overlay"}>
           <label><input type="checkbox" checked={showLegend()} onChange={event => setShowLegend(event.currentTarget.checked)} />Показать легенду</label>
         </Show>

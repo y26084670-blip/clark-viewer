@@ -1,7 +1,8 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
-import { mapResultObjects, QUANTITIES } from "./resultMappings.js";
+import { mapResultObjects, QUANTITIES, regionLayout } from "./resultMappings.js";
 import { planResultSampling } from "./resultSampling.js";
 import { createResultFrameController } from "./resultFrameController.js";
+import { lineSeries } from "./resultPlots.js";
 import { isFmm } from "./fmmCharacteristics.js";
 
 export function useAsyncResult(source, load) {
@@ -24,7 +25,7 @@ export function useAsyncResult(source, load) {
   return { value, error, loading };
 }
 
-// Opt-in for 3D: the other tabs keep useAsyncResult's existing reset semantics.
+// Opt-in for 3D and line fields; other tabs keep useAsyncResult semantics.
 export function useResultFrame(source, load) {
   const [state, setState] = createSignal({ frame: null, requested: null, loading: false, error: "" });
   const controller = createResultFrameController({ load, publish: setState });
@@ -78,4 +79,24 @@ export async function readObjectFrames({ task, quantityKey, selected, time, budg
     }
     return { frame, record: object.record, originalCount: object.count };
   }));
+}
+
+// Keep all slices inside one controller operation, including a failed slice.
+export async function readLineFrame(request) {
+  const quantity = QUANTITIES[request.quantityKey];
+  if (request.allCopies) {
+    const frames = await readObjectFrames(request);
+    return { series: frames.flatMap(({ frame, record }) => lineSeries(frame, record, quantity,
+      request.component, request.direction, { unfold: true })), skipped: [] };
+  }
+  const objects = resultObjects(request.task, request.quantityKey).filter(item => request.selected.includes(item.record.id));
+  if (!objects.length) throw new Error("Для выбранных объектов нет этой величины");
+  const available = objects.filter(item => request.copy < regionLayout(item.record).copies);
+  const series = await completeReads(available.map(async object => {
+    const layout = regionLayout(object.record);
+    const frame = await request.task.reader.read({ name: quantity.file, step: request.time,
+      start: object.start + request.copy * layout.planeCount, count: layout.planeCount });
+    return lineSeries(frame, object.record, quantity, request.component, request.direction, { copy: request.copy });
+  }));
+  return { series: series.flat(), skipped: objects.filter(item => !available.includes(item)).map(item => `№${item.record.id}`) };
 }

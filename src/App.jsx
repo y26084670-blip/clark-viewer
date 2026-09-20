@@ -43,7 +43,7 @@ export default function App() {
         }
       }
       activeReader?.close(); activeReader = reader;
-      setTime(0); setElements(data.elements.length ? [data.elements[0].id] : []); setRegions(data.regions.length ? [data.regions[0].id] : []); setCoils(null);
+      setTime(0); setElements(data.elements.map(row => row.id)); setRegions(data.regions.map(row => row.id)); setCoils(null);
       setTask({ ...data, reader, metadata }); setPath(newPath);
     } catch (error) {
       reader?.close(); if (revision === loadRevision) setError(`Не удалось загрузить задание: ${error.message}`);

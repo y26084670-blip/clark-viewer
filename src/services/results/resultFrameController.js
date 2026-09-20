@@ -2,6 +2,10 @@
 // owned by the task; an already executing HDF5 read is allowed to finish.
 export function sameFrameContext(a, b) {
   if (!a || !b || a.task !== b.task || a.quantityKey !== b.quantityKey || a.budget !== b.budget) return false;
+  // Plot choices belong to the frame context; time alone may reuse the old frame.
+  for (const key of ["component", "direction", "copy", "allCopies"]) {
+    if (a[key] !== b[key]) return false;
+  }
   const left = [...a.selected].sort((x, y) => x - y);
   const right = [...b.selected].sort((x, y) => x - y);
   return left.length === right.length && left.every((id, i) => id === right[i]);

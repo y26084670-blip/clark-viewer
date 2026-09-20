@@ -1,6 +1,7 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import { mapResultObjects, QUANTITIES } from "./resultMappings.js";
 import { planResultSampling } from "./resultSampling.js";
+import { createResultFrameController } from "./resultFrameController.js";
 import { isFmm } from "./fmmCharacteristics.js";
 
 export function useAsyncResult(source, load) {
@@ -23,6 +24,24 @@ export function useAsyncResult(source, load) {
   return { value, error, loading };
 }
 
+// Opt-in for 3D: the other tabs keep useAsyncResult's existing reset semantics.
+export function useResultFrame(source, load) {
+  const [state, setState] = createSignal({ frame: null, requested: null, loading: false, error: "" });
+  const controller = createResultFrameController({ load, publish: setState });
+  createEffect(() => controller.request(source()));
+  onCleanup(() => controller.close());
+  return state;
+}
+
+// Drain every slice of a frame, including when one slice fails. Otherwise a
+// rejected Promise.all can leave old reads queued while the next frame starts.
+async function completeReads(promises) {
+  const results = await Promise.allSettled(promises);
+  const failed = results.find(result => result.status === "rejected");
+  if (failed) throw failed.reason;
+  return results.map(result => result.value);
+}
+
 export function resultObjects(task, quantityKey) {
   const quantity = QUANTITIES[quantityKey];
   const metadata = task.metadata?.[quantity.file];
@@ -39,8 +58,8 @@ export async function readObjectFrames({ task, quantityKey, selected, time, budg
   if (!objects.length) throw new Error("Для выбранных объектов нет этой величины");
   const plans = budget == null ? objects.map(object => ({ object, ranges: [{ start: object.start, count: object.count, every: 1 }] }))
     : planResultSampling(objects, quantity, budget);
-  return Promise.all(plans.map(async ({ object, ranges }) => {
-    const parts = await Promise.all(ranges.map(range => task.reader.read({ name: quantity.file, step: time, ...range })));
+  return completeReads(plans.map(async ({ object, ranges }) => {
+    const parts = await completeReads(ranges.map(range => task.reader.read({ name: quantity.file, step: time, ...range })));
     let frame = parts[0];
     if (ranges.length > 1 || frame.every !== 1) {
       const count = parts.reduce((sum, part) => sum + part.count, 0);

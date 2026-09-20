@@ -841,6 +841,7 @@ export function ResultsGeometryViewport(props) {
         <div class="geometry-viewer-canvas-region">
           <ThreeGeometryViewport
             scene={displayScene()}
+            geometryRevision={props.model}
             resultVectorScene={props.resultVectorScene}
             resultScalarScene={props.resultScalarScene}
             resultPickingOnly={props.resultPickingOnly}

@@ -4,6 +4,7 @@ import {
   createSignal,
   onCleanup,
   onMount,
+  untrack,
 } from "solid-js";
 
 import {
@@ -147,6 +148,7 @@ function createPrescribedSourceVectors(
   scales,
   maximumMagnitude,
   colorOverride,
+  previousRoot = null,
 ) {
   const maximum = maximumMagnitude ?? { current: 0, magnetization: 0 };
   const positions = { current: [], magnetization: [] };
@@ -187,39 +189,46 @@ function createPrescribedSourceVectors(
     );
     tip.copy(origin).addScaledVector(direction, length);
     target.push(origin.x, origin.y, origin.z, tip.x, tip.y, tip.z);
-    // Thin vectors are single sticks. Extra arrowhead segments obscure dense fields.
   }
 
-  if (
-    positions.current.length === 0 && positions.magnetization.length === 0 &&
-    solidArrows.current.length === 0 && solidArrows.magnetization.length === 0
-  ) {
-    return null;
-  }
-
-  const root = new THREE.Group();
+  const root = previousRoot ?? new THREE.Group();
   root.name = "prescribed-source-vectors";
+  if (root.userData.style !== style) {
+    for (const child of [...root.children]) {
+      root.remove(child);
+      disposeObject(child);
+    }
+    root.userData.style = style;
+  }
+  const capacityFor = count => 2 ** Math.ceil(Math.log2(Math.max(1, count)));
   for (const [kind, color] of [["current", colorOverride ?? 0xff0000], ["magnetization", colorOverride ?? 0x00cc44]]) {
     if (style === "solid") {
       const arrows = solidArrows[kind];
+      const meshes = ["shaft", "head"].map(part => {
+        const name = `prescribed-source-${kind}-${part}`;
+        let mesh = root.getObjectByName(name);
+        if (!mesh && arrows.length === 0) return null;
+        if (!mesh || mesh.instanceMatrix.count < arrows.length) {
+          const geometry = mesh?.geometry ?? (part === "shaft"
+            ? new THREE.CylinderGeometry(1, 1, 1, 8)
+            : new THREE.ConeGeometry(1, 1, 12));
+          const material = mesh?.material ?? new THREE.MeshLambertMaterial({
+            color, depthTest: true, depthWrite: true, transparent: true, opacity: 1,
+          });
+          if (mesh) { root.remove(mesh); mesh.dispose(); }
+          mesh = new THREE.InstancedMesh(geometry, material, capacityFor(arrows.length));
+          mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+          mesh.name = name;
+          mesh.renderOrder = 14;
+          root.add(mesh);
+        }
+        mesh.material.color.setHex(color);
+        mesh.count = arrows.length;
+        mesh.visible = arrows.length > 0;
+        return mesh;
+      });
+      const [shafts, heads] = meshes;
       if (arrows.length === 0) continue;
-      const materialOptions = {
-        color,
-        depthTest: true,
-        depthWrite: true,
-        transparent: true,
-        opacity: 1,
-      };
-      const shafts = new THREE.InstancedMesh(
-        new THREE.CylinderGeometry(1, 1, 1, 8),
-        new THREE.MeshLambertMaterial(materialOptions),
-        arrows.length,
-      );
-      const heads = new THREE.InstancedMesh(
-        new THREE.ConeGeometry(1, 1, 12),
-        new THREE.MeshLambertMaterial(materialOptions),
-        arrows.length,
-      );
       const up = new THREE.Vector3(0, 1, 0);
       const rotation = new THREE.Quaternion();
       const position = new THREE.Vector3();
@@ -228,102 +237,161 @@ function createPrescribedSourceVectors(
       for (let index = 0; index < arrows.length; index += 1) {
         const { item, length } = arrows[index];
         origin.fromArray(item.origin);
-        direction.set(
-          item.vector[0] / item.magnitude,
-          item.vector[1] / item.magnitude,
-          item.vector[2] / item.magnitude,
-        ).normalize();
+        direction.set(...item.vector).divideScalar(item.magnitude).normalize();
         rotation.setFromUnitVectors(up, direction);
-
         const shaftLength = length * 0.75;
         position.copy(origin).addScaledVector(direction, shaftLength * 0.5);
         scale.set(length * 0.025, shaftLength, length * 0.025);
         shafts.setMatrixAt(index, matrix.compose(position, rotation, scale));
-
         const headLength = length * 0.25;
-        position.copy(origin).addScaledVector(
-          direction,
-          shaftLength + headLength * 0.5,
-        );
+        position.copy(origin).addScaledVector(direction, shaftLength + headLength * 0.5);
         scale.set(length * 0.125, headLength, length * 0.125);
         heads.setMatrixAt(index, matrix.compose(position, rotation, scale));
       }
-      for (const [part, mesh] of [["shaft", shafts], ["head", heads]]) {
-        mesh.name = `prescribed-source-${kind}-${part}`;
-        mesh.renderOrder = 14;
+      for (const mesh of meshes) {
         mesh.instanceMatrix.needsUpdate = true;
         mesh.computeBoundingSphere();
-        root.add(mesh);
       }
       continue;
     }
-    if (positions[kind].length === 0) continue;
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(new Float32Array(positions[kind]), 3),
-    );
-    const lines = new THREE.LineSegments(
-      geometry,
-      new THREE.LineBasicMaterial({
-        color,
-        depthTest: true,
-        depthWrite: false,
-        transparent: true,
-        opacity: 1,
-      }),
-    );
-    lines.name = `prescribed-source-${kind}`;
+    const values = positions[kind];
+    const name = `prescribed-source-${kind}`;
+    let lines = root.getObjectByName(name);
+    if (!lines && values.length === 0) continue;
+    if (!lines) {
+      lines = new THREE.LineSegments(new THREE.BufferGeometry(),
+        new THREE.LineBasicMaterial({
+          color, depthTest: true, depthWrite: false, transparent: true, opacity: 1,
+        }));
+      lines.name = name;
+      lines.renderOrder = 14;
+      // Active drawRange may occupy only part of the retained allocation.
+      lines.frustumCulled = false;
+      root.add(lines);
+    }
+    let attribute = lines.geometry.getAttribute("position");
+    if (!attribute || attribute.array.length < values.length) {
+      lines.geometry.dispose();
+      lines.geometry = new THREE.BufferGeometry();
+      attribute = new THREE.BufferAttribute(new Float32Array(capacityFor(values.length / 3) * 3), 3);
+      attribute.setUsage(THREE.DynamicDrawUsage);
+      lines.geometry.setAttribute("position", attribute);
+    }
+    lines.material.color.setHex(color);
     lines.userData.resultVectors = thinVectors[kind];
-    lines.renderOrder = 14;
-    root.add(lines);
+    attribute.array.set(values);
+    attribute.needsUpdate = true;
+    lines.geometry.setDrawRange(0, values.length / 3);
+    lines.visible = values.length > 0;
+    lines.geometry.computeBoundingSphere();
   }
   return root;
 }
+
+// Retain a fixed reference frame: motion never compounds Float32 round-off from
+// the preceding displayed step. Each range is contiguous per physical image.
+function captureMotionBuffer(THREE, object, ranges, worldPositions = null) {
+  const attribute = object.geometry.getAttribute("position");
+  attribute.setUsage(THREE.DynamicDrawUsage);
+  return {
+    object, worldPositions,
+    reference: new Float64Array(worldPositions ?? attribute.array),
+    ranges: ranges.map(range => ({
+      ...range,
+      inverses: range.instances.map(instance => new THREE.Matrix4().fromArray(instance.matrix).invert()),
+    })),
+  };
+}
+
+function updateMotionBuffer(THREE, buffer, resolveInstances) {
+  const attribute = buffer.object.geometry.getAttribute("position");
+  const matrix = new THREE.Matrix4();
+  const vertex = new THREE.Vector3();
+  for (const range of buffer.ranges) {
+    const instances = resolveInstances(range.source, range.instances);
+    const span = (range.end - range.start) / instances.length;
+    for (let image = 0; image < instances.length; image += 1) {
+      matrix.fromArray(instances[image].matrix).multiply(range.inverses[image]);
+      for (let index = 0; index < span; index += 1) {
+        const offset = (range.start + image * span + index) * 3;
+        vertex.fromArray(buffer.reference, offset).applyMatrix4(matrix);
+        vertex.toArray(attribute.array, offset);
+        if (buffer.worldPositions) vertex.toArray(buffer.worldPositions, offset);
+      }
+    }
+  }
+  attribute.needsUpdate = true;
+  buffer.object.geometry.computeBoundingBox();
+  buffer.object.geometry.computeBoundingSphere();
+}
+
+export { createPrescribedSourceVectors, captureMotionBuffer, updateMotionBuffer };
 
 function prescribedSourceScale(value) {
   const scale = Number(value ?? 1);
   return Number.isFinite(scale) ? Math.max(0.1, Math.min(10, scale)) : 1;
 }
 
-function createResultScalarPoints(THREE, points, minimum, maximum) {
-  const positions = new Float32Array(points.length * 3);
-  const colors = new Float32Array(positions.length);
-  const color = new THREE.Color();
+function updateResultPoints(THREE, previous, points, { scalar = false, minimum, maximum, color = 0x44ccff } = {}) {
+  let nodes = previous;
+  if (!nodes) {
+    let pointMaterial;
+    if (scalar) {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 32;
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#ffffff";
+      context.beginPath();
+      context.arc(16, 16, 15.5, 0, Math.PI * 2);
+      context.fill();
+      pointMaterial = new THREE.PointsMaterial({
+        map: new THREE.CanvasTexture(canvas),
+        vertexColors: true,
+        size: 9,
+        sizeAttenuation: false,
+        alphaTest: 0.5,
+        transparent: true,
+        depthTest: true,
+        depthWrite: true,
+        toneMapped: false,
+      });
+    } else pointMaterial = new THREE.PointsMaterial({
+      color, size: 4, sizeAttenuation: false, depthTest: true, depthWrite: false,
+    });
+    nodes = new THREE.Points(new THREE.BufferGeometry(), pointMaterial);
+    nodes.name = scalar ? "result-scalar-nodes" : "result-vector-nodes";
+    nodes.renderOrder = 14;
+  }
+  let positions = nodes.geometry.getAttribute("position");
+  if (!positions || positions.count < points.length) {
+    const capacity = 2 ** Math.ceil(Math.log2(Math.max(1, points.length)));
+    nodes.geometry.dispose();
+    nodes.geometry = new THREE.BufferGeometry();
+    positions = new THREE.BufferAttribute(new Float32Array(capacity * 3), 3).setUsage(THREE.DynamicDrawUsage);
+    nodes.geometry.setAttribute("position", positions);
+    if (scalar) nodes.geometry.setAttribute("color",
+      new THREE.BufferAttribute(new Float32Array(capacity * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  }
+  const colors = nodes.geometry.getAttribute("color");
+  const rgb = new THREE.Color();
   points.forEach((item, index) => {
-    positions.set(item.origin, index * 3);
-    color.setRGB(...resultScalarColor(item.value, minimum, maximum), THREE.SRGBColorSpace);
-    color.toArray(colors, index * 3);
+    positions.array.set(item.origin, index * 3);
+    if (scalar) {
+      rgb.setRGB(...resultScalarColor(item.value, minimum, maximum), THREE.SRGBColorSpace);
+      rgb.toArray(colors.array, index * 3);
+    }
   });
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  geometry.computeBoundingSphere();
-
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 32;
-  const context = canvas.getContext("2d");
-  context.fillStyle = "#ffffff";
-  context.beginPath();
-  context.arc(16, 16, 15.5, 0, Math.PI * 2);
-  context.fill();
-  const material = new THREE.PointsMaterial({
-    map: new THREE.CanvasTexture(canvas),
-    vertexColors: true,
-    size: 9,
-    sizeAttenuation: false,
-    alphaTest: 0.5,
-    transparent: true,
-    depthTest: true,
-    depthWrite: true,
-    toneMapped: false,
-  });
-  const nodes = new THREE.Points(geometry, material);
-  nodes.name = "result-scalar-nodes";
-  nodes.userData.resultScalars = points;
-  nodes.renderOrder = 14;
+  positions.needsUpdate = true;
+  if (scalar) colors.needsUpdate = true;
+  else nodes.material.color.setHex(color);
+  nodes.geometry.setDrawRange(0, points.length);
+  nodes.geometry.computeBoundingSphere();
+  nodes.visible = points.length > 0;
+  nodes.userData[scalar ? "resultScalars" : "resultVectors"] = points;
   return nodes;
 }
+
+export { updateResultPoints };
 
 function validMatrix(value) {
   return value?.length === 16 && Array.from(value).every(Number.isFinite);
@@ -1116,6 +1184,8 @@ export function ThreeGeometryViewport(props) {
   let discretizationLineCache = new Map();
   let discretizationPointCache = new Map();
   let geometryPickTargets = [];
+  let motionBuffers = [];
+  let geometryContext = null;
   let currentBounds;
   let resizeObserver;
   let raycaster;
@@ -1126,6 +1196,12 @@ export function ThreeGeometryViewport(props) {
   let handleControlsStart;
   let handleControlsEnd;
   let renderFrame = 0;
+  let rendering = false;
+  let pendingResize = true;
+  let pendingGeometry = null;
+  let sourcesDirty = false;
+  let vectorsDirty = false;
+  let scalarsDirty = false;
   let pickFrame = 0;
   let pickTimer = 0;
   let lastPickTime = Number.NEGATIVE_INFINITY;
@@ -1193,41 +1269,55 @@ export function ThreeGeometryViewport(props) {
   };
 
   const requestRender = () => {
-    if (!renderer || !threeScene || !camera || renderFrame) return;
+    if (!renderer || !threeScene || !camera || renderFrame || rendering || disposed) return;
     renderFrame = requestAnimationFrame(() => {
       renderFrame = 0;
-      renderer.setScissorTest(false);
-      renderer.setViewport(0, 0, viewportWidth, viewportHeight);
-      renderer.clear(true, true, true);
-      renderer.render(threeScene, camera);
-
-      if (axesScene && axesCamera && axesRoot && controls) {
-        const size = axesGizmoSize();
-        const direction = camera.position.clone().sub(controls.target);
-        if (direction.lengthSq() < 1e-12) direction.set(1, 1, 1);
-        axesCamera.position.copy(direction.normalize().multiplyScalar(5));
-        axesCamera.up.copy(camera.up);
-        axesCamera.lookAt(0, 0, 0);
-        axesCamera.updateMatrixWorld();
-
-        renderer.clearDepth();
-        renderer.setScissor(
-          AXES_GIZMO_MARGIN,
-          AXES_GIZMO_MARGIN,
-          size,
-          size,
-        );
-        renderer.setViewport(
-          AXES_GIZMO_MARGIN,
-          AXES_GIZMO_MARGIN,
-          size,
-          size,
-        );
-        renderer.setScissorTest(true);
-        renderer.render(axesScene, axesCamera);
+      rendering = true;
+      try {
+        if (pendingResize) applyRendererSize();
+        if (pendingGeometry) {
+          const {sceneModel, filters, mode, showEdges} = pendingGeometry;
+          pendingGeometry = null;
+          untrack(() => replaceGeometry(sceneModel, filters, mode, showEdges));
+        }
+        if (sourcesDirty) { sourcesDirty = false; replacePrescribedSources(); }
+        if (vectorsDirty) { vectorsDirty = false; replaceResultVectors(); }
+        if (scalarsDirty) { scalarsDirty = false; replaceResultScalars(); }
+        if (!hasFramedGeometry || props.autoFit === true) hasFramedGeometry = fitVisibleObjects();
         renderer.setScissorTest(false);
         renderer.setViewport(0, 0, viewportWidth, viewportHeight);
-      }
+        renderer.clear(true, true, true);
+        renderer.render(threeScene, camera);
+
+        if (axesScene && axesCamera && axesRoot && controls) {
+          const size = axesGizmoSize();
+          const direction = camera.position.clone().sub(controls.target);
+          if (direction.lengthSq() < 1e-12) direction.set(1, 1, 1);
+          axesCamera.position.copy(direction.normalize().multiplyScalar(5));
+          axesCamera.up.copy(camera.up);
+          axesCamera.lookAt(0, 0, 0);
+          axesCamera.updateMatrixWorld();
+
+          renderer.clearDepth();
+          renderer.setScissor(
+            AXES_GIZMO_MARGIN,
+            AXES_GIZMO_MARGIN,
+            size,
+            size,
+          );
+          renderer.setViewport(
+            AXES_GIZMO_MARGIN,
+            AXES_GIZMO_MARGIN,
+            size,
+            size,
+          );
+          renderer.setScissorTest(true);
+          renderer.render(axesScene, axesCamera);
+          renderer.setScissorTest(false);
+          renderer.setViewport(0, 0, viewportWidth, viewportHeight);
+        }
+      } catch (error) { reportError(error); }
+      finally { rendering = false; }
     });
   };
 
@@ -1252,10 +1342,14 @@ export function ThreeGeometryViewport(props) {
     controls = createOrbitControls(target);
   };
 
-  const resizeRenderer = () => {
+  const resizeRenderer = () => { pendingResize = true; requestRender(); };
+  const applyRendererSize = () => {
+    pendingResize = false;
     if (!host || !renderer || !camera) return;
-    viewportWidth = Math.max(1, Math.floor(host.clientWidth));
-    viewportHeight = Math.max(1, Math.floor(host.clientHeight));
+    const width = Math.max(1, Math.floor(host.clientWidth));
+    const height = Math.max(1, Math.floor(host.clientHeight));
+    if (width === viewportWidth && height === viewportHeight) return;
+    viewportWidth = width; viewportHeight = height;
     renderer.setSize(viewportWidth, viewportHeight, false);
     resizeCameraProjection(camera, viewportWidth / viewportHeight);
     if (
@@ -1374,8 +1468,13 @@ export function ThreeGeometryViewport(props) {
 
     if (props.resultPickingOnly) {
       // Report saved nodes, including for an intersection on a scaled vector.
-      const resultRoots = [resultVectorRoot, resultScalarRoot].filter(Boolean);
-      const hits = raycaster.intersectObjects(resultRoots, true);
+      const resultTargets = [];
+      for (const root of [resultVectorRoot, resultScalarRoot]) {
+        root?.traverseVisible(object => {
+          if (object.isPoints || object.isLineSegments || object.isMesh) resultTargets.push(object);
+        });
+      }
+      const hits = raycaster.intersectObjects(resultTargets, false);
       const geometryHit = activeRenderMode === "solid" && (geometryOpacity ?? 1) >= 1
         ? raycaster.intersectObjects(geometryPickTargets, false)[0] : null;
       const hit = hits.find(candidate => !geometryHit || candidate.distance <= geometryHit.distance + unitsPerPixel * 5);
@@ -1562,7 +1661,7 @@ export function ThreeGeometryViewport(props) {
     if (vertexPoints) {
       vertexPoints.visible = verticesVisible;
       helperRoot.add(vertexPoints);
-      updateGeometryOpacity();
+      if (props.geometryRevision) motionBuffers.push(captureMotionBuffer(THREE, vertexPoints, vertexRanges, vertexWorldPositions));
     }
   };
 
@@ -1611,6 +1710,7 @@ export function ThreeGeometryViewport(props) {
       ),
     );
     const positions = [];
+    const motionRanges = [];
     let remaining = budget;
     let truncated = false;
 
@@ -1639,12 +1739,15 @@ export function ThreeGeometryViewport(props) {
         continue;
       }
 
+      const start = positions.length / 3;
       appendTransformedPositions(
         THREE,
         built.lines,
         batch.instances.slice(0, acceptedCount),
         positions,
       );
+      motionRanges.push({start, end: positions.length / 3,
+        source: batch.primitive.source, instances: batch.instances.slice(0, acceptedCount)});
       remaining -= cost * acceptedCount;
     }
 
@@ -1652,10 +1755,11 @@ export function ThreeGeometryViewport(props) {
     if (discretizationLines) {
       discretizationLines.visible = discretizationLinesVisible;
       helperRoot.add(discretizationLines);
-      updateGeometryOpacity();
+      if (props.geometryRevision) motionBuffers.push(captureMotionBuffer(THREE, discretizationLines, motionRanges));
     }
     discretizationStats.lineSegments = positions.length / 6;
     discretizationStats.linesTruncated = truncated;
+    updateGeometryOpacity();
     updateSurfacePolygonOffset();
     publishRenderStats();
   };
@@ -1723,10 +1827,12 @@ export function ThreeGeometryViewport(props) {
     if (discretizationPoints) {
       discretizationPoints.visible = discretizationPointsVisible;
       helperRoot.add(discretizationPoints);
-      updateGeometryOpacity();
+      if (props.geometryRevision) motionBuffers.push(captureMotionBuffer(THREE, discretizationPoints,
+        discretizationPointRanges, discretizationWorldPositions));
     }
     discretizationStats.points = positions.length / 3;
     discretizationStats.pointsTruncated = truncated;
+    updateGeometryOpacity();
     updateSurfacePolygonOffset();
     publishRenderStats();
   };
@@ -1761,11 +1867,7 @@ export function ThreeGeometryViewport(props) {
 
   const replacePrescribedSources = () => {
     if (!THREE || !helperRoot) return;
-    if (prescribedSourceRoot) {
-      helperRoot.remove(prescribedSourceRoot);
-      disposeObject(prescribedSourceRoot);
-      prescribedSourceRoot = null;
-    }
+    if (prescribedSourceRoot) prescribedSourceRoot.visible = prescribedSourcesVisible && Boolean(prescribedSourceScene);
     if (prescribedSourcesVisible && prescribedSourceScene) {
       const sceneDiagonal = prescribedSourceScene.sceneDiagonal ?? (
         currentBounds?.isEmpty() === false
@@ -1780,8 +1882,10 @@ export function ThreeGeometryViewport(props) {
         prescribedSourceStyle,
         { current: currentSourceScale, magnetization: magnetizationSourceScale },
         prescribedSourceScene.maximumMagnitude,
+        undefined, prescribedSourceRoot,
       );
-      if (prescribedSourceRoot) helperRoot.add(prescribedSourceRoot);
+      prescribedSourceRoot.visible = true;
+      if (prescribedSourceRoot.parent !== helperRoot) helperRoot.add(prescribedSourceRoot);
     }
     requestRender();
   };
@@ -1791,11 +1895,7 @@ export function ThreeGeometryViewport(props) {
   const replaceResultVectors = () => {
     if (!THREE || !helperRoot) return;
     clearHoverTooltip();
-    if (resultVectorRoot) {
-      helperRoot.remove(resultVectorRoot);
-      disposeObject(resultVectorRoot);
-      resultVectorRoot = null;
-    }
+    if (resultVectorRoot) resultVectorRoot.visible = Boolean(currentResultScene);
     if (currentResultScene) {
       const vectors = currentResultScene.vectors.filter(item =>
         primitiveVisible(item, activeResultFilters.objectModes, activeResultFilters.selections)
@@ -1803,21 +1903,12 @@ export function ThreeGeometryViewport(props) {
       resultVectorRoot = createPrescribedSourceVectors(THREE, vectors, null,
         currentResultScene.sceneDiagonal, "thin",
         { current: resultVectorScale, magnetization: resultVectorScale },
-        currentResultScene.maximumMagnitude, resultVectorColor);
-      if (vectors.length) {
-        resultVectorRoot ??= new THREE.Group();
-        const positions = new Float32Array(vectors.length * 3);
-        vectors.forEach((item, index) => positions.set(item.origin, index * 3));
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-        const nodes = new THREE.Points(geometry, new THREE.PointsMaterial({
-          color: resultVectorColor, size: 4, sizeAttenuation: false, depthTest: true, depthWrite: false,
-        }));
-        nodes.userData.resultVectors = vectors;
-        nodes.renderOrder = 14;
-        resultVectorRoot.add(nodes);
-        helperRoot.add(resultVectorRoot);
-      }
+        currentResultScene.maximumMagnitude, resultVectorColor, resultVectorRoot);
+      const previous = resultVectorRoot.getObjectByName("result-vector-nodes");
+      const nodes = updateResultPoints(THREE, previous, vectors, { color: resultVectorColor });
+      if (nodes.parent !== resultVectorRoot) resultVectorRoot.add(nodes);
+      resultVectorRoot.visible = true;
+      if (resultVectorRoot.parent !== helperRoot) helperRoot.add(resultVectorRoot);
     }
     requestRender();
   };
@@ -1826,11 +1917,7 @@ export function ThreeGeometryViewport(props) {
     if (!THREE || !helperRoot) return;
     clearHoverTooltip();
     setScalarLegend(null);
-    if (resultScalarRoot) {
-      helperRoot.remove(resultScalarRoot);
-      disposeObject(resultScalarRoot);
-      resultScalarRoot = null;
-    }
+    if (resultScalarRoot) resultScalarRoot.visible = Boolean(currentScalarScene);
     if (currentScalarScene) {
       const points = currentScalarScene.points.filter(item =>
         Number.isFinite(item.value) && item.origin?.length === 3
@@ -1838,17 +1925,59 @@ export function ThreeGeometryViewport(props) {
         && primitiveVisible(item, activeResultFilters.objectModes, activeResultFilters.selections)
         && instanceVisible(item.instance, activeResultFilters.symmetry));
       const { minimum, maximum, quantity, unit } = currentScalarScene;
-      if (points.length && Number.isFinite(minimum) && Number.isFinite(maximum)) {
-        resultScalarRoot = createResultScalarPoints(THREE, points, minimum, maximum);
-        helperRoot.add(resultScalarRoot);
-        setScalarLegend({ minimum, maximum, quantity, unit });
+      if (Number.isFinite(minimum) && Number.isFinite(maximum)) {
+        resultScalarRoot = updateResultPoints(THREE, resultScalarRoot, points, { scalar: true, minimum, maximum });
+        if (resultScalarRoot.parent !== helperRoot) helperRoot.add(resultScalarRoot);
+        if (points.length) setScalarLegend({ minimum, maximum, quantity, unit });
       }
     }
     requestRender();
   };
 
+  const updateMovingGeometry = (sceneModel, filters, mode, showEdges) => {
+    const revision = props.geometryRevision;
+    const context = geometryContext;
+    // Only a time projection of the same source model may reuse topology.
+    // Preview callers without a revision continue to use full replacement.
+    if (!revision || !context || revision !== context.revision
+      || filters !== context.filters || mode !== context.mode || showEdges !== context.showEdges
+      || props.instanceBudget !== context.instanceBudget || props.objectBudget !== context.objectBudget
+      || props.discretizationSegmentBudget !== context.segmentBudget
+      || props.discretizationPointBudget !== context.pointBudget
+      || sceneModel?.primitives?.length !== context.primitiveCount) return false;
+    const key = source => `${source.schemaId}:${source.recordIndex}`;
+    const images = new Map(sceneModel.primitives.map(p => [key(p.source),
+      new Map(p.instances.map(i => [sourceInstanceKey(p.source, i), i]))]));
+    const resolve = (source, instances) => instances.map(i =>
+      images.get(key(source))?.get(sourceInstanceKey(source, i)));
+    // Validate every reference before writing any retained buffer.
+    for (const buffer of motionBuffers) for (const range of buffer.ranges) {
+      if (resolve(range.source, range.instances).some(i => !i || !validMatrix(i.matrix))) return false;
+    }
+    for (const buffer of motionBuffers) updateMotionBuffer(THREE, buffer, resolve);
+    for (const object of geometryPickTargets) {
+      object.userData.pick.instances = resolve(object.userData.source, object.userData.pick.instances);
+    }
+    for (const range of [...vertexRanges, ...discretizationPointRanges]) {
+      range.instances = resolve(range.source, range.instances);
+    }
+    // Retain local discretization caches; only their world transforms change.
+    for (const batch of vertexBatches) batch.instances = resolve(batch.primitive.source, batch.instances);
+    for (const batch of discretizationBatches) batch.instances = resolve(batch.primitive.source, batch.instances);
+    currentBounds = new THREE.Box3().setFromObject(geometryRoot);
+    if (props.autoFit === true && !currentBounds.isEmpty()) {
+      fitVisibleObjects();
+    }
+    clearHoverTooltip();
+    sourcesDirty = vectorsDirty = scalarsDirty = true;
+    requestRender();
+    return true;
+  };
+
   const replaceGeometry = (sceneModel, filters, mode, showEdges) => {
     if (!ready() || !THREE || !threeScene) return;
+    if (updateMovingGeometry(sceneModel, filters, mode, showEdges)) return;
+    geometryContext = null; motionBuffers = [];
     activeRenderMode = mode;
     activeResultFilters = filters ?? {};
 
@@ -1857,12 +1986,13 @@ export function ThreeGeometryViewport(props) {
       disposeObject(geometryRoot);
     }
     if (helperRoot) {
+      for (const layer of [prescribedSourceRoot, resultVectorRoot, resultScalarRoot]) {
+        if (layer) helperRoot.remove(layer);
+      }
       threeScene.remove(helperRoot);
       disposeObject(helperRoot);
     }
-    prescribedSourceRoot = null;
-    resultVectorRoot = null;
-    resultScalarRoot = null;
+
     acceptedSourceInstances = new Set();
 
     geometryRoot = new THREE.Group();
@@ -1870,6 +2000,9 @@ export function ThreeGeometryViewport(props) {
     helperRoot = new THREE.Group();
     helperRoot.name = "geometry-helpers";
     threeScene.add(geometryRoot, helperRoot);
+    for (const layer of [prescribedSourceRoot, resultVectorRoot, resultScalarRoot]) {
+      if (layer) helperRoot.add(layer);
+    }
     geometryPickTargets = [];
     vertexBatches = [];
     vertexRanges = [];
@@ -1950,6 +2083,14 @@ export function ThreeGeometryViewport(props) {
         if (!object) continue;
         geometryRoot.add(object);
         geometryPickTargets.push(object);
+        object.traverse(child => {
+          if (!props.geometryRevision || !child.geometry?.getAttribute("position")) return;
+          motionBuffers.push(captureMotionBuffer(THREE, child, [{
+            start: 0, end: child.geometry.getAttribute("position").count,
+            source: primitive.source, instances: accepted,
+          }]));
+        });
+
         if (primitive.source?.schemaId === "elements") {
           for (const instance of accepted) {
             acceptedSourceInstances.add(
@@ -1983,15 +2124,14 @@ export function ThreeGeometryViewport(props) {
     if (verticesVisible) materializeVertexPoints();
     if (discretizationLinesVisible) materializeDiscretizationLines();
     if (discretizationPointsVisible) materializeDiscretizationPoints();
-    replacePrescribedSources();
-    replaceResultVectors();
-    replaceResultScalars();
+    geometryContext = {
+      revision: props.geometryRevision, filters, mode, showEdges,
+      instanceBudget: props.instanceBudget, objectBudget: props.objectBudget,
+      segmentBudget: props.discretizationSegmentBudget, pointBudget: props.discretizationPointBudget,
+      primitiveCount: sceneModel?.primitives?.length ?? 0,
+    };
+    sourcesDirty = vectorsDirty = scalarsDirty = true;
     updateGeometryOpacity();
-    if (!hasFramedGeometry || props.autoFit === true) {
-      hasFramedGeometry = fitVisibleObjects();
-    } else if (currentBounds.isEmpty() && !resultVectorRoot && !resultScalarRoot) {
-      hasFramedGeometry = false;
-    }
     publishRenderStats();
     if (!contextLost) {
       setError("");
@@ -2167,11 +2307,8 @@ export function ThreeGeometryViewport(props) {
     currentSourceScale = prescribedSourceScale(props.currentSourceScale);
     magnetizationSourceScale = prescribedSourceScale(props.magnetizationSourceScale);
     if (!ready()) return;
-    try {
-      replacePrescribedSources();
-    } catch (renderError) {
-      reportError(renderError);
-    }
+    sourcesDirty = true;
+    requestRender();
   });
 
   createEffect(() => {
@@ -2179,13 +2316,15 @@ export function ThreeGeometryViewport(props) {
     resultVectorScale = props.resultVectorScale ?? 1;
     resultVectorColor = props.resultVectorColor ?? 0x44ccff;
     if (!ready()) return;
-    try { replaceResultVectors(); } catch (error) { reportError(error); }
+    vectorsDirty = true;
+    requestRender();
   });
 
   createEffect(() => {
     currentScalarScene = props.resultScalarScene ?? null;
     if (!ready()) return;
-    try { replaceResultScalars(); } catch (error) { reportError(error); }
+    scalarsDirty = true;
+    requestRender();
   });
 
   createEffect(() => {
@@ -2200,16 +2339,16 @@ export function ThreeGeometryViewport(props) {
 
   createEffect(() => {
     const sceneModel = props.scene;
+    props.geometryRevision;
+    props.instanceBudget; props.objectBudget;
+    props.discretizationSegmentBudget; props.discretizationPointBudget;
     const filters = props.filters;
     const mode = props.mode ?? "solid";
     const showEdges = props.showEdges !== false;
     if (!ready()) return;
 
-    try {
-      replaceGeometry(sceneModel, filters, mode, showEdges);
-    } catch (renderError) {
-      reportError(renderError);
-    }
+    pendingGeometry = {sceneModel, filters, mode, showEdges};
+    requestRender();
   });
 
   createEffect(() => {

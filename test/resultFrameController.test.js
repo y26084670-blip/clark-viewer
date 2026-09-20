@@ -112,3 +112,54 @@ test("replacing a task during a read never publishes the previous task's respons
   assert.equal(h.state().frame.request.task,nextTask);
   assert.equal(h.state().frame.value,"new task");
 });
+
+test("line plot choices invalidate frames, but a time change retains the labelled curves", async () => {
+  const context = {quantityKey:"Bs",component:"norm",direction:"i2",copy:0,allCopies:false};
+  for (const changed of [{component:"0"},{direction:"i1"},{copy:1},{allCopies:true}]) {
+    const h = harness();
+    h.request(0, context); h.start(); h.reads[0].resolve({series:["initial curves"]}); await tick();
+    const frame = h.state().frame;
+    h.request(1, context);
+    assert.equal(h.state().frame, frame);
+    h.request(2, {...context,...changed});
+    assert.equal(h.state().frame, null);
+    h.start(); h.reads[1].resolve({series:["new context"]}); await tick();
+    assert.equal(h.state().frame.request.time, 2);
+    h.controller.close();
+  }
+});
+
+test("line frame reads the selected local image and reports unavailable images", async () => {
+  const {readLineFrame} = await import("../src/services/results/resultRequests.js");
+  const records = [
+    {id:1,name:"A",dp:[[1],[2]],symLs:2},
+    {id:2,name:"B",dp:[[1],[2]],symLs:1},
+  ];
+  const reads=[];
+  const task={regions:records,metadata:{HS:{steps:[0],header:{inds1:[1,5],numbs:[4,2]}}},
+    reader:{read:async request=>{reads.push(request);return {stride:6,count:request.count,every:1,
+      values:new Float64Array(Array.from({length:request.count},()=>[0,0,0,3,0,0]).flat())};}}};
+  const request={task,quantityKey:"Bs",selected:[1,2],time:0,component:"0",direction:"i2",copy:1,allCopies:false};
+  const result=await readLineFrame(request);
+  assert.deepEqual(reads,[{name:"HS",step:0,start:2,count:2}]);
+  assert.deepEqual(result.skipped,["№2"]);
+  assert.equal(result.series.length,1);
+  assert.deepEqual(result.series[0].points.map(p=>p.y),[3,3]);
+  const unfolded=await readLineFrame({...request,allCopies:true});
+  assert.deepEqual(unfolded.skipped,[]);
+  assert.equal(unfolded.series.length,3);
+});
+
+test("a failed line image drains other regions before the next frame can start", async () => {
+  const {readLineFrame} = await import("../src/services/results/resultRequests.js");
+  let finish,settled=false;
+  const task={regions:[1,2].map(id=>({id,name:String(id),dp:[[1],[2]],symLs:1})),
+    metadata:{HS:{steps:[0],header:{inds1:[1,3],numbs:[2,2]}}},
+    reader:{read:({start})=>start===0?Promise.reject(new Error("line read failure")):new Promise(resolve=>{finish=resolve;})}};
+  const result=readLineFrame({task,quantityKey:"Bs",selected:[1,2],time:0,component:"norm",direction:"i2",copy:0,allCopies:false})
+    .catch(error=>{settled=true;return error;});
+  await tick();assert.equal(settled,false);
+  finish({values:new Float64Array(12),stride:6,count:2});
+  assert.match((await result).message,/line read failure/);
+  assert.equal(settled,true);
+});

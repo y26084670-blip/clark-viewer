@@ -1,13 +1,13 @@
 {
   "name": "clark-viewer",
   "private": true,
-  "version": "4.6.5",
+  "version": "4.6.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "build:release": "vite build --mode production",
-    "build:pages": "vite build --mode production --base=/clark-viewer/",
+    "build": "node scripts/build.mjs",
+    "build:release": "node scripts/build.mjs --mode production",
+    "build:pages": "node scripts/build.mjs --mode production --base=/clark-viewer/",
     "preview": "vite preview",
     "test": "node --test"
   },

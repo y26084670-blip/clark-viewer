@@ -165,3 +165,58 @@ for (const scalar of [false, true]) {
     } finally {globalThis.document=previousDocument;}
   });
 }
+
+const { createGeometryObjects } =
+  await server.ssrLoadModule("/src/components/geometry/ThreeGeometryViewport.jsx");
+
+function renderFixture(count) {
+  return { primitives: Array.from({length: count}, (_, recordIndex) => ({
+    kind: "element-volume", source: {schemaId: "elements", recordIndex},
+    vertices: new Float64Array([0,0,0, 1,0,0, 0,1,0]),
+    indices: new Uint32Array([0,1,2]),
+    edgeIndices: new Uint32Array([0,1,1,2,2,0]),
+    instances: [{ls:0, as:0, ps:0, mirrorX:false, mirrorY:false,
+      matrix: new THREE.Matrix4().makeTranslation(recordIndex,0,0).elements}],
+  })) };
+}
+function collectGeometry(scene, filters, mode, edges, budget) {
+  const root = new THREE.Group();
+  const stats = createGeometryObjects(THREE, scene, filters, mode, edges, budget,
+    object => root.add(object));
+  return {root, stats};
+}
+function releaseGeometry(root) {
+  root.traverse(object => {
+    object.geometry?.dispose();
+    object.material?.dispose();
+  });
+}
+for (const mode of ["solid", "translucent", "wireframe"]) {
+  for (const edges of [false, true]) {
+    test(`1085 selected records remain visible in ${mode}, edges=${edges}`, () => {
+      const {root, stats} = collectGeometry(renderFixture(1085), {}, mode, edges);
+      assert.equal(root.children.length, 1085);
+      assert.equal(stats.renderedInstances, 1085);
+      assert.equal(stats.selectedInstances, 1085);
+      assert.equal(stats.truncated, false);
+      assert.equal(root.children.at(-1).userData.source.recordIndex, 1084);
+      assert.equal(root.children.at(-1).userData.pick.instances.length, 1);
+      const box = new THREE.Box3().setFromObject(root);
+      assert.equal(box.max.x, 1085);
+      if (mode !== "wireframe" && edges) assert.equal(stats.renderedPrimitives, 2170);
+      releaseGeometry(root);
+    });
+  }
+}
+test("instance budget, selections and invalid matrices still apply", () => {
+  const scene = renderFixture(6);
+  scene.primitives[1].instances[0].matrix[0] = NaN;
+  const {root, stats} = collectGeometry(scene,
+    {objectModes:{elements:"selected"}, selections:{elements:[1,2,4,5]}}, "solid", true, 2);
+  assert.deepEqual(root.children.map(o => o.userData.source.recordIndex), [2,4]);
+  assert.equal(stats.selectedInstances, 4);
+  assert.equal(stats.invalidInstances, 1);
+  assert.equal(stats.renderedInstances, 2);
+  assert.equal(stats.truncated, true);
+  releaseGeometry(root);
+});

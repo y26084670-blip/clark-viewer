@@ -48,7 +48,6 @@ import {
 } from "../../services/visualization/resultScalarColors.js";
 
 export const GEOMETRY_INSTANCE_BUDGET = 20_000;
-export const GEOMETRY_RENDER_OBJECT_BUDGET = 1_000;
 export const GEOMETRY_DISCRETIZATION_SEGMENT_BUDGET =
   DEFAULT_DISCRETIZATION_LIMITS.lineSegments;
 export const GEOMETRY_DISCRETIZATION_POINT_BUDGET =
@@ -810,6 +809,65 @@ function renderableFor(
   return object;
 }
 
+// Render every selected primitive within the instance expansion budget. Surface
+// edges are decoration and must not consume a separate object quota.
+export function createGeometryObjects(THREE, sceneModel, filters, mode, showEdges,
+  budget = GEOMETRY_INSTANCE_BUDGET, onObject = () => {}) {
+  let remaining = budget;
+  let selectedInstances = 0;
+  let renderedInstances = 0;
+  let renderedPrimitives = 0;
+  let invalidInstances = 0;
+
+  for (const primitive of sceneModel?.primitives ?? []) {
+    if (!primitiveVisible(
+      primitive,
+      filters?.objectModes,
+      filters?.selections,
+    )) {
+      continue;
+    }
+    const instances = primitive.instances ?? [];
+
+    for (const category of INSTANCE_CATEGORIES) {
+      const categoryInstances = instances.filter(
+        (instance) =>
+          instanceCategory(instance) === category &&
+          instanceVisible(instance, filters?.symmetry),
+      );
+      const validInstances = categoryInstances.filter(
+        (instance) => validMatrix(instance.matrix),
+      );
+      const objectCost = renderObjectCost(primitive, mode, showEdges);
+      selectedInstances += categoryInstances.length;
+      invalidInstances += categoryInstances.length - validInstances.length;
+      if (
+        remaining <= 0 ||
+        validInstances.length === 0
+      ) {
+        continue;
+      }
+
+      const accepted = validInstances.slice(0, remaining);
+      const object = renderableFor(
+        THREE,
+        primitive,
+        accepted,
+        category,
+        mode,
+        showEdges,
+      );
+      if (!object) continue;
+      onObject(object, primitive, accepted);
+      renderedPrimitives += objectCost;
+      renderedInstances += accepted.length;
+      remaining -= accepted.length;
+    }
+  }
+  return { budget, invalidInstances, renderedInstances, renderedPrimitives,
+    selectedInstances, truncated: selectedInstances - invalidInstances > renderedInstances };
+}
+
 function appendVertexBatch(THREE, primitive, instances, positions, ranges) {
   const sourceVertices = primitive.controlVertices ?? primitive.vertices ?? [];
   const sourceVertexCount = Math.floor(sourceVertices.length / 3);
@@ -1218,7 +1276,6 @@ export function ThreeGeometryViewport(props) {
   let baseRenderStats = {
     budget: GEOMETRY_INSTANCE_BUDGET,
     invalidInstances: 0,
-    objectBudget: GEOMETRY_RENDER_OBJECT_BUDGET,
     renderedInstances: 0,
     renderedPrimitives: 0,
     selectedInstances: 0,
@@ -1941,7 +1998,7 @@ export function ThreeGeometryViewport(props) {
     // Preview callers without a revision continue to use full replacement.
     if (!revision || !context || revision !== context.revision
       || filters !== context.filters || mode !== context.mode || showEdges !== context.showEdges
-      || props.instanceBudget !== context.instanceBudget || props.objectBudget !== context.objectBudget
+      || props.instanceBudget !== context.instanceBudget
       || props.discretizationSegmentBudget !== context.segmentBudget
       || props.discretizationPointBudget !== context.pointBudget
       || sceneModel?.primitives?.length !== context.primitiveCount) return false;
@@ -2029,58 +2086,8 @@ export function ThreeGeometryViewport(props) {
       1,
       Math.floor(props.instanceBudget ?? GEOMETRY_INSTANCE_BUDGET),
     );
-    const objectBudget = Math.max(
-      1,
-      Math.floor(
-        props.objectBudget ?? GEOMETRY_RENDER_OBJECT_BUDGET,
-      ),
-    );
-    let remaining = budget;
-    let selectedInstances = 0;
-    let renderedInstances = 0;
-    let renderedPrimitives = 0;
-    let invalidInstances = 0;
-
-    for (const primitive of sceneModel?.primitives ?? []) {
-      if (!primitiveVisible(
-        primitive,
-        filters?.objectModes,
-        filters?.selections,
-      )) {
-        continue;
-      }
-      const instances = primitive.instances ?? [];
-
-      for (const category of INSTANCE_CATEGORIES) {
-        const categoryInstances = instances.filter(
-          (instance) =>
-            instanceCategory(instance) === category &&
-            instanceVisible(instance, filters?.symmetry),
-        );
-        const validInstances = categoryInstances.filter(
-          (instance) => validMatrix(instance.matrix),
-        );
-        const objectCost = renderObjectCost(primitive, mode, showEdges);
-        selectedInstances += categoryInstances.length;
-        invalidInstances += categoryInstances.length - validInstances.length;
-        if (
-          remaining <= 0 ||
-          renderedPrimitives + objectCost > objectBudget ||
-          validInstances.length === 0
-        ) {
-          continue;
-        }
-
-        const accepted = validInstances.slice(0, remaining);
-        const object = renderableFor(
-          THREE,
-          primitive,
-          accepted,
-          category,
-          mode,
-          showEdges,
-        );
-        if (!object) continue;
+    const stats = createGeometryObjects(THREE, sceneModel, filters, mode, showEdges,
+      budget, (object, primitive, accepted) => {
         geometryRoot.add(object);
         geometryPickTargets.push(object);
         object.traverse(child => {
@@ -2102,31 +2109,18 @@ export function ThreeGeometryViewport(props) {
         if (primitive.discretization) {
           discretizationBatches.push({ instances: accepted, primitive });
         }
-        renderedPrimitives += objectCost;
-        renderedInstances += accepted.length;
-        remaining -= accepted.length;
-      }
-    }
+      });
 
     currentBounds = new THREE.Box3().setFromObject(geometryRoot);
 
-    const truncated = selectedInstances - invalidInstances > renderedInstances;
-    baseRenderStats = {
-      budget,
-      objectBudget,
-      invalidInstances,
-      renderedInstances,
-      renderedPrimitives,
-      selectedInstances,
-      truncated,
-    };
-    setRenderedCount(renderedInstances);
+    baseRenderStats = stats;
+    setRenderedCount(stats.renderedInstances);
     if (verticesVisible) materializeVertexPoints();
     if (discretizationLinesVisible) materializeDiscretizationLines();
     if (discretizationPointsVisible) materializeDiscretizationPoints();
     geometryContext = {
       revision: props.geometryRevision, filters, mode, showEdges,
-      instanceBudget: props.instanceBudget, objectBudget: props.objectBudget,
+      instanceBudget: props.instanceBudget,
       segmentBudget: props.discretizationSegmentBudget, pointBudget: props.discretizationPointBudget,
       primitiveCount: sceneModel?.primitives?.length ?? 0,
     };
@@ -2340,7 +2334,7 @@ export function ThreeGeometryViewport(props) {
   createEffect(() => {
     const sceneModel = props.scene;
     props.geometryRevision;
-    props.instanceBudget; props.objectBudget;
+    props.instanceBudget;
     props.discretizationSegmentBudget; props.discretizationPointBudget;
     const filters = props.filters;
     const mode = props.mode ?? "solid";

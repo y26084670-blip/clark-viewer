@@ -322,6 +322,21 @@ export function ResultsGeometryViewport(props) {
     if (restoreFocus) activePanelButton?.focus();
   };
 
+  createEffect(() => {
+    if (!props.open || !openPanel()) return;
+    const ownerDocument = viewerElement?.ownerDocument;
+    if (!ownerDocument) return;
+    const dismissOutside = (event) => {
+      const path = event.composedPath();
+      if (path.includes(optionsPanelElement) || path.includes(activePanelButton)) return;
+      closePanel();
+    };
+    // Capture also sees clicks on the canvas and controls that stop bubbling.
+    // The active button is excluded so its normal click toggles only once.
+    ownerDocument.addEventListener("pointerdown", dismissOutside, true);
+    onCleanup(() => ownerDocument.removeEventListener("pointerdown", dismissOutside, true));
+  });
+
   const requestView = (command, restoreFocus = false) => {
     setViewRequest((previous) => ({
       command,

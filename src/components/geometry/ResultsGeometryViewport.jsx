@@ -1,3 +1,4 @@
+import { createGeometryViewSetting } from "../../services/visualization/geometryViewSettings.js";
 import {
   For,
   Show,
@@ -111,23 +112,23 @@ export function ResultsGeometryViewport(props) {
   const [sceneError, setSceneError] = createSignal("");
   const [viewportError, setViewportError] = createSignal("");
   const [viewRequest, setViewRequest] = createSignal(null);
-  const [geometryTransparency, setGeometryTransparency] = createSignal(58);
-  const [orthographicView, setOrthographicView] = createSignal(true);
-  const [showEdges, setShowEdges] = createSignal(true);
-  const [showVertices, setShowVertices] = createSignal(false);
+  const [geometryTransparency, setGeometryTransparency] = createGeometryViewSetting("geometryTransparency", 58);
+  const [orthographicView, setOrthographicView] = createGeometryViewSetting("orthographicView", true);
+  const [showEdges, setShowEdges] = createGeometryViewSetting("showEdges", true);
+  const [showVertices, setShowVertices] = createGeometryViewSetting("showVertices", false);
   const [showDiscretizationLines, setShowDiscretizationLines] =
-    createSignal(false);
-  const [showCentersAndNodes, setShowCentersAndNodes] = createSignal(false);
-  const [showPrescribedSources, setShowPrescribedSources] = createSignal(false);
-  const [prescribedSourceStyle, setPrescribedSourceStyle] = createSignal("thin");
-  const [currentSourceScale, setCurrentSourceScale] = createSignal(1);
-  const [magnetizationSourceScale, setMagnetizationSourceScale] = createSignal(1);
-  const [elementsMode, setElementsMode] = createSignal("all");
-  const [regionsMode, setRegionsMode] = createSignal("all");
-  const [showLocalSymmetry, setShowLocalSymmetry] = createSignal(true);
-  const [showAxialSymmetry, setShowAxialSymmetry] = createSignal(true);
-  const [showPeriodicSymmetry, setShowPeriodicSymmetry] = createSignal(true);
-  const [showMirrorSymmetry, setShowMirrorSymmetry] = createSignal(true);
+    createGeometryViewSetting("showDiscretizationLines", false);
+  const [showCentersAndNodes, setShowCentersAndNodes] = createGeometryViewSetting("showCentersAndNodes", false);
+  const [showPrescribedSources, setShowPrescribedSources] = createGeometryViewSetting("showPrescribedSources", false);
+  const [prescribedSourceStyle, setPrescribedSourceStyle] = createGeometryViewSetting("prescribedSourceStyle", "thin");
+  const [currentSourceScale, setCurrentSourceScale] = createGeometryViewSetting("currentSourceScale", 1);
+  const [magnetizationSourceScale, setMagnetizationSourceScale] = createGeometryViewSetting("magnetizationSourceScale", 1);
+  const [elementsMode, setElementsMode] = createGeometryViewSetting("elementsMode", "all");
+  const [regionsMode, setRegionsMode] = createGeometryViewSetting("regionsMode", "all");
+  const [showLocalSymmetry, setShowLocalSymmetry] = createGeometryViewSetting("showLocalSymmetry", true);
+  const [showAxialSymmetry, setShowAxialSymmetry] = createGeometryViewSetting("showAxialSymmetry", true);
+  const [showPeriodicSymmetry, setShowPeriodicSymmetry] = createGeometryViewSetting("showPeriodicSymmetry", true);
+  const [showMirrorSymmetry, setShowMirrorSymmetry] = createGeometryViewSetting("showMirrorSymmetry", true);
   const [openPanel, setOpenPanel] = createSignal(null);
   const [panelPosition, setPanelPosition] = createSignal({ left: 8, top: 40 });
   const [renderStats, setRenderStats] = createSignal(EMPTY_RENDER_STATS);
@@ -931,3 +932,4 @@ export function ResultsGeometryViewport(props) {
       </section>
   );
 }
+

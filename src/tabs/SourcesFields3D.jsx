@@ -1,4 +1,5 @@
-import { createMemo, createSignal, Show } from "solid-js";
+import { createGeometryViewSetting } from "../services/visualization/geometryViewSettings.js";
+import { createMemo, Show } from "solid-js";
 import { ObjectList } from "../components/ObjectList.jsx";
 import { QuantitySelect } from "../components/QuantitySelect.jsx";
 import { ResultsGeometryViewport } from "../components/geometry/ResultsGeometryViewport.jsx";
@@ -8,8 +9,8 @@ import { readObjectFrames, useResultFrame } from "../services/results/resultRequ
 import { scalarScene, vectorScene } from "../services/results/resultPlots.js";
 
 export function SourcesFields3D(props) {
-  const [quantityKey, setQuantity] = createSignal("M");
-  const [scale, setScale] = createSignal(1);
+  const [quantityKey, setQuantity] = createGeometryViewSetting("resultQuantity", "M");
+  const [scale, setScale] = createGeometryViewSetting("resultVectorScale", 1);
   const quantity = () => QUANTITIES[quantityKey()];
   const isScalar = () => quantity().components === 1;
   const result = useResultFrame(() => props.task && ({ task: props.task, quantityKey: quantityKey(),
@@ -55,3 +56,4 @@ export function SourcesFields3D(props) {
     </section>
   </div>;
 }
+

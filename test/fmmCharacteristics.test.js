@@ -24,7 +24,79 @@ test("Negative characteristic branch follows solver threshold and anisotropy", (
   assert.deepEqual(characteristicCurve(p, true).points, [{x:-4,y:-7},{x:-2,y:-5},...p]);
   assert.equal(characteristicCurve(p, false).reflected, false);
   assert.equal(characteristicCurve([{x:0,y:2},...p.slice(1)], true).reflected, false);
-  assert.equal(characteristicCurve([{x:.001,y:-.001},...p.slice(1)], true).reflected, true);
+  assert.equal(characteristicCurve([{x:.001,y:-.001},...p.slice(1)], true).reflected, false);
+});
+
+test("Original first H/M point uses solver REAL epsilon, including Float32 rounding", () => {
+  for (const doubleFloat of [false, true]) {
+    const epsilon = doubleFloat ? Number.EPSILON : 2 ** -23;
+    const above = epsilon + 2 ** (doubleFloat ? -104 : -46);
+    const origin = [{ x: -epsilon, y: epsilon }, { x: 1, y: 2 }];
+    assert.equal(isAnisotropic(base, origin, doubleFloat), false);
+    assert.equal(characteristicCurve(origin, true, doubleFloat).reflected, true);
+    for (const first of [{ x: above, y: 0 }, { x: 0, y: -above }]) {
+      const points = [first, origin[1]];
+      assert.equal(isAnisotropic(base, points, doubleFloat), true);
+      assert.equal(characteristicCurve(points, true, doubleFloat).reflected, false);
+      assert.deepEqual(characteristicCurve(points, true, doubleFloat).points, points);
+    }
+    assert.equal(isAnisotropic({ ...base, vkan: [[0],[0],[0]] }, origin, doubleFloat), false);
+    assert.equal(isAnisotropic({ ...base, vkan: [Number.MIN_VALUE,0,0] }, origin, doubleFloat), true);
+  }
+  const singleEpsilon = 2 ** -23;
+  const rounded = [{ x: singleEpsilon * (1 + Number.EPSILON), y: 0 }, { x: 1, y: 2 }];
+  assert.ok(rounded[0].x > singleEpsilon);
+  assert.equal(isAnisotropic(base, rounded, false), false);
+  assert.equal(characteristicCurve(rounded, true, false).reflected, true);
+});
+
+test("Zero and both 180-degree anisotropy orientations preserve signed H and M", () => {
+  const characteristic = [{ x: -4, y: -1 }, { x: 0, y: 7 }];
+  const original = structuredClone(characteristic);
+  for (const doubleFloat of [false, true]) for (const angle of [0, 180, -180]) {
+    const direction = angle === 0 ? 1 : -1;
+    const record = { ...base, vkan: [0,angle,0], dp: [[1],[1],[2]] };
+    const ArrayType = doubleFloat ? Float64Array : Float32Array;
+    const frame = { stride: 9, count: 2, values: new ArrayType([
+      11,12,13, direction*3,0,0, direction*-2,0,0,
+      21,22,23, direction*-4,0,0, direction*-1,0,0,
+    ]) };
+    const saved = frame.values.slice();
+    assert.equal(isAnisotropic(record, characteristic, doubleFloat), true);
+    const series = workingPointSeries(frame, record, record, { characteristic, doubleFloat });
+    close(series.points.map(p => p.x), [-2,-1]);
+    close(series.points.map(p => p.y), [3,-4]);
+    assert.match(series.tooltip(series.points[0]).join(" "), /H=-2; M=3/);
+    assert.equal(series.showLine, false);
+    assert.equal(characteristicCurve(characteristic, true, doubleFloat).reflected, false);
+    assert.deepEqual(frame.values, saved);
+  }
+  assert.deepEqual(characteristic, original);
+});
+
+test("Task precision selects projection or modulus at the epsilon boundary", () => {
+  const frame = { stride: 9, count: 1, values: new Float64Array([0,0,0, -3,4,0, -2,1,0]) };
+  const origin = [{ x: 0, y: 0 }, { x: 1, y: 2 }];
+  const nearOrigin = [{ x: 0, y: 1e-8 }, origin[1]];
+  for (const doubleFloat of [false, true]) {
+    const isotropic = workingPointSeries(frame, base, base, { characteristic: origin, doubleFloat });
+    close(isotropic.points.map(p => p.x), [Math.hypot(-2,1)]);
+    close(isotropic.points.map(p => p.y), [5]);
+    const near = workingPointSeries(frame, base, base, { characteristic: nearOrigin, doubleFloat });
+    close(near.points.map(p => p.x), [doubleFloat ? -2 : Math.hypot(-2,1)]);
+    close(near.points.map(p => p.y), [doubleFloat ? -3 : 5]);
+  }
+});
+
+test("Table anisotropy at zero material angles projects onto the moving local X axis", () => {
+  const task = { general: { countTimeSteps: 2, timeStep: 1 }, elements: [{ ...base, indMove: 1 }], regions: [] };
+  const moves = [{ angle: [[0,0,0,0],[2,0,0,180]], position: [[0,0,0,0],[2,0,0,0]] }];
+  const projected = buildGeometryTimeModel(task, moves, 1).model.elements[0];
+  const frame = { stride: 9, count: 1, values: new Float64Array([0,0,0, 0,3,0, 0,-2,0]) };
+  const characteristic = [{ x: -4, y: -1 }, { x: 0, y: 7 }];
+  const series = workingPointSeries(frame, task.elements[0], projected, { characteristic, doubleFloat: true });
+  close(series.points.map(p => p.x), [-2]);
+  close(series.points.map(p => p.y), [3]);
 });
 
 test("Anisotropy axis uses Euler angles, local auto rotation and current motion", () => {

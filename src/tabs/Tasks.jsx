@@ -22,7 +22,6 @@ export function Tasks(props) {
     }
     try {
       const handle = await window.showDirectoryPicker({ mode: "read" });
-      if (!props.admin && handle.name !== "clark.projects") throw new Error("Выберите каталог clark.projects");
       const current = ++revision;
       const entries = await subdirectories(handle);
       if (current !== revision) return;
@@ -52,7 +51,7 @@ export function Tasks(props) {
   return <div class="tasks-layout">
     <section class="task-browser-panel">
       <div class="task-browser-content">
-        <button class="folder-button" onClick={pickRoot}>{props.admin ? "Выбрать каталог с проектами" : "Выбрать каталог clark.projects"}</button>
+        <button class="folder-button" onClick={pickRoot}>Выбрать каталог с проектами</button>
         <div class="root-name">{root() ? `Корневой каталог: ${root().name}` : "Каталог не выбран"}</div>
         <label class="field-label">Список проектов</label>
         <select class="project-select" value={project()} onChange={event => pickProject(event.currentTarget.value)} aria-label="Список проектов">

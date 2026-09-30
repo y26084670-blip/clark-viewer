@@ -16,13 +16,8 @@ export default function App() {
   const [active, setActive] = createSignal(0), [task, setTask] = createSignal(null), [path, setPath] = createSignal("");
   const [time, setTime] = createSignal(0), [elements, setElements] = createSignal([]), [regions, setRegions] = createSignal([]);
   const [coils, setCoils] = createSignal(null);
-  const [admin, setAdmin] = createSignal(false), [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
+  const [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
   let loadRevision = 0, activeReader;
-  function handleAdminUnlock(password) {
-    if (password !== "_qwerty123") return false;
-    setAdmin(true);
-    return true;
-  }
   async function load(handle, newPath) {
     const revision = ++loadRevision;
     setBusy(true); setError("");
@@ -63,7 +58,7 @@ export default function App() {
     <header class="task-info-bar">
       <span class="program-name">E3D Viewer</span>
       <div class="task-path" title={path()}>{path() || "Задание не загружено"}</div>
-      <AboutDialog admin={admin()} onAdminUnlock={handleAdminUnlock} />
+      <AboutDialog />
     </header>
     <nav class="tabs-header" aria-label="Вкладки просмотра">
       <For each={tabs}>{(title, i) => <button classList={{ active: active() === i() }} aria-current={active() === i() ? "page" : undefined}
@@ -71,7 +66,7 @@ export default function App() {
     </nav>
     <main class="tabs-body">
       <div class="task-tab" style={{ display: active() === 0 ? "flex" : "none" }}>
-        <Tasks active={active() === 0} admin={admin()} onLoad={load} loadedHandle={task()?.handle} busy={busy()} error={error()} />
+        <Tasks active={active() === 0} onLoad={load} loadedHandle={task()?.handle} busy={busy()} error={error()} />
       </div>
       <Show when={active() !== 0}>
         <Show when={task()} fallback={<div class="empty-task"><p>Загрузите задание на первой вкладке</p><button onClick={() => setActive(0)}>Выбор задания</button></div>}>

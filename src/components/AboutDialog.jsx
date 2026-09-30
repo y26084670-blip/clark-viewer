@@ -3,41 +3,10 @@ import aboutIconUrl from "../assets/zaica.BMP?url";
 import packageMetadata from "../../package.json";
 import "./AboutDialog.css";
 
-// About panel, icon and administrator access follow web-gui's TaskInfoBar.
-export function AboutDialog(props) {
+// About panel and icon follow web-gui's TaskInfoBar.
+export function AboutDialog() {
   const [aboutOpen, setAboutOpen] = createSignal(false);
-  const [adminPassword, setAdminPassword] = createSignal("");
-  const [adminError, setAdminError] = createSignal("");
-  let aboutDialog, aboutButton, aboutCloseButton, adminDialog, adminPasswordInput;
-
-  function resetAdminDialog() {
-    setAdminPassword("");
-    setAdminError("");
-  }
-
-  function openAdminDialog() {
-    if (props.admin) return;
-
-    resetAdminDialog();
-    setAboutOpen(false);
-    if (aboutDialog?.open) aboutDialog.close();
-    queueMicrotask(() => {
-      if (!adminDialog.open) adminDialog.showModal();
-      adminPasswordInput?.focus();
-    });
-  }
-
-  function handleAdminSubmit(event) {
-    event.preventDefault();
-    if (props.onAdminUnlock?.(adminPassword()) === true) {
-      adminDialog.close();
-      return;
-    }
-
-    setAdminError("Неверный пароль.");
-    setAdminPassword("");
-    queueMicrotask(() => adminPasswordInput?.focus());
-  }
+  let aboutDialog, aboutButton, aboutCloseButton;
 
   createEffect(() => {
     if (!aboutDialog) return;
@@ -53,7 +22,6 @@ export function AboutDialog(props) {
 
   onCleanup(() => {
     if (aboutDialog?.open) aboutDialog.close();
-    if (adminDialog?.open) adminDialog.close();
   });
 
   return <>
@@ -104,56 +72,8 @@ export function AboutDialog(props) {
           >
             Закрыть
           </button>
-          <button
-            type="button"
-            class="about-admin-button"
-            disabled={props.admin}
-            aria-pressed={props.admin}
-            title={
-              "Админ имеет право открывать задания в произвольном "
-              + "каталоге проектов, а не только в clark.projects"
-            }
-            onClick={openAdminDialog}
-          >
-            Админ
-          </button>
         </div>
       </div>
-    </dialog>
-
-    <dialog
-      class="admin-dialog"
-      ref={(el) => (adminDialog = el)}
-      aria-labelledby="admin-dialog-title"
-      onClose={() => {
-        resetAdminDialog();
-        aboutButton?.focus();
-      }}
-    >
-      <form class="admin-form" onSubmit={handleAdminSubmit}>
-        <h2 id="admin-dialog-title">Режим администратора</h2>
-        <label for="admin-password">Пароль</label>
-        <input
-          ref={(el) => (adminPasswordInput = el)}
-          id="admin-password"
-          type="password"
-          autocomplete="off"
-          value={adminPassword()}
-          onInput={(event) => {
-            setAdminPassword(event.currentTarget.value);
-            if (adminError()) setAdminError("");
-          }}
-        />
-        <div class="admin-error" aria-live="polite">
-          {adminError()}
-        </div>
-        <div class="admin-actions">
-          <button type="submit">Включить</button>
-          <button type="button" onClick={() => adminDialog.close()}>
-            Отмена
-          </button>
-        </div>
-      </form>
     </dialog>
   </>;
 }

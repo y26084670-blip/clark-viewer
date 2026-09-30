@@ -14,7 +14,8 @@ export function WorkingPoints(props) {
     const materials = await Promise.all(request.records.map(async record => {
       try {
         const source = await loadFmmCharacteristic(request.task, record.xapName);
-        return { record, ...characteristicCurve(source, isAnisotropic(record)) };
+        const doubleFloat = request.task.general.doubleFloat ?? false;
+        return { record, ...characteristicCurve(source, isAnisotropic(record, source, doubleFloat), doubleFloat) };
       } catch (error) {
         return { record, error: `№${record.id}, ${record.xapName}: ${error.message}` };
       }
@@ -35,13 +36,16 @@ export function WorkingPoints(props) {
     const projection = buildGeometryTimeModel(request.task, request.task.moves, request.time);
     const results = await Promise.all(objects.map(async object => {
       try {
-        if (isAnisotropic(object.record)) {
+        const characteristic = await loadFmmCharacteristic(request.task, object.record.xapName);
+        const doubleFloat = request.task.general.doubleFloat ?? false;
+        if (isAnisotropic(object.record, characteristic, doubleFloat)) {
           const warning = projection.diagnostics.find(d => d.schemaId === "general"
             || (d.schemaId === "elements" && d.recordIndex === object.record.recordIndex));
           if (warning) throw new Error(warning.message);
         }
         const frame = await request.task.reader.read({ name: "MH", step: request.time, start: object.start, count: object.count });
-        return { series: workingPointSeries(frame, object.record, projection.model.elements[object.record.recordIndex]) };
+        return { series: workingPointSeries(frame, object.record, projection.model.elements[object.record.recordIndex],
+          { characteristic, doubleFloat }) };
       } catch (error) { return { error: `№${object.record.id}: ${error.message}` }; }
     }));
     const series = results.filter(r => r.series).map(r => r.series);

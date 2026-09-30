@@ -7,8 +7,15 @@ export function isFmm(record) {
   return record.targ === 0 && (record.model ?? 0) === 0 && Boolean(record.xapName?.trim());
 }
 
-export function isAnisotropic(record) {
-  return vector3(record.vkan).some(value => value !== 0);
+function characteristicStartsAtOrigin(points, doubleFloat) {
+  const real = doubleFloat ? value => value : Math.fround;
+  const epsilon = doubleFloat ? Number.EPSILON : 2 ** -23;
+  return Math.abs(real(points[0].x)) <= epsilon && Math.abs(real(points[0].y)) <= epsilon;
+}
+
+export function isAnisotropic(record, points = [], doubleFloat = false) {
+  return vector3(record.vkan).some(value => value !== 0)
+    || (points.length > 0 && !characteristicStartsAtOrigin(points, doubleFloat));
 }
 
 export function parseFmmCharacteristic(text) {
@@ -25,9 +32,9 @@ export function parseFmmCharacteristic(text) {
   return points;
 }
 
-export function characteristicCurve(points, anisotropic) {
+export function characteristicCurve(points, anisotropic, doubleFloat = false) {
   // core/03_kv.jl: reproduce the negative branch actually used by the solver.
-  const reflected = anisotropic && Math.abs(points[0].x) <= .001 && Math.abs(points[0].y) <= .001;
+  const reflected = anisotropic && characteristicStartsAtOrigin(points, doubleFloat);
   return { reflected, points: reflected
     ? [...points.slice(1).reverse().map(p => ({ x: -p.x, y: -p.y })), ...points] : points };
 }

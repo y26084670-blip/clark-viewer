@@ -105,10 +105,10 @@ export function lineSeries(frame, record, quantity, component, direction = "i2",
   return series;
 }
 
-export function workingPointSeries(frame, record, projectedRecord = record) {
+export function workingPointSeries(frame, record, projectedRecord = record, { characteristic = [], doubleFloat = false } = {}) {
   const layout = elementLayout(record);
   if (frame.count !== layout.count || (frame.every ?? 1) !== 1) throw new Error("Сетка рабочих точек не совпадает с данными");
-  const anisotropic = isAnisotropic(record);
+  const anisotropic = isAnisotropic(record, characteristic, doubleFloat);
   const axes = anisotropic ? Array.from({ length: layout.copies[0] }, (_, ls) => fmmAxis(projectedRecord, ls)) : null;
   const points = Array.from({ length: frame.count }, (_, row) => {
     const offset = row * frame.stride;

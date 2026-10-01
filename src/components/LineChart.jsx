@@ -288,7 +288,6 @@ export function LineChart(props) {
     <div class="line-chart-canvas" onPointerDown={() => { skipContextMenu = false; }} onContextMenu={handleContextMenu}>
       <canvas ref={canvas} aria-label={`${props.yLabel ?? "График"} от ${props.xLabel ?? "координаты"}`}
         classList={{ "chart-panning": panning(), "chart-legend-hover": legendHover() }}
-        title={`${props.legendMode === "overlay" ? "Щелчок по цветному квадратику легенды — скрыть или показать кривую. " : ""}Левая кнопка — рамка увеличения; удерживайте правую кнопку для перемещения. Правый щелчок — копирование. Esc — отмена, Авто — весь график.`}
         onPointerDown={startSelection} onPointerMove={updateSelection} onPointerUp={finishSelection}
         onPointerLeave={() => setLegendHover(false)}
         onPointerCancel={cancelPointerSelection} onLostPointerCapture={cancelPointerSelection} />

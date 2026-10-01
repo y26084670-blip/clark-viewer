@@ -35,6 +35,7 @@ self.onmessage = ({ data }) => {
       if (!file) throw new Error(`Файл ${data.name}.h5 недоступен`);
       if (data.action === "read") result = file.read(data);
       else if (data.action === "history") result = file.history(data);
+      else if (data.action === "integralHistory") result = file.integralHistory(data);
       else throw new Error("Неизвестная операция чтения");
     }
     self.postMessage({ id: data.id, result }, result?.values ? [result.values.buffer] : []);

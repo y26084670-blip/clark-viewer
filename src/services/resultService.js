@@ -21,6 +21,7 @@ export class ResultService {
   open(files) { return this.request("open", { files }); }
   read(data) { return this.request("read", data); }
   history(data) { return this.request("history", data); }
+  integralHistory(data) { return this.request("integralHistory", data); }
   fail(error) { for (const request of this.pending.values()) request.reject(error); this.pending.clear(); }
   close() { this.fail(new Error("Задание закрыто")); this.worker.terminate(); }
 }

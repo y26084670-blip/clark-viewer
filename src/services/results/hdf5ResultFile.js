@@ -52,5 +52,34 @@ export class Hdf5ResultFile {
     this.steps.forEach((step, i) => values.set(this.read({ step: step.index, start: point, count: 1 }).values, i * stride));
     return { values, stride, steps: this.steps.map(step => step.index) };
   }
+  integralHistory({ weights, offset }) {
+    const stride = this.header.stride;
+    if (!(weights instanceof Float64Array) || weights.length !== this.pointCount
+        || !Number.isSafeInteger(offset) || offset < 0 || offset >= stride
+        || !weights.every(Number.isFinite)) throw new Error(`${this.name}.h5: неверные веса интегрирования`);
+    checkReadRange(0, weights.length, weights.length, 1);
+    checkReadRange(0, this.steps.length, this.steps.length, 1);
+    const values = new Float64Array(this.steps.length);
+    // Работает внутри HDF5 Worker: ограниченные срезы, без массива ЭО × время.
+    this.steps.forEach((step, i) => {
+      let sum = 0, correction = 0;
+      for (let start = 0; start < weights.length; start += 16384) {
+        const count = Math.min(16384, weights.length - start);
+        const frame = this.read({ step: step.index, start, count });
+        for (let row = 0; row < count; row++) {
+          const weight = weights[start + row];
+          if (weight === 0) continue;
+          const contribution = frame.values[row * stride + offset] * weight;
+          if (!Number.isFinite(contribution)) throw new Error(`${this.name}.h5: нечисловые или бесконечные потери`);
+          const adjusted = contribution - correction, next = sum + adjusted;
+          correction = (next - sum) - adjusted;
+          sum = next;
+        }
+      }
+      if (!Number.isFinite(sum)) throw new Error(`${this.name}.h5: сумма потерь выходит за числовой диапазон`);
+      values[i] = sum;
+    });
+    return { values, stride: 1, steps: this.steps.map(step => step.index) };
+  }
   close() { this.handle.close(); }
 }

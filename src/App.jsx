@@ -5,7 +5,7 @@ import { ResultService } from "./services/resultService.js";
 import { mapResultObjects } from "./services/results/resultMappings.js";
 import { AboutDialog } from "./components/AboutDialog.jsx";
 
-const tabs = ["Выбор задания", "Источники/Поля 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Потоки", "Силы/Моменты"];
+const tabs = ["Выбор задания", "Источники/Поля 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Потоки", "Силы / Потери"];
 const SourcesFields3D = lazy(() => import("./tabs/SourcesFields3D.jsx").then(module => ({ default: module.SourcesFields3D })));
 const WorkingPoints = lazy(() => import("./tabs/WorkingPoints.jsx").then(module => ({ default: module.WorkingPoints })));
 const FieldLines = lazy(() => import("./tabs/FieldLines.jsx").then(module => ({ default: module.FieldLines })));

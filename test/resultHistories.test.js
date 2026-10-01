@@ -6,7 +6,7 @@ import { join } from "node:path";
 import h5wasm from "h5wasm/node";
 import { Hdf5ResultFile } from "../src/services/results/hdf5ResultFile.js";
 import { HISTORY_QUANTITIES, measurementCoils, readFluxHistories, readForceMomentHistory,
-  fluxHistorySeries, forceMomentHistorySeries } from "../src/services/results/resultHistories.js";
+  fluxHistorySeries, forceMomentHistorySeries, lossHistorySeries } from "../src/services/results/resultHistories.js";
 
 // Julia resWrite stores PSI as NCOIL×1 and FM as 1×6 on disk. Neither
 // family has coordinates or per-geometry ranges in its HEADER.
@@ -195,4 +195,15 @@ test("History conversion validates dimensions, time indices, values and componen
   assert.throws(() => forceMomentHistorySeries(force, 0, "force", "3"), /модуль или компоненту/);
   force.values.fill(Number.MAX_VALUE);
   assert.throws(() => forceMomentHistorySeries(force, 0), /модуль вектора/);
+});
+
+test("Loss history stays instantaneous: static zero, signed values and watts", () => {
+  const history = { stride: 1, steps: [0], values: new Float64Array([0]) };
+  assert.deepEqual(lossHistorySeries(history, 0).points, [{ x: 0, y: 0, step: 0 }]);
+  const varying = { stride: 1, steps: [0, 2, 5], values: new Float64Array([0, 20, -3]) };
+  assert.deepEqual(lossHistorySeries(varying, .5).points.map(point => point.y), [0, 20, -3]);
+  assert.equal(HISTORY_QUANTITIES.loss.label, "Потери на токи проводимости");
+  assert.equal(HISTORY_QUANTITIES.loss.unit, "Вт");
+  assert.throws(() => lossHistorySeries(varying, 0), /положительным/);
+  assert.throws(() => lossHistorySeries({ ...history, values: [Infinity] }, 0), /бесконечные/);
 });

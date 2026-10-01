@@ -1,4 +1,5 @@
 import { checkReadRange } from "./resultLayout.js";
+import { lossIntegrationWeights } from "./resultLosses.js";
 
 // solver FieldV writes the total coil linkage in Wb, including turns and signs.
 // FieldS writes one total force (N) and moment (N·m) about general.polusForce*.
@@ -6,6 +7,7 @@ export const HISTORY_QUANTITIES = {
   flux: { label: "Потокосцепление", unit: "Вб", file: "PSI" },
   force: { label: "Сила", unit: "Н", file: "FM" },
   moment: { label: "Момент", unit: "Н·м", file: "FM" },
+  loss: { label: "Потери на токи проводимости", unit: "Вт", file: "Q" },
 };
 
 const number = value => String(Number(value.toPrecision(8)));
@@ -28,7 +30,7 @@ export function measurementCoils(task) {
   return [...coils.values()].sort((a, b) => a.id - b.id);
 }
 
-function historyMetadata(task, name, expectedPoints) {
+function historyMetadata(task, name, expectedPoints = null, operation = "history") {
   const metadata = task?.metadata?.[name];
   if (!metadata) throw new Error(`${name}.h5 отсутствует в output3XX`);
   if (metadata.error) throw new Error(metadata.error);
@@ -36,12 +38,12 @@ function historyMetadata(task, name, expectedPoints) {
   if (!Number.isSafeInteger(metadata.pointCount) || metadata.pointCount < 0) {
     throw new Error(`${name}.h5: не определено число строк результатов`);
   }
-  if (metadata.pointCount !== expectedPoints) {
+  if (expectedPoints !== null && metadata.pointCount !== expectedPoints) {
     const expected = name === "FM" ? "одна строка суммарных силы и момента"
       : `${expectedPoints} строк по наибольшему номеру измерительной катушки`;
     throw new Error(`${name}.h5: найдено ${metadata.pointCount} строк; ожидается ${expected}`);
   }
-  if (typeof task?.reader?.history !== "function") throw new Error("Модуль чтения результатов недоступен");
+  if (typeof task?.reader?.[operation] !== "function") throw new Error("Модуль чтения результатов недоступен");
   return metadata;
 }
 
@@ -93,6 +95,23 @@ export async function readForceMomentHistory(task) {
   const history = await task.reader.history({ name: "FM", point: 0 });
   validateReadHistory(history, metadata, 6, task, "FM");
   return history;
+}
+
+export async function readLossHistory(task) {
+  const metadata = historyMetadata(task, "Q", null, "integralHistory");
+  const weights = lossIntegrationWeights(task, metadata);
+  const history = await task.reader.integralHistory({ name: "Q", weights, offset: 3 });
+  validateReadHistory(history, metadata, 1, task, "Q");
+  return history;
+}
+
+export function lossHistorySeries(history, timeStep) {
+  validateHistory(history, 1, timeStep, "Q");
+  const quantity = HISTORY_QUANTITIES.loss;
+  return { label: quantity.label, legendLabel: "Суммарные потери",
+    points: history.steps.map((step, i) => ({ x: step * timeStep, y: history.values[i], step })),
+    tooltip: point => [`t = ${number(point.x)} с; шаг ${point.step}`,
+      `${quantity.label} = ${number(point.y)} ${quantity.unit}`] };
 }
 
 export function fluxHistorySeries({ record, history }, timeStep) {

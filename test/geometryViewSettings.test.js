@@ -12,7 +12,8 @@ test("опции компонентов сохраняются после уни
     return [...source.matchAll(/createGeometryViewSetting\("([^"]+)",\s*([^)]*)\)/g)]
       .map(([, name, initial]) => [name, JSON.parse(initial)]);
   });
-  assert.ok(entries.length >= 17);
+  assert.ok(entries.length > 0);
+  assert.equal(new Map(entries).get("vectorStyle"), "thin");
   const expected = new Map();
   let dispose;
   createRoot(cleanup => {

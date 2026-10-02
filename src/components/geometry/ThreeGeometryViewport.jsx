@@ -222,6 +222,7 @@ function createPrescribedSourceVectors(
           root.add(mesh);
         }
         mesh.material.color.setHex(color);
+        mesh.userData.resultVectors = arrows.map(({ item }) => item);
         mesh.count = arrows.length;
         mesh.visible = arrows.length > 0;
         return mesh;
@@ -1227,6 +1228,7 @@ export function ThreeGeometryViewport(props) {
   let prescribedSourceScene = null;
   let prescribedSourcesVisible = false;
   let prescribedSourceStyle = "thin";
+  let resultVectorStyle = "thin";
   let currentSourceScale = 1;
   let magnetizationSourceScale = 1;
   let acceptedSourceInstances = new Set();
@@ -1958,7 +1960,7 @@ export function ThreeGeometryViewport(props) {
         primitiveVisible(item, activeResultFilters.objectModes, activeResultFilters.selections)
         && instanceVisible(item.instance, activeResultFilters.symmetry));
       resultVectorRoot = createPrescribedSourceVectors(THREE, vectors, null,
-        currentResultScene.sceneDiagonal, "thin",
+        currentResultScene.sceneDiagonal, resultVectorStyle,
         { current: resultVectorScale, magnetization: resultVectorScale },
         currentResultScene.maximumMagnitude, resultVectorColor, resultVectorRoot);
       const previous = resultVectorRoot.getObjectByName("result-vector-nodes");
@@ -2307,6 +2309,7 @@ export function ThreeGeometryViewport(props) {
 
   createEffect(() => {
     currentResultScene = props.resultVectorScene ?? null;
+    resultVectorStyle = props.resultVectorStyle === "solid" ? "solid" : "thin";
     resultVectorScale = props.resultVectorScale ?? 1;
     resultVectorColor = props.resultVectorColor ?? 0x44ccff;
     if (!ready()) return;

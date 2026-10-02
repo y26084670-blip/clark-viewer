@@ -12,12 +12,7 @@ import { buildGeometryScene } from "../../services/visualization/geometrySceneMo
 import {
   buildGeometryTimeModel,
   geometryTimeState,
-  sourceAmplitudeFactors,
 } from "../../services/visualization/geometryTimeModel.js";
-import {
-  buildSourceVectorScene,
-  SOURCE_VECTOR_LIMIT,
-} from "../../services/visualization/sourceVectorSceneModel.js";
 import {
   GEOMETRY_CAMERA_COMMANDS,
   geometryCameraCommandFromKeyboardEvent,
@@ -69,8 +64,6 @@ const OBJECT_MODE_LABELS = Object.freeze({
 const OPTIONS_PANEL_ID = "geometry-viewer-options-panel";
 const GEOMETRY_FIT_ALL_PADDING = 1 + 0.08 / 3;
 
-const sourceScaleLabel = (scale) =>
-  `×${scale.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}`;
 
 function diagnosticDetail(diagnostic) {
   if (typeof diagnostic === "string") return diagnostic;
@@ -103,8 +96,6 @@ export function ResultsGeometryViewport(props) {
   let optionsPanelElement;
   let activePanelButton;
   let viewerResizeObserver;
-  let sourceSettingsButton;
-  let sourceSettingsBackButton;
   let timeAnimationFrame;
   let pendingTimeSelection;
 
@@ -119,10 +110,7 @@ export function ResultsGeometryViewport(props) {
   const [showDiscretizationLines, setShowDiscretizationLines] =
     createGeometryViewSetting("showDiscretizationLines", false);
   const [showCentersAndNodes, setShowCentersAndNodes] = createGeometryViewSetting("showCentersAndNodes", false);
-  const [showPrescribedSources, setShowPrescribedSources] = createGeometryViewSetting("showPrescribedSources", false);
-  const [prescribedSourceStyle, setPrescribedSourceStyle] = createGeometryViewSetting("prescribedSourceStyle", "thin");
-  const [currentSourceScale, setCurrentSourceScale] = createGeometryViewSetting("currentSourceScale", 1);
-  const [magnetizationSourceScale, setMagnetizationSourceScale] = createGeometryViewSetting("magnetizationSourceScale", 1);
+  const [vectorStyle, setVectorStyle] = createGeometryViewSetting("vectorStyle", "thin");
   const [elementsMode, setElementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode, setRegionsMode] = createGeometryViewSetting("regionsMode", "all");
   const [showLocalSymmetry, setShowLocalSymmetry] = createGeometryViewSetting("showLocalSymmetry", true);
@@ -179,58 +167,10 @@ export function ResultsGeometryViewport(props) {
     },
   }));
 
-  const sourceScene = createMemo(() => {
-    if (!props.open || !showPrescribedSources() || !displayScene()) return null;
-    try {
-      const frame = timeFrame();
-      const amplitude = sourceAmplitudeFactors(
-        frame.model?.elements,
-        props.amplitudes,
-        frame.time,
-      );
-      const scene = buildSourceVectorScene(
-        displayScene(),
-        frame.model?.elements,
-        props.prescribedSources,
-        {
-          limit: SOURCE_VECTOR_LIMIT,
-          general: frame.model?.general,
-          filters: filters(),
-          amplitudeFactors: amplitude.factors,
-          referenceScene: sceneModel(),
-        },
-      );
-      return {
-        ...scene,
-        diagnostics: [...amplitude.diagnostics, ...scene.diagnostics],
-      };
-    } catch (error) {
-      return {
-        vectors: [],
-        maximumMagnitude: { current: 0, magnetization: 0 },
-        sceneDiagonal: 0,
-        rowsTruncated: false,
-        imagesTruncated: false,
-        truncated: false,
-        diagnostics: [{
-          level: "warning",
-          code: "source-vector-conversion-failed",
-          message: "Не удалось подготовить векторы заданных источников: " +
-            (error instanceof Error ? error.message : String(error)),
-        }],
-      };
-    }
-  });
-
-  const changePrescribedSources = (checked) => {
-    setShowPrescribedSources(checked);
-  };
-
   const counts = () => displayScene()?.counts ?? EMPTY_COUNTS;
   const diagnostics = () => [
     ...(timeFrame()?.diagnostics ?? []),
     ...(displayScene()?.diagnostics ?? []),
-    ...(sourceScene()?.diagnostics ?? []),
   ];
   const budgetWarning = () => {
     const stats = renderStats();
@@ -245,18 +185,6 @@ export function ResultsGeometryViewport(props) {
       messages.push(
         "Часть линий дискретизации или точек скрыта из-за ограничения " +
         "объёма 3D-сцены.",
-      );
-    }
-    if (sourceScene()?.rowsTruncated) {
-      messages.push(
-        `Показ заданных источников ограничен первыми ${SOURCE_VECTOR_LIMIT} ` +
-        "строками таблицы.",
-      );
-    }
-    if (sourceScene()?.imagesTruncated) {
-      messages.push(
-        "Показ заданных источников с учётом симметрии ограничен " +
-        `${SOURCE_VECTOR_LIMIT} векторами. Измените режимы показа.`,
       );
     }
     return messages.join(" ");
@@ -292,7 +220,7 @@ export function ResultsGeometryViewport(props) {
   };
 
   const togglePanel = (name, event) => {
-    if (openPanel() === name || (name === "general" && openPanel() === "sources")) {
+    if (openPanel() === name) {
       setOpenPanel(null);
       return;
     }
@@ -300,22 +228,6 @@ export function ResultsGeometryViewport(props) {
     activePanelButton = event.currentTarget;
     setOpenPanel(name);
     queueMicrotask(updatePanelPosition);
-  };
-
-  const openSourceSettings = () => {
-    setOpenPanel("sources");
-    queueMicrotask(() => {
-      updatePanelPosition();
-      sourceSettingsBackButton?.focus();
-    });
-  };
-
-  const closeSourceSettings = () => {
-    setOpenPanel("general");
-    queueMicrotask(() => {
-      updatePanelPosition();
-      sourceSettingsButton?.focus();
-    });
   };
 
   const closePanel = (restoreFocus = false) => {
@@ -350,10 +262,6 @@ export function ResultsGeometryViewport(props) {
     if (event.defaultPrevented || event.isComposing) return;
     if (event.code === "Escape") {
       event.preventDefault();
-      if (openPanel() === "sources") {
-        closeSourceSettings();
-        return;
-      }
       closePanel(true);
       return;
     }
@@ -456,9 +364,9 @@ export function ResultsGeometryViewport(props) {
             <button
               type="button"
               class="geometry-viewer-menu-button"
-              classList={{ active: openPanel() === "general" || openPanel() === "sources" }}
+              classList={{ active: openPanel() === "general" }}
               aria-label="Общие опции отображения"
-              aria-expanded={openPanel() === "general" || openPanel() === "sources"}
+              aria-expanded={openPanel() === "general"}
               aria-controls={OPTIONS_PANEL_ID}
               aria-haspopup="dialog"
               title="Настроить общие опции отображения"
@@ -500,15 +408,12 @@ export function ResultsGeometryViewport(props) {
             }}
             id={OPTIONS_PANEL_ID}
             class="geometry-viewer-options-panel"
-            classList={{ "geometry-viewer-source-options": openPanel() === "sources" }}
             role="dialog"
             aria-modal="false"
             aria-label={openPanel() === "view"
               ? "Команды показа геометрии"
               : openPanel() === "general"
                 ? "Общие опции отображения"
-                : openPanel() === "sources"
-                  ? "Настройка векторов заданных источников"
                   : openPanel() === "symmetry"
                     ? "Показ симметрий"
                     : `Показ ${openPanel() === "elements" ? "элементов" : "областей"}`}
@@ -746,110 +651,17 @@ export function ResultsGeometryViewport(props) {
                 />
                 Центры и узлы
               </label>
-              <div class="geometry-viewer-source-option">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={showPrescribedSources()}
-                    onChange={(event) =>
-                      changePrescribedSources(event.currentTarget.checked)}
-                  />
-                  Заданные источники
-                </label>
-                <button
-                  ref={(element) => (sourceSettingsButton = element)}
-                  type="button"
-                  class="geometry-viewer-source-settings-button"
-                  title="Настройка векторов"
-                  aria-label="Настройка векторов заданных источников"
-                  onClick={openSourceSettings}
+              <label class="geometry-viewer-source-option">
+                <span>Вид векторов</span>
+                <select
+                  aria-label="Вид векторов"
+                  value={vectorStyle()}
+                  onChange={(event) => setVectorStyle(event.currentTarget.value)}
                 >
-                  ⚙
-                </button>
-              </div>
-            </Show>
-
-            <Show when={openPanel() === "sources"}>
-              <button
-                ref={(element) => (sourceSettingsBackButton = element)}
-                type="button"
-                class="geometry-viewer-view-command"
-                onClick={closeSourceSettings}
-              >
-                ← Общие опции
-              </button>
-              <div class="geometry-viewer-options-title">Векторы заданных источников</div>
-              <fieldset class="geometry-viewer-source-style">
-                <legend>Вид векторов</legend>
-                <label>
-                  <input
-                    type="radio"
-                    name="geometry-source-arrow-style"
-                    checked={prescribedSourceStyle() === "thin"}
-                    onChange={() => setPrescribedSourceStyle("thin")}
-                  />
-                  Палочки
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="geometry-source-arrow-style"
-                    checked={prescribedSourceStyle() === "solid"}
-                    onChange={() => setPrescribedSourceStyle("solid")}
-                  />
-                  Объёмные
-                </label>
-              </fieldset>
-              <label class="geometry-viewer-source-scale is-current">
-                <span class="geometry-viewer-source-scale-heading">
-                  <span>Плотность тока</span>
-                  <output>{sourceScaleLabel(currentSourceScale())}</output>
-                </span>
-                <input
-                  type="range"
-                  min="-1"
-                  max="1"
-                  step="0.01"
-                  value={Math.log10(currentSourceScale())}
-                  aria-label="Масштаб длины векторов плотности тока"
-                  aria-valuetext={sourceScaleLabel(currentSourceScale())}
-                  onInput={(event) =>
-                    setCurrentSourceScale(10 ** event.currentTarget.valueAsNumber)}
-                />
-                <span class="geometry-viewer-source-scale-ticks" aria-hidden="true">
-                  <span>×0,1</span><span>×1</span><span>×10</span>
-                </span>
+                  <option value="thin">Тонкие</option>
+                  <option value="solid">Объёмные</option>
+                </select>
               </label>
-              <label class="geometry-viewer-source-scale is-magnetization">
-                <span class="geometry-viewer-source-scale-heading">
-                  <span>Намагниченность</span>
-                  <output>{sourceScaleLabel(magnetizationSourceScale())}</output>
-                </span>
-                <input
-                  type="range"
-                  min="-1"
-                  max="1"
-                  step="0.01"
-                  value={Math.log10(magnetizationSourceScale())}
-                  aria-label="Масштаб длины векторов намагниченности"
-                  aria-valuetext={sourceScaleLabel(magnetizationSourceScale())}
-                  onInput={(event) =>
-                    setMagnetizationSourceScale(10 ** event.currentTarget.valueAsNumber)}
-                />
-                <span class="geometry-viewer-source-scale-ticks" aria-hidden="true">
-                  <span>×0,1</span><span>×1</span><span>×10</span>
-                </span>
-              </label>
-              <button
-                type="button"
-                class="geometry-viewer-view-command"
-                onClick={() => {
-                  setCurrentSourceScale(1);
-                  setMagnetizationSourceScale(1);
-                }}
-              >
-                Сбросить длины к ×1
-              </button>
             </Show>
           </div>
         </Show>
@@ -861,6 +673,7 @@ export function ResultsGeometryViewport(props) {
             resultVectorScene={props.resultVectorScene}
             resultScalarScene={props.resultScalarScene}
             resultPickingOnly={props.resultPickingOnly}
+            resultVectorStyle={vectorStyle()}
             resultVectorScale={props.resultVectorScale}
             resultVectorColor={props.resultVectorColor}
             filters={filters()}
@@ -870,11 +683,6 @@ export function ResultsGeometryViewport(props) {
             showVertices={showVertices()}
             showDiscretizationLines={showDiscretizationLines()}
             showCentersAndNodes={showCentersAndNodes()}
-            showPrescribedSources={showPrescribedSources()}
-            prescribedSourceScene={sourceScene()}
-            prescribedSourceStyle={prescribedSourceStyle()}
-            currentSourceScale={currentSourceScale()}
-            magnetizationSourceScale={magnetizationSourceScale()}
             projection={orthographicView() ? "orthographic" : "perspective"}
             viewRequest={viewRequest()}
             fitAllPadding={GEOMETRY_FIT_ALL_PADDING}

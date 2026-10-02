@@ -220,3 +220,24 @@ test("instance budget, selections and invalid matrices still apply", () => {
   assert.equal(stats.truncated, true);
   releaseGeometry(root);
 });
+
+
+test("switching thin/solid preserves vectors, colors and instance picking", async () => {
+  const { resultHitVector } = await import("../src/services/visualization/geometryPicking.js");
+  const items=[vector(1),vector(-.5)];
+  let root=update(null,"thin",items);
+  const old=root.children[0];let disposed=0;
+  old.geometry.addEventListener("dispose",()=>disposed++);
+  root=update(root,"solid",items);
+  assert.equal(disposed,1);
+  const shaft=root.getObjectByName("prescribed-source-current-shaft");
+  const head=root.getObjectByName("prescribed-source-current-head");
+  assert.equal(shaft.count,2);assert.equal(head.count,2);
+  assert.equal(resultHitVector({object:shaft,instanceId:1}),items[1]);
+  assert.equal(resultHitVector({object:head,instanceId:0}),items[0]);
+  assert.equal(resultHitVector({object:head,instanceId:-1}),null);
+  root=update(root,"thin",items);
+  const line=root.getObjectByName("prescribed-source-current");
+  assert.equal(line.geometry.drawRange.count,4);
+  assert.equal(resultHitVector({object:line,index:2}),items[1]);
+});

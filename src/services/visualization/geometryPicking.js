@@ -117,9 +117,14 @@ export function resultHitScalar(hit) {
     return points[hit.index] ?? null;
 }
 
-/** A thin vector is one segment, i.e. two position vertices. */
+/** Lines use pairs of vertices; volume arrows use an instance per vector. */
 export function resultHitVector(hit) {
     const vectors = hit?.object?.userData?.resultVectors;
+    if (hit?.object?.isInstancedMesh) {
+        const index = hit.instanceId;
+        return vectors && Number.isSafeInteger(index) && index >= 0
+            ? vectors[index] ?? null : null;
+    }
     if (!vectors || !Number.isSafeInteger(hit.index) || hit.index < 0) return null;
     return vectors[hit.object.isPoints ? hit.index : Math.floor(hit.index / 2)] ?? null;
 }

@@ -2,6 +2,7 @@ import { QUANTITIES } from "./resultMappings.js";
 import { readObjectFrames, resultObjects } from "./resultRequests.js";
 import { resultVolumeDomains, scalarScene, vectorScene } from "./resultPlots.js";
 import { buildResultVolumeField, ResultVolumeLimitError, VOLUME_MAX_DOMAINS } from "../visualization/resultVolumeField.js";
+import { buildResultSurfaceField, isResultSurfaceDomain } from "../visualization/resultSurfaceField.js";
 import { attachResultVolumeSupport } from "./resultVolumeSupport.js";
 
 export const VOLUME_MAX_NODES = 100_000;
@@ -60,14 +61,27 @@ export async function readResultVolumeFrame(request, previousVolumeFields = null
     if (savedDomains.length > VOLUME_MAX_DOMAINS) {
       throw new ResultVolumeLimitError(`Для объёмной карты допускается не более ${VOLUME_MAX_DOMAINS} отдельных образов`);
     }
-    const domains = attachResultVolumeSupport(savedDomains,
+    // The volume processor transfers these buffers to its worker. Read their
+    // range now, and do not mix an empty branch's default zero into the range.
+    let minimum = Infinity, maximum = -Infinity;
+    for (const domain of savedDomains) for (const value of domain.values) if (Number.isFinite(value)) {
+      minimum = Math.min(minimum, value); maximum = Math.max(maximum, value);
+    }
+    // Saved 2D observation grids have an exact surface topology. Keep them out
+    // of the volume processor: no voxels, fabricated thickness or support hull.
+    const surfaceFields = buildResultSurfaceField({ domains: savedDomains.filter(isResultSurfaceDomain) });
+    const domains = attachResultVolumeSupport(savedDomains.filter(domain => !isResultSurfaceDomain(domain)),
       { task: request.task, quantity, time: request.time });
-    const built = processor ? await processor.process(domains)
+    const built = !domains.length ? { domains: [], fallbackPoints: [], fallbackDomainKeys: [], notice: "" }
+      : processor ? await processor.process(domains)
       : buildResultVolumeField({ domains, previous: previousVolumeFields });
-    const fallbackPoints = boundedVolumeFallbackPoints(built.fallbackPoints, fallbackBudget);
-    const sampled = fallbackPoints.length < built.fallbackPoints.length;
-    const notice = [built.notice, sampled ? "Цветные узлы показаны выборкой в общем пределе кадра" : ""].filter(Boolean).join(". ");
-    const volumeFields = { ...built, fallbackPoints, notice };
+    const allFallbackPoints = [...built.fallbackPoints, ...surfaceFields.fallbackPoints];
+    const fallbackPoints = boundedVolumeFallbackPoints(allFallbackPoints, fallbackBudget);
+    const sampled = fallbackPoints.length < allFallbackPoints.length;
+    const notice = [built.notice, surfaceFields.notice, sampled ? "Цветные узлы показаны выборкой в общем пределе кадра" : ""].filter(Boolean).join(". ");
+    const volumeFields = { ...built, surfaces: surfaceFields.surfaces, fallbackPoints,
+      fallbackDomainKeys: [...built.fallbackDomainKeys ?? [], ...surfaceFields.fallbackDomainKeys],
+      minimum: Number.isFinite(minimum) ? minimum : 0, maximum: Number.isFinite(maximum) ? maximum : 0, notice };
     return { ...result, sampled: result.sampled || sampled, volumeFields, volumeNotice: notice };
   } catch (error) {
     if (!(error instanceof ResultVolumeLimitError)) throw error;
@@ -80,7 +94,7 @@ export async function readResultVolumeFrame(request, previousVolumeFields = null
       minimum = Math.min(minimum, value); maximum = Math.max(maximum, value);
     }
     const notice = `${error.message}. Показана цветовая карта узлов${result.sampled ? " (выборка)" : ""}.`;
-    return { ...result, volumeFields: { domains: [], fallbackPoints,
+    return { ...result, volumeFields: { domains: [], surfaces: [], fallbackPoints,
       minimum: Number.isFinite(minimum) ? minimum : 0, maximum: Number.isFinite(maximum) ? maximum : 0, notice }, volumeNotice: notice };
   }
 }

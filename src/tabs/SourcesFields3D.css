@@ -8,6 +8,26 @@
 .sources-fields-toolbar .source-quantity-selector select {
   max-width: min(245px, 55vw);
 }
+.source-result-size-slider {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.source-result-size-slider input[type=range] {
+  display: block;
+  margin: 0;
+}
+.source-result-size-slider.is-color-map::before {
+  content: "";
+  position: absolute;
+  top: -7px;
+  right: 3px;
+  width: 10px;
+  height: 7px;
+  background: linear-gradient(135deg, #e11d2e, #ffd43b);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  pointer-events: none;
+}
 .sources-fields-status {
   display: flex;
   flex-wrap: wrap;

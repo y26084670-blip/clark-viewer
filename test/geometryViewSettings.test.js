@@ -15,7 +15,7 @@ test("опции компонентов сохраняются после уни
   assert.ok(entries.length > 0);
   assert.equal(new Map(entries).get("vectorStyle"), "thin");
   assert.equal(new Map(entries).get("resultVectorColorMap"), false);
-  assert.equal(new Map(entries).get("resultPalette"), "Viridis");
+  assert.equal(new Map(entries).get("resultPalette"), "Rainbow");
   assert.equal(new Map(entries).get("resultElementsQuantity"), "M");
   assert.equal(new Map(entries).get("resultRegionsQuantity"), "none");
   assert.equal(new Map(entries).get("resultVirtualQuantity"), "none");

@@ -1,5 +1,6 @@
 import { createEffect, createSignal, createUniqueId, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import { saveTaskGif } from "../../services/taskGifService.js";
 import "./ViewerToolsMenu.css";
 
 export function ViewerToolsMenu(props) {
@@ -12,9 +13,12 @@ export function ViewerToolsMenu(props) {
   const [progress, setProgress] = createSignal({ phase: "preparing", completed: 0, total: 0, step: null });
   const [error, setError] = createSignal("");
   const [result, setResult] = createSignal(null);
+  const [saveInTask, setSaveInTask] = createSignal(false);
+  const [saving, setSaving] = createSignal(false);
+  const [savedNotice, setSavedNotice] = createSignal("");
   let trigger, menu, menuItem, dialog, intervalInput, cancelButton, saveButton;
-  let runAbort, revision = 0, disposed = false;
-  let openedTask, openedTab, closeAfterRun = false;
+  let runAbort, saveAbort, revision = 0, disposed = false;
+  let openedTask, openedTab, closeAfterRun = false, closeAfterSave = false;
   const running = () => phase() === "running" || phase() === "cancelling";
   const validInterval = () => Number.isInteger(intervalMs()) && intervalMs() >= 20
     && intervalMs() <= 60000 && intervalMs() % 10 === 0;
@@ -42,8 +46,9 @@ export function ViewerToolsMenu(props) {
     queueMicrotask(() => { if (menuOpen() && !disposed) { positionMenu(); menuItem?.focus(); } });
   }
   function openSetup() {
-    if (!props.eligible || running()) return;
+    if (!props.eligible || running() || saving()) return;
     closeMenu(); discardResult(); setError(""); setPhase("setup");
+    setSaveInTask(false); setSavedNotice("");
     openedTask = props.task; openedTab = props.tabIndex; closeAfterRun = false;
     setDialogOpen(true);
     queueMicrotask(() => intervalInput?.focus());
@@ -54,17 +59,19 @@ export function ViewerToolsMenu(props) {
     setPhase("cancelling"); runAbort?.abort();
   }
   function closeDialog() {
+    if (saving()) return;
     if (running()) { cancelCapture(true); return; }
     setDialogOpen(false); discardResult(); setError("");
     trigger?.focus();
   }
   async function startCapture() {
-    if (running() || !props.eligible) return;
+    if (running() || saving() || !props.eligible) return;
     if (!validInterval()) {
       setError("Введите интервал от 20 до 60000 мс с шагом 10 мс.");
       intervalInput?.focus(); return;
     }
     const current = ++revision;
+    const capturedTask = props.task;
     const abort = new AbortController(); runAbort = abort;
     discardResult(); setError(""); setPhase("running"); closeAfterRun = false;
     setProgress({ phase: "preparing", completed: 0, total: props.frameCount, step: null });
@@ -75,7 +82,7 @@ export function ViewerToolsMenu(props) {
         onProgress: value => { if (!disposed && current === revision) setProgress(value); } });
       if (disposed || current !== revision || abort.signal.aborted) return;
       if (!(movie?.blob instanceof Blob) || movie.blob.size === 0) throw new Error("Не удалось сформировать GIF.");
-      setResult({ ...movie, url: URL.createObjectURL(movie.blob) });
+      setResult({ ...movie, task: capturedTask, url: URL.createObjectURL(movie.blob) });
       setPhase("ready");
       queueMicrotask(() => saveButton?.focus());
     } catch (failure) {
@@ -92,6 +99,37 @@ export function ViewerToolsMenu(props) {
           if (closeAfterRun) { setDialogOpen(false); discardResult(); trigger?.focus(); }
           else queueMicrotask(() => intervalInput?.focus());
         }
+      }
+    }
+  }
+  function changeSaveLocation(checked) {
+    if (saving()) return;
+    setSaveInTask(Boolean(checked)); setError(""); setSavedNotice("");
+  }
+  async function saveToTask() {
+    const movie = result();
+    if (!movie || !saveInTask() || saving() || running() || disposed) return;
+    if (movie.task !== props.task || movie.task !== openedTask || props.tabIndex !== openedTab) {
+      setError("Задание изменилось. Создайте фильм для текущего открытого задания."); return;
+    }
+    const current = ++revision;
+    const abort = new AbortController(); saveAbort = abort; closeAfterSave = false;
+    setSaving(true); setError(""); setSavedNotice(""); props.onBusyChange?.(true);
+    try {
+      // Call directly from the click before the first await, preserving browser
+      // user activation for the directory's write-permission request.
+      const saved = await saveTaskGif(movie.task?.handle, movie.blob, movie.filename, { signal: abort.signal });
+      if (disposed || current !== revision || abort.signal.aborted || props.task !== movie.task) return;
+      setSavedNotice(`Сохранено: output3XX/demo/${saved.name}`);
+    } catch (failure) {
+      if (!disposed && current === revision && !closeAfterSave) {
+        setError(failure?.name === "AbortError" ? "Сохранение отменено. GIF доступен для повторного сохранения."
+          : failure?.message ?? String(failure));
+      }
+    } finally {
+      if (current === revision) {
+        saveAbort = null; setSaving(false); props.onBusyChange?.(false);
+        if (!disposed && closeAfterSave) closeDialog();
       }
     }
   }
@@ -149,11 +187,12 @@ export function ViewerToolsMenu(props) {
       // Handle each context change once. A later restoration error must remain
       // visible instead of retriggering this effect and closing its dialog.
       openedTask = task; openedTab = tab;
-      closeDialog();
+      if (saving()) { closeAfterSave = true; saveAbort?.abort(); }
+      else closeDialog();
     }
   });
   onCleanup(() => {
-    disposed = true; runAbort?.abort(); discardResult();
+    disposed = true; runAbort?.abort(); saveAbort?.abort(); discardResult();
     if (dialog?.open) dialog.close();
   });
 
@@ -192,12 +231,18 @@ export function ViewerToolsMenu(props) {
           <p>{movie().frameCount} кадров · {movie().width} × {movie().height}</p>
         </>}</Show>
         <Show when={error()}><p class="viewer-movie-error" role="alert">{error()}</p></Show>
+        <Show when={saving()}><p class="viewer-movie-note" role="status">Сохранение GIF в задании…</p></Show>
+        <Show when={savedNotice()}><p class="viewer-movie-saved" role="status">{savedNotice()}</p></Show>
         <div class="viewer-movie-actions">
           <Show when={running()} fallback={<>
             <Show when={result()} fallback={<button type="button" disabled={!props.eligible || !validInterval()} onClick={startCapture}>Начать</button>}>
-              <a ref={saveButton} class="viewer-movie-save" href={result()?.url} download={result()?.filename}>Сохранить GIF</a>
+              <Show when={saveInTask()} fallback={<a ref={saveButton} class="viewer-movie-save" href={result()?.url} download={result()?.filename}>Сохранить GIF</a>}>
+                <button ref={saveButton} type="button" class="viewer-movie-save" disabled={saving()} onClick={saveToTask}>Сохранить GIF</button>
+              </Show>
+              <label class="viewer-movie-task-save"><input type="checkbox" checked={saveInTask()} disabled={saving()}
+                onChange={event => changeSaveLocation(event.currentTarget.checked)} />в задании</label>
             </Show>
-            <button type="button" onClick={closeDialog}>Закрыть</button>
+            <button type="button" disabled={saving()} onClick={closeDialog}>Закрыть</button>
           </>}>
             <button ref={cancelButton} type="button" disabled={phase() === "cancelling"} onClick={() => cancelCapture(false)}>Отмена</button>
           </Show>

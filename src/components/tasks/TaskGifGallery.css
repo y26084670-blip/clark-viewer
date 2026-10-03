@@ -1,0 +1,48 @@
+.task-gif-gallery {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #20262d;
+  color: #f0f4f7;
+  color-scheme: dark;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+}
+.task-gif-gallery-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex: none; padding: 6px 8px; border-bottom: 1px solid #596773; font-weight: bold; }
+.task-gif-count { margin-left: 5px; color: #b9c9d6; font-weight: normal; }
+.task-gif-gallery svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.task-gif-gallery-header > button, .task-gif-cell-actions > button, .task-gif-dialog-header > button { display: inline-flex; align-items: center; justify-content: center; padding: 3px; width: 26px; height: 26px; min-height: 0; border: 1px solid #71818e; border-radius: 3px; color: #f0f4f7; background: #303b45; cursor: pointer; }
+.task-gif-gallery button:hover, .task-gif-dialog-header > button:hover { background: #4a5965; }
+.task-gif-gallery button:disabled { opacity: .45; cursor: default; }
+.task-gif-gallery button:focus-visible, .task-gif-dialog button:focus-visible { outline: 2px solid #74c5ff; outline-offset: 1px; }
+.task-gif-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr)); align-content: start; gap: 7px; flex: 1 1 0; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 7px; }
+.task-gif-cell { position: relative; min-width: 0; height: 145px; border: 1px solid #596773; background: #141a20; overflow: hidden; }
+.task-gif-thumbnail { height: 116px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.task-gif-thumbnail img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.task-gif-placeholder { padding: 8px; color: #aab9c5; font-size: 12px; text-align: center; }
+.task-gif-cell-actions { position: absolute; top: 4px; right: 4px; display: flex; gap: 4px; }
+.task-gif-filename { padding: 5px 6px; height: 27px; background: #29343e; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
+.task-gif-empty { grid-column: 1 / -1; margin: 12px 4px; text-align: center; color: #b9c9d6; }
+.task-gif-error { flex: none; padding: 7px 9px; background: #4b2828; color: #ffcdca; overflow-wrap: anywhere; }
+.task-gif-dialog { position: fixed; inset: 0; margin: auto; padding: 0; width: min(900px, 94vw); max-width: 94vw; max-height: 92dvh; overflow: hidden; border: 1px solid #71818e; border-radius: 6px; background: #20262d; color: #f0f4f7; box-shadow: 0 10px 32px #0007; font: 14px Arial, sans-serif; }
+.task-gif-dialog[open] { display: flex; flex-direction: column; }
+.task-gif-dialog::backdrop { background: #0007; }
+.task-gif-dialog-header { display: flex; flex: none; align-items: center; gap: 12px; padding: 7px 9px; border-bottom: 1px solid #596773; background: #29343e; cursor: move; user-select: none; touch-action: none; }
+.task-gif-dialog-header h2 { flex: 1; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-weight: bold; }
+.task-gif-dialog-header > button { flex: none; font: 22px/1 Arial, sans-serif; }
+.task-gif-preview-body { display: flex; align-items: center; justify-content: center; min-height: 90px; min-width: 0; overflow: hidden; }
+.task-gif-preview-body > img { display: block; max-width: 100%; max-height: calc(92dvh - 45px); object-fit: contain; }
+.task-gif-preview-body > p { padding: 20px; overflow-wrap: anywhere; }
+.task-gif-confirm { width: 420px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow: auto; margin: auto; padding: 18px; border: 1px solid #71818e; border-radius: 6px; background: #20262d; color: #f0f4f7; font: 14px/1.4 Arial, sans-serif; }
+.task-gif-confirm::backdrop { background: #0007; }
+.task-gif-confirm h2 { margin: 0 0 14px; font-size: 18px; }
+.task-gif-confirm p { overflow-wrap: anywhere; }
+.task-gif-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.task-gif-confirm-actions > button { min-height: 32px; border: 1px solid #71818e; border-radius: 3px; padding: 5px 12px; background: #303b45; color: #f0f4f7; font: inherit; cursor: pointer; }
+.task-gif-confirm-actions > button:hover { background: #4a5965; }
+.task-gif-confirm-actions > button:first-child { border-color: #c47570; }
+.task-gif-confirm-actions > button:focus-visible { outline: 2px solid #74c5ff; outline-offset: 1px; }

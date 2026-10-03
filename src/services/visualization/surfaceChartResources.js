@@ -1,14 +1,8 @@
 import * as THREE from "three";
 
-/** A flat surface already uses this nonzero span internally. Expose the same
- * span in the fixed movie labels so later values retain meaningful heights. */
-export function surfaceMovieLimits({ min, max }) {
-  return { min, max: max > min ? max : min + Math.max(Math.abs(min), 1) };
-}
-
 // Time steps share one topology. Keep the mesh, material and GPU buffers while
 // replacing only the saved values; picking needs refreshed bounds as well.
-export function updateSurfaceMesh(surface, grid, fixedLimits = null) {
+export function updateSurfaceMesh(surface, grid) {
   const { width, height, values } = grid;
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 2 || height < 2
     || values.length !== width * height) throw new Error("Некорректная сетка поверхности");
@@ -16,12 +10,6 @@ export function updateSurfaceMesh(surface, grid, fixedLimits = null) {
   for (const value of values) {
     if (!Number.isFinite(value)) throw new Error("Поверхность содержит нечисловые значения");
     min = Math.min(min, value); max = Math.max(max, value);
-  }
-  if (fixedLimits) {
-    if (!Number.isFinite(fixedLimits.min) || !Number.isFinite(fixedLimits.max) || fixedLimits.max < fixedLimits.min) {
-      throw new Error("Некорректная фиксированная шкала поверхности");
-    }
-    min = fixedLimits.min; max = fixedLimits.max;
   }
   if (!surface) surface = new THREE.Mesh(new THREE.BufferGeometry(),
     new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));

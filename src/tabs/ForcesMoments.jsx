@@ -43,7 +43,7 @@ export function ForcesMoments(props) {
   const error = () => result.error() || plot().error;
   const reading = () => quantity() === "loss" ? "Чтение потерь…" : "Чтение сил и моментов…";
   const movieFrame = createMemo(() => ({ frame: result.state().frame, time: props.time, quantity: quantity(), plot: plot() }));
-  const movie = createMovieTabAdapter(props, { title: "Силы / Потери", readFrame: index => {
+  const movie = createMovieTabAdapter(props, { title: "Силы / Потери", filenamePrefix: quantity, readFrame: index => {
     const current = completedMovieFrame(result.state(), { task: props.task, index, timed: false });
     if (!current.ready) return current;
     if (error()) return { error: error() };

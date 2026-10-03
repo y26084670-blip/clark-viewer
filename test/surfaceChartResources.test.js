@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
-import { disposeSurfaceObject, surfaceMovieLimits, updateSurfaceLabel, updateSurfaceMesh } from "../src/services/visualization/surfaceChartResources.js";
+import { disposeSurfaceObject, updateSurfaceLabel, updateSurfaceMesh } from "../src/services/visualization/surfaceChartResources.js";
 
 const grid = (values, width = 2, height = 2) => ({ width, height, values: new Float64Array(values) });
 
@@ -76,40 +76,24 @@ test("surface labels retain sprites, material and texture and repaint only chang
   disposeSurfaceObject(sprite); assert.equal(disposed, 2);
 });
 
-test("movie surface keeps its original numerical scale and restores auto scaling afterwards", () => {
-  const surface = updateSurfaceMesh(null, grid([0, 2, 4, 6]));
-  const fixed = { ...surface.userData.limits }, geometry = surface.geometry, material = surface.material;
-  const firstColor = Array.from(geometry.getAttribute("color").array.slice(3, 6));
-  updateSurfaceMesh(surface, grid([-3, 2, 8, 12]), fixed);
-  assert.deepEqual(surface.userData.limits, { min: 0, max: 6 });
-  assert.equal(surface.geometry, geometry); assert.equal(surface.material, material);
-  assert.deepEqual(Array.from(geometry.getAttribute("color").array.slice(3, 6)), firstColor,
-    "the same physical value retains its color between frames");
-  const positions = geometry.getAttribute("position");
-  assert.equal(positions.getZ(0), -.75);
-  assert.equal(positions.getZ(1), .5);
-  assert.equal(positions.getZ(3), 3, "out-of-range values retain their physical height instead of being clipped");
-  updateSurfaceMesh(surface, grid([-3, 2, 8, 12]));
-  assert.deepEqual(surface.userData.limits, { min: -3, max: 12 });
-  assert.equal(positions.getZ(0), 0); assert.equal(positions.getZ(3), 1.5);
-  assert.throws(() => updateSurfaceMesh(surface, grid([1, 2, 3, 4]), { min: 5, max: 2 }), /фиксированная/);
-  disposeSurfaceObject(surface);
-});
-
-for (const initial of [0, 4, -4]) test(`flat surface ${initial} keeps the same height/color span throughout a movie`, () => {
-  const surface = updateSurfaceMesh(null, grid(Array(4).fill(initial)));
-  const positions = surface.geometry.getAttribute("position"), colors = surface.geometry.getAttribute("color");
-  const initialPositions = Array.from(positions.array), initialColors = Array.from(colors.array);
-  const span = Math.max(Math.abs(initial), 1), fixed = surfaceMovieLimits(surface.userData.limits);
-  assert.deepEqual(fixed, { min: initial, max: initial + span });
-  updateSurfaceMesh(surface, grid(Array(4).fill(initial)), fixed);
-  assert.deepEqual(Array.from(positions.array), initialPositions, "freezing does not move the initial flat surface");
-  assert.deepEqual(Array.from(colors.array), initialColors, "freezing does not recolor the initial flat surface");
-  updateSurfaceMesh(surface, grid([initial, initial + span / 2, initial + span, initial + span * 2]), fixed);
-  assert.deepEqual(surface.userData.limits, fixed);
-  assert.deepEqual([0, 1, 2, 3].map(index => positions.getZ(index)), [0, .75, 1.5, 3]);
-  updateSurfaceMesh(surface, grid(Array(4).fill(initial)));
-  assert.deepEqual(surface.userData.limits, { min: initial, max: initial });
-  assert.deepEqual(Array.from(positions.array), initialPositions);
+test("surface automatic range follows zero, large, tiny and signed frames without reallocating buffers", () => {
+  const surface = updateSurfaceMesh(null, grid([0, 0, 0, 0]));
+  const geometry = surface.geometry, material = surface.material;
+  const positions = geometry.getAttribute("position"), colors = geometry.getAttribute("color");
+  for (const values of [[0, 1000, 250, 500], [0, 1e-9, 2.5e-10, 5e-10], [-1000, 1000, -500, 0], [0, 0, 0, 0]]) {
+    updateSurfaceMesh(surface, grid(values));
+    assert.equal(surface.geometry, geometry); assert.equal(surface.material, material);
+    const min = Math.min(...values), max = Math.max(...values);
+    assert.deepEqual(surface.userData.limits, { min, max });
+    const span = max - min || Math.max(Math.abs(min), 1);
+    values.forEach((value, index) => {
+      const fraction = (value - min) / span;
+      assert.ok(Math.abs(positions.getZ(index) - fraction * 1.5) < 1e-6);
+      const expected = new THREE.Color().setHSL(.66 * (1 - fraction), .9, .48).toArray();
+      expected.forEach((component, axis) => assert.ok(Math.abs(colors.array[index * 3 + axis] - component) < 1e-6));
+    });
+    assert.equal(geometry.boundingBox.min.z, 0);
+    assert.equal(geometry.boundingBox.max.z, max > min ? 1.5 : 0);
+  }
   disposeSurfaceObject(surface);
 });

@@ -54,7 +54,7 @@ export function WorkingPoints(props) {
   });
   const warnings = () => [curves.error(), points.error(), ...(curves.value()?.warnings ?? []), ...(points.value()?.warnings ?? [])].filter(Boolean).join(" · ");
   const movieFrame = createMemo(() => ({ points: points.state().frame, curves: curves.state().frame }));
-  const movie = createMovieTabAdapter(props, { title: "Рабочие точки", readFrame: index => {
+  const movie = createMovieTabAdapter(props, { title: "Рабочие точки", filenamePrefix: "mh", readFrame: index => {
     if (!selected().length) return { error: "Выберите элементы ФММ" };
     const a = completedMovieFrame(points.state(), { task: props.task, index });
     const b = completedMovieFrame(curves.state(), { task: props.task, index, timed: false });

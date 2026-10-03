@@ -15,7 +15,7 @@ function harness({ frameCount = 3, encoder = {}, adapter: changes = {}, limits }
   const events = [], task = {}, originalTime = frameCount - 1;
   let time = originalTime, frozen = false, closed = 0;
   const adapter = {
-    getContext: () => ({ task, title: "Поле", frameCount, originalTime: time, timeStep: .25, filename: "task/movie" }),
+    getContext: () => ({ task, title: "Поле", frameCount, originalTime: time, timeStep: .25, filenamePrefix: "areas" }),
     async prepare() { events.push("prepare"); frozen = true; },
     async capture(index, options) { events.push(["capture", index, options.caption]); time = index; return pixels(index); },
     async restore(index) { events.push(["restore", index]); time = index; frozen = false; },
@@ -44,7 +44,7 @@ test("movie captures every requested step exactly once and waits for each encodi
   assert.deepEqual(h.events.filter(event => Array.isArray(event) && event[0] === "capture").map(event => event[1]), [0, 1, 2]);
   assert.ok(gates.every(gate => gate.options.delayMs === 120));
   assert.match(h.events.find(event => Array.isArray(event) && event[1] === 1)[2], /t = 0.25 с/);
-  assert.equal(gif.filename, "task_movie.gif"); assert.equal(gif.frameCount, 3);
+  assert.match(gif.filename, /^areas_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.gif$/); assert.equal(gif.frameCount, 3);
   assert.equal(gif.width, 2); assert.equal(gif.height, 1); assert.equal(gif.blob.type, "image/gif");
   assert.equal(h.time(), h.originalTime); assert.equal(h.frozen(), false); assert.equal(h.closed(), 1);
   assert.equal(progress.at(-1).phase, "restoring"); assert.equal(progress.at(-1).completed, 3);

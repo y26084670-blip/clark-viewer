@@ -32,7 +32,7 @@ export function FieldLines(props) {
       || (skipped.length ? `LS ${frame.request.copy + 1} отсутствует у площадок ${skipped.join(", ")}` : "Поле в сохранённых узлах");
     return frame ? `${message} · показан шаг ${frame.request.time}` : message;
   };
-  const movie = createMovieTabAdapter(props, { title: "Поле на линиях", readFrame: index => {
+  const movie = createMovieTabAdapter(props, { title: "Поле на линиях", filenamePrefix: "lines", readFrame: index => {
     if (!selectedRecords().length) return { error: "Выберите площадки" };
     const current = completedMovieFrame(result(), { task: props.task, index });
     if (!current.ready) return current;

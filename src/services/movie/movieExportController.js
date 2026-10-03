@@ -1,5 +1,6 @@
 import { movieAbortError } from "./movieWait.js";
 import { MOVIE_LIMITS } from "./movieFrame.js";
+import { movieFilename } from "./movieFilename.js";
 
 // Keep the controller's public option names while the encoder and capture
 // compositor share a single source for the actual resource/playback limits.
@@ -39,12 +40,6 @@ function checkedPixels(image, size, limits) {
 export function movieFrameCaption(context, index) {
   const time = Number((index * context.timeStep).toPrecision(9));
   return `${context.title || "E3D Viewer"} · шаг ${index} · t = ${time} с`;
-}
-
-function filename(context) {
-  const name = String(context.filename || `moview-${context.title || "E3D-Viewer"}`)
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").replace(/[ .]+$/, "");
-  return /\.gif$/i.test(name) ? name : `${name || "moview"}.gif`;
 }
 
 function abortable(operation, signal) {
@@ -115,7 +110,7 @@ export function createMovieExportController({ createEncoder, limits: overrides =
         const blob = await abortable(encoder.finish(), abort.signal);
         if (!(blob instanceof Blob) || blob.type !== "image/gif") throw new Error("Кодировщик moview не вернул GIF");
         if (!blob.size || blob.size > limits.outputBytes) throw new Error(`Размер GIF превышает допустимые ${Math.floor(limits.outputBytes / 1024 / 1024)} МиБ`);
-        result = { blob, filename: filename(context), frameCount: context.frameCount, ...size };
+        result = { blob, filename: movieFilename(context.filenamePrefix), frameCount: context.frameCount, ...size };
       } catch (error) {
         failure = abort.signal.aborted ? movieAbortError(abort.signal.reason) : error;
       } finally {

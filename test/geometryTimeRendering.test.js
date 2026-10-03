@@ -4,6 +4,11 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import solid from "vite-plugin-solid";
 import * as THREE from "three";
+import { resultScalarColor } from "../src/services/visualization/resultScalarColors.js";
+import { formatResultVectorTooltip, resultHitVector } from "../src/services/visualization/geometryPicking.js";
+import {
+  GEOMETRY_MATERIAL_PALETTE, geometryMaterialStyle, contrastingGeometryEdgeColor,
+} from "../src/services/visualization/geometryMaterialStyle.js";
 
 // Load the production JSX module, including its real Three.js update functions.
 // These tests exercise resource identity and numerical behavior without WebGL.
@@ -14,7 +19,7 @@ const server = await createServer({
   server: { middlewareMode: true, hmr: false },
 });
 after(() => server.close());
-const { createPrescribedSourceVectors, captureMotionBuffer, updateMotionBuffer, updateResultPoints } =
+const { createPrescribedSourceVectors, captureMotionBuffer, updateMotionBuffer, updateResultPoints, resultPointPickRadius } =
   await server.ssrLoadModule("/src/components/geometry/ThreeGeometryViewport.jsx");
 
 const source = { recordIndex: 0, schemaId: "elements" };
@@ -240,4 +245,163 @@ test("switching thin/solid preserves vectors, colors and instance picking", asyn
   const line=root.getObjectByName("prescribed-source-current");
   assert.equal(line.geometry.drawRange.count,4);
   assert.equal(resultHitVector({object:line,index:2}),items[1]);
+});
+
+const solutionPoint = (value, origin = [1, 2, 3]) => ({
+  ...vector(value, "magnetization"), origin, quantity: "Напряжённость H", unit: "кА/м",
+});
+function updateColorPoints(root, values, scale = 1) {
+  return createPrescribedSourceVectors(THREE, values, null, 100, "points",
+    { current: scale, magnetization: scale }, undefined, undefined, root);
+}
+function expectedColor(value, minimum, maximum) {
+  return new THREE.Color().setRGB(...resultScalarColor(value, minimum, maximum), THREE.SRGBColorSpace).toArray();
+}
+function checkPointColor(nodes, index, expected) {
+  const actual = nodes.geometry.getAttribute("color").array.slice(index * 3, index * 3 + 3);
+  actual.forEach((component, axis) => assert.ok(Math.abs(component - expected[axis]) < 1e-6));
+}
+
+test("vector color points use magnitudes, the shared palette and the Nodes base size", () => {
+  const values = [solutionPoint(0), solutionPoint(-5, [4, 5, 6]), solutionPoint(2, [7, 8, 9])];
+  const root = updateColorPoints(null, values);
+  const nodes = root.getObjectByName("result-vector-color-nodes");
+  assert.equal(root.children.length, 1);
+  assert.equal(nodes.isPoints, true);
+  assert.equal(nodes.material.size, 8);
+  assert.equal(nodes.material.sizeAttenuation, false);
+  assert.equal(nodes.material.transparent, false);
+  assert.equal(nodes.material.depthTest, true);
+  assert.equal(nodes.material.depthWrite, true);
+  assert.equal(nodes.material.alphaTest, 0.5);
+  assert.equal(nodes.geometry.drawRange.count, 3);
+  assert.equal(nodes.visible, true);
+  assert.equal(nodes.userData.resultVectors, values);
+  assert.deepEqual(root.userData.colorLegend,
+    { minimum: 0, maximum: 5, quantity: "Модуль · Напряжённость H", unit: "кА/м" });
+  for (let index = 0; index < values.length; index++) {
+    checkPointColor(nodes, index, expectedColor(values[index].magnitude, 0, 5));
+    assert.equal(resultHitVector({ object: nodes, index }), values[index]);
+  }
+  assert.match(formatResultVectorTooltip(values[1]), /X=4.*Y=5.*Z=6.*мм\n.*-5.*кА\/м/);
+  assert.match(formatResultVectorTooltip(values[1], { showMagnitude: true }), /модуль = 5 кА\/м/);
+  assert.match(formatResultVectorTooltip(values[0], { showMagnitude: true }), /модуль = 0 кА\/м/);
+  assert.doesNotMatch(formatResultVectorTooltip(values[1]), /модуль/);
+  const { data, width, height } = nodes.material.map.image;
+  assert.equal(data[3], 0, "sprite corners remain transparent");
+  assert.equal(data[((height / 2) * width + width / 2) * 4 + 3], 255);
+  const shades = new Set();
+  for (let index = 0; index < data.length; index += 4) if (data[index + 3]) shades.add(data[index]);
+  assert.ok(shades.size > 100, "a lit spherical footprint replaces a flat square marker");
+  releaseGeometry(root);
+  nodes.material.map.dispose();
+});
+
+test("color points preserve all resources for time/size changes, empty frames and zero solutions", () => {
+  const root = updateColorPoints(null, [solutionPoint(1), solutionPoint(2)]);
+  const nodes = root.children[0];
+  const geometry = nodes.geometry, material = nodes.material, texture = material.map;
+  const position = geometry.getAttribute("position"), color = geometry.getAttribute("color");
+  let freed = 0;
+  for (const resource of [geometry, material, texture]) resource.addEventListener("dispose", () => freed++);
+  for (const [values, scale] of [
+    [[solutionPoint(-3, [8, 9, 10])], 0.1],
+    [[], 2],
+    [[solutionPoint(0), solutionPoint(0, [11, 12, 13])], 10],
+  ]) {
+    assert.equal(updateColorPoints(root, values, scale), root);
+    assert.equal(root.children[0], nodes);
+    assert.equal(nodes.geometry, geometry);
+    assert.equal(nodes.material, material);
+    assert.equal(material.map, texture);
+    assert.equal(geometry.getAttribute("position"), position);
+    assert.equal(geometry.getAttribute("color"), color);
+    assert.equal(geometry.drawRange.count, values.length);
+    assert.equal(nodes.material.size, 8 * scale);
+    assert.equal(nodes.visible, values.length > 0);
+    assert.equal(nodes.userData.resultVectors, values);
+    if (values.length) assert.deepEqual(Array.from(position.array.slice(0, 3)), values[0].origin);
+    else assert.equal(root.userData.colorLegend, null);
+  }
+  assert.equal(freed, 0);
+  checkPointColor(nodes, 0, expectedColor(0, 0, 0));
+  assert.equal(root.userData.colorLegend.minimum, 0);
+  assert.equal(root.userData.colorLegend.maximum, 0);
+  updateColorPoints(root, Array.from({ length: 5 }, (_, index) => solutionPoint(index)));
+  assert.equal(freed, 1, "only the superseded position/color allocation is released");
+  assert.equal(nodes.material, material);
+  assert.equal(material.map, texture);
+  const expanded = nodes.geometry;
+  updateColorPoints(root, [solutionPoint(0)]);
+  assert.equal(nodes.geometry, expanded);
+  releaseGeometry(root);
+  texture.dispose();
+});
+
+test("switching points and arrow styles releases replaced buffers, materials and sphere textures", () => {
+  const values = [solutionPoint(1), solutionPoint(0)];
+  const root = update(null, "solid", values);
+  const arrow = root.children[0];
+  let arrowsFreed = 0;
+  arrow.geometry.addEventListener("dispose", () => arrowsFreed++);
+  updateColorPoints(root, values);
+  assert.equal(arrowsFreed, 1);
+  const nodes = root.children[0];
+  let pointsFreed = 0;
+  for (const resource of [nodes.geometry, nodes.material, nodes.material.map]) {
+    resource.addEventListener("dispose", () => pointsFreed++);
+  }
+  assert.equal(update(root, "thin", values), root);
+  assert.equal(pointsFreed, 3);
+  assert.equal(nodes.parent, null);
+  assert.equal(root.userData.colorLegend, null);
+  const line = root.children[0];
+  assert.equal(resultHitVector({ object: line, index: 0 }), values[0]);
+  assert.equal(line.geometry.drawRange.count, 2);
+  update(root, "thin", [solutionPoint(-1)]);
+  assert.equal(pointsFreed, 3);
+  releaseGeometry(root);
+});
+
+test("point picking follows the active marker radius without changing scalar picking", () => {
+  const vectors = [solutionPoint(1)];
+  const scene = { vectors };
+  const root = updateColorPoints(null, vectors, 10);
+  assert.equal(resultPointPickRadius(scene, root, 10), 40);
+  assert.equal(resultPointPickRadius(scene, root, 0.1), 2);
+  assert.equal(resultPointPickRadius(null, root, 10), 9, "a retained map setting cannot enlarge the scalar hit area");
+  root.visible = false;
+  assert.equal(resultPointPickRadius(scene, root, 10), 9);
+  root.visible = true;
+  update(root, "thin", vectors);
+  assert.equal(resultPointPickRadius(scene, root, 10), 9);
+  releaseGeometry(root);
+});
+
+test("surface edges use contrasting black/white colors without extra translucent fading", () => {
+  assert.equal(contrastingGeometryEdgeColor(0x000000), 0xffffff);
+  assert.equal(contrastingGeometryEdgeColor(0xffffff), 0x000000);
+  for (const [kind, palette] of Object.entries(GEOMETRY_MATERIAL_PALETTE)) {
+    assert.equal(palette.edge, contrastingGeometryEdgeColor(palette.copy));
+    for (const original of [false, true]) {
+      const { color, edgeColor } = geometryMaterialStyle(kind, original);
+      assert.equal(edgeColor, contrastingGeometryEdgeColor(color));
+    }
+  }
+  for (const mode of ["solid", "translucent"]) {
+    const fixture = renderFixture(2);
+    fixture.primitives[0].materialKind = "htsc-both";
+    fixture.primitives[1].kind = "region-surface";
+    fixture.primitives[1].controlVertices = new Float64Array([0,0,0, 1,0,0, 1,1,0, 0,1,0]);
+    const { root } = collectGeometry(fixture, {}, mode, true);
+    const [darkEdges, lightEdges] = root.children.map(surface => surface.getObjectByName("surface-edges"));
+    assert.equal(darkEdges.material.color.getHex(), 0xffffff);
+    assert.equal(lightEdges.material.color.getHex(), 0x000000);
+    for (const edges of [darkEdges, lightEdges]) {
+      assert.equal(edges.material.opacity, 1);
+      assert.equal(edges.material.depthTest, true);
+      assert.equal(edges.material.depthWrite, false);
+    }
+    releaseGeometry(root);
+  }
 });

@@ -11,6 +11,7 @@ import { scalarScene, vectorScene } from "../services/results/resultPlots.js";
 export function SourcesFields3D(props) {
   const [quantityKey, setQuantity] = createGeometryViewSetting("resultQuantity", "M");
   const [scale, setScale] = createGeometryViewSetting("resultVectorScale", 1);
+  const [colorMap, setColorMap] = createGeometryViewSetting("resultVectorColorMap", false);
   const quantity = () => QUANTITIES[quantityKey()];
   const isScalar = () => quantity().components === 1;
   const result = useResultFrame(() => props.task && ({ task: props.task, quantityKey: quantityKey(),
@@ -33,7 +34,10 @@ export function SourcesFields3D(props) {
     </aside>
     <section class="plot-panel">
       <div class="plot-toolbar"><QuantitySelect options={["M", "H", "MHdot", "J", "E", "JEdot", "Bs", "As", "Bv", "Av"]} value={quantityKey()} onChange={setQuantity} />
-        <Show when={!isScalar()}><label>Векторы <input type="range" min="-1" max="1" step="0.05" value={Math.log10(scale())} onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} /></label></Show>
+        <Show when={!isScalar()}>
+          <label>{colorMap() ? "Точки" : "Векторы"} <input type="range" min="-1" max="1" step="0.05" value={Math.log10(scale())} onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} /></label>
+          <label><input type="checkbox" checked={colorMap()} onChange={event => setColorMap(event.currentTarget.checked)} /> Цветовая карта</label>
+        </Show>
         <Show when={isScalar()}><span>{quantity().formula} · цветовая карта узлов</span></Show>
       </div>
       <div class="plot-status" role="status">{result().loading ? "Чтение результатов…" : result().error || "Результаты в сохранённых узлах"}
@@ -49,6 +53,7 @@ export function SourcesFields3D(props) {
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={displayed()?.request.time ?? 0}
           selections={selections()}
           resultVectorScene={value()?.scene} resultVectorScale={scale()} resultPickingOnly={true}
+          resultVectorColorMap={colorMap()}
           resultScalarScene={value()?.scalarScene}
           resultVectorColor={quantityKey() === "J" ? 0xff5454 : quantityKey() === "M" ? 0x44dd66 : 0x44bbff} />
       </div>

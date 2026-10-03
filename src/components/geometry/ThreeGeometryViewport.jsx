@@ -40,6 +40,7 @@ import {
 } from "../../services/visualization/geometryPicking.js";
 import {
   GEOMETRY_MATERIAL_KINDS,
+  contrastingGeometryEdgeColor,
   geometryMaterialStyle as resolveGeometryMaterialStyle,
 } from "../../services/visualization/geometryMaterialStyle.js";
 import {
@@ -86,7 +87,7 @@ function materialStyle(primitive, category, mode) {
     ? resolveGeometryMaterialStyle(primitive.materialKind, original)
     : {
         color: original ? 0xd99043 : 0xffb65e,
-        edgeColor: 0x754817,
+        edgeColor: contrastingGeometryEdgeColor(original ? 0xd99043 : 0xffb65e),
       };
 
   return {
@@ -138,6 +139,20 @@ function sourceInstanceKey(source, instance) {
   ].join(":");
 }
 
+function sourceVectorRoot(THREE, previousRoot, style) {
+  const root = previousRoot ?? new THREE.Group();
+  root.name = "prescribed-source-vectors";
+  if (root.userData.style !== style) {
+    for (const child of [...root.children]) {
+      root.remove(child);
+      disposeObject(child);
+    }
+    root.userData.style = style;
+    root.userData.colorLegend = null;
+  }
+  return root;
+}
+
 function createPrescribedSourceVectors(
   THREE,
   vectors,
@@ -149,6 +164,28 @@ function createPrescribedSourceVectors(
   colorOverride,
   previousRoot = null,
 ) {
+  const root = sourceVectorRoot(THREE, previousRoot, style);
+  if (style === "points") {
+    const points = acceptedInstances
+      ? vectors.filter(item => acceptedInstances.has(sourceInstanceKey(item.source, item.instance)))
+      : vectors;
+    let minimum = Infinity;
+    let maximum = -Infinity;
+    for (const point of points) {
+      minimum = Math.min(minimum, point.magnitude);
+      maximum = Math.max(maximum, point.magnitude);
+    }
+    const previous = root.getObjectByName("result-vector-color-nodes");
+    const nodes = updateResultPoints(THREE, previous, points, {
+      colorMap: true, minimum, maximum,
+      size: DISCRETIZATION_POINT_SIZE * prescribedSourceScale(scales?.magnetization),
+    });
+    if (nodes.parent !== root) root.add(nodes);
+    root.userData.colorLegend = points.length ? {
+      minimum, maximum, quantity: `Модуль · ${points[0].quantity}`, unit: points[0].unit,
+    } : null;
+    return root;
+  }
   const maximum = maximumMagnitude ?? { current: 0, magnetization: 0 };
   const positions = { current: [], magnetization: [] };
   const thinVectors = { current: [], magnetization: [] };
@@ -190,15 +227,6 @@ function createPrescribedSourceVectors(
     target.push(origin.x, origin.y, origin.z, tip.x, tip.y, tip.z);
   }
 
-  const root = previousRoot ?? new THREE.Group();
-  root.name = "prescribed-source-vectors";
-  if (root.userData.style !== style) {
-    for (const child of [...root.children]) {
-      root.remove(child);
-      disposeObject(child);
-    }
-    root.userData.style = style;
-  }
   const capacityFor = count => 2 ** Math.ceil(Math.log2(Math.max(1, count)));
   for (const [kind, color] of [["current", colorOverride ?? 0xff0000], ["magnetization", colorOverride ?? 0x00cc44]]) {
     if (style === "solid") {
@@ -332,34 +360,66 @@ function prescribedSourceScale(value) {
   return Number.isFinite(scale) ? Math.max(0.1, Math.min(10, scale)) : 1;
 }
 
-function updateResultPoints(THREE, previous, points, { scalar = false, minimum, maximum, color = 0x44ccff } = {}) {
+// A lit spherical sprite keeps the same pixel-sized footprint as "Узлы".
+// One shared texture avoids a sphere mesh (and per-camera matrix updates) per node.
+function resultSphereTexture(THREE) {
+  const side = 64;
+  const pixels = new Uint8Array(side * side * 4);
+  const light = new THREE.Vector3(-0.4, 0.5, 1).normalize();
+  for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
+    const nx = (x + 0.5) / side * 2 - 1;
+    const ny = (y + 0.5) / side * 2 - 1;
+    const radiusSquared = nx * nx + ny * ny;
+    if (radiusSquared > 1) continue;
+    const nz = Math.sqrt(1 - radiusSquared);
+    const brightness = 0.38 + 0.62 * Math.max(0, nx * light.x + ny * light.y + nz * light.z);
+    const offset = (y * side + x) * 4;
+    pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = Math.round(255 * brightness);
+    pixels[offset + 3] = 255;
+  }
+  const texture = new THREE.DataTexture(pixels, side, side, THREE.RGBAFormat);
+  texture.magFilter = texture.minFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function updateResultPoints(THREE, previous, points, {
+  scalar = false, colorMap = false, minimum, maximum, color = 0x44ccff,
+  size = colorMap ? DISCRETIZATION_POINT_SIZE : scalar ? 9 : 4,
+} = {}) {
+  const colored = scalar || colorMap;
   let nodes = previous;
   if (!nodes) {
     let pointMaterial;
-    if (scalar) {
-      const canvas = document.createElement("canvas");
-      canvas.width = canvas.height = 32;
-      const context = canvas.getContext("2d");
-      context.fillStyle = "#ffffff";
-      context.beginPath();
-      context.arc(16, 16, 15.5, 0, Math.PI * 2);
-      context.fill();
+    if (colored) {
+      let texture;
+      if (colorMap) texture = resultSphereTexture(THREE);
+      else {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 32;
+        const context = canvas.getContext("2d");
+        context.fillStyle = "#ffffff";
+        context.beginPath();
+        context.arc(16, 16, 15.5, 0, Math.PI * 2);
+        context.fill();
+        texture = new THREE.CanvasTexture(canvas);
+      }
       pointMaterial = new THREE.PointsMaterial({
-        map: new THREE.CanvasTexture(canvas),
+        map: texture,
         vertexColors: true,
-        size: 9,
+        size,
         sizeAttenuation: false,
         alphaTest: 0.5,
-        transparent: true,
+        transparent: !colorMap,
         depthTest: true,
         depthWrite: true,
         toneMapped: false,
       });
     } else pointMaterial = new THREE.PointsMaterial({
-      color, size: 4, sizeAttenuation: false, depthTest: true, depthWrite: false,
+      color, size, sizeAttenuation: false, depthTest: true, depthWrite: false,
     });
     nodes = new THREE.Points(new THREE.BufferGeometry(), pointMaterial);
-    nodes.name = scalar ? "result-scalar-nodes" : "result-vector-nodes";
+    nodes.name = scalar ? "result-scalar-nodes" : colorMap ? "result-vector-color-nodes" : "result-vector-nodes";
     nodes.renderOrder = 14;
   }
   let positions = nodes.geometry.getAttribute("position");
@@ -369,21 +429,22 @@ function updateResultPoints(THREE, previous, points, { scalar = false, minimum, 
     nodes.geometry = new THREE.BufferGeometry();
     positions = new THREE.BufferAttribute(new Float32Array(capacity * 3), 3).setUsage(THREE.DynamicDrawUsage);
     nodes.geometry.setAttribute("position", positions);
-    if (scalar) nodes.geometry.setAttribute("color",
+    if (colored) nodes.geometry.setAttribute("color",
       new THREE.BufferAttribute(new Float32Array(capacity * 3), 3).setUsage(THREE.DynamicDrawUsage));
   }
   const colors = nodes.geometry.getAttribute("color");
   const rgb = new THREE.Color();
   points.forEach((item, index) => {
     positions.array.set(item.origin, index * 3);
-    if (scalar) {
-      rgb.setRGB(...resultScalarColor(item.value, minimum, maximum), THREE.SRGBColorSpace);
+    if (colored) {
+      rgb.setRGB(...resultScalarColor(colorMap ? item.magnitude : item.value, minimum, maximum), THREE.SRGBColorSpace);
       rgb.toArray(colors.array, index * 3);
     }
   });
   positions.needsUpdate = true;
-  if (scalar) colors.needsUpdate = true;
+  if (colored) colors.needsUpdate = true;
   else nodes.material.color.setHex(color);
+  nodes.material.size = size;
   nodes.geometry.setDrawRange(0, points.length);
   nodes.geometry.computeBoundingSphere();
   nodes.visible = points.length > 0;
@@ -392,6 +453,11 @@ function updateResultPoints(THREE, previous, points, { scalar = false, minimum, 
 }
 
 export { updateResultPoints };
+
+export function resultPointPickRadius(currentResultScene, resultVectorRoot, scale) {
+  return currentResultScene && resultVectorRoot?.visible && resultVectorRoot.userData.style === "points"
+    ? Math.max(2, DISCRETIZATION_POINT_SIZE * prescribedSourceScale(scale) / 2) : 9;
+}
 
 function validMatrix(value) {
   return value?.length === 16 && Array.from(value).every(Number.isFinite);
@@ -679,7 +745,6 @@ function appendSurfaceEdges(
   );
   if (!wireframe) return;
 
-  const translucent = mode === "translucent";
   const edges = new THREE.LineSegments(
     wireframe.geometry,
     new THREE.LineBasicMaterial({
@@ -687,8 +752,8 @@ function appendSurfaceEdges(
       depthTest: true,
       depthWrite: false,
       linewidth: 1,
-      opacity: translucent ? 0.78 : 1,
-      transparent: translucent,
+      opacity: 1,
+      transparent: false,
     }),
   );
   edges.name = "surface-edges";
@@ -1303,6 +1368,9 @@ export function ThreeGeometryViewport(props) {
   const [renderedCount, setRenderedCount] = createSignal(0);
   const [hoverTooltip, setHoverTooltip] = createSignal(null);
   const [scalarLegend, setScalarLegend] = createSignal(null);
+  let vectorColorLegend = null;
+  let scalarColorLegend = null;
+  const updateColorLegend = () => setScalarLegend(scalarColorLegend ?? vectorColorLegend);
 
   const reportError = (value) => {
     const message = value instanceof Error ? value.message : String(value);
@@ -1523,7 +1591,7 @@ export function ThreeGeometryViewport(props) {
       bounds.height,
     );
     raycaster.params.Line.threshold = unitsPerPixel * 5;
-    raycaster.params.Points.threshold = unitsPerPixel * 9;
+    raycaster.params.Points.threshold = unitsPerPixel * resultPointPickRadius(currentResultScene, resultVectorRoot, resultVectorScale);
 
     if (props.resultPickingOnly) {
       // Report saved nodes, including for an intersection on a scaled vector.
@@ -1540,7 +1608,7 @@ export function ThreeGeometryViewport(props) {
       const scalar = resultHitScalar(hit);
       const vector = resultHitVector(hit);
       if (scalar) showTooltip(formatResultScalarTooltip(scalar), x, y);
-      else if (vector) showTooltip(formatResultVectorTooltip(vector), x, y);
+      else if (vector) showTooltip(formatResultVectorTooltip(vector, { showMagnitude: resultVectorStyle === "points" }), x, y);
       else setHoverTooltip(null);
       return;
     }
@@ -1954,6 +2022,7 @@ export function ThreeGeometryViewport(props) {
   const replaceResultVectors = () => {
     if (!THREE || !helperRoot) return;
     clearHoverTooltip();
+    vectorColorLegend = null;
     if (resultVectorRoot) resultVectorRoot.visible = Boolean(currentResultScene);
     if (currentResultScene) {
       const vectors = currentResultScene.vectors.filter(item =>
@@ -1963,19 +2032,23 @@ export function ThreeGeometryViewport(props) {
         currentResultScene.sceneDiagonal, resultVectorStyle,
         { current: resultVectorScale, magnetization: resultVectorScale },
         currentResultScene.maximumMagnitude, resultVectorColor, resultVectorRoot);
-      const previous = resultVectorRoot.getObjectByName("result-vector-nodes");
-      const nodes = updateResultPoints(THREE, previous, vectors, { color: resultVectorColor });
-      if (nodes.parent !== resultVectorRoot) resultVectorRoot.add(nodes);
+      if (resultVectorStyle === "points") vectorColorLegend = resultVectorRoot.userData.colorLegend;
+      else {
+        const previous = resultVectorRoot.getObjectByName("result-vector-nodes");
+        const nodes = updateResultPoints(THREE, previous, vectors, { color: resultVectorColor });
+        if (nodes.parent !== resultVectorRoot) resultVectorRoot.add(nodes);
+      }
       resultVectorRoot.visible = true;
       if (resultVectorRoot.parent !== helperRoot) helperRoot.add(resultVectorRoot);
     }
+    updateColorLegend();
     requestRender();
   };
 
   const replaceResultScalars = () => {
     if (!THREE || !helperRoot) return;
     clearHoverTooltip();
-    setScalarLegend(null);
+    scalarColorLegend = null;
     if (resultScalarRoot) resultScalarRoot.visible = Boolean(currentScalarScene);
     if (currentScalarScene) {
       const points = currentScalarScene.points.filter(item =>
@@ -1987,9 +2060,10 @@ export function ThreeGeometryViewport(props) {
       if (Number.isFinite(minimum) && Number.isFinite(maximum)) {
         resultScalarRoot = updateResultPoints(THREE, resultScalarRoot, points, { scalar: true, minimum, maximum });
         if (resultScalarRoot.parent !== helperRoot) helperRoot.add(resultScalarRoot);
-        if (points.length) setScalarLegend({ minimum, maximum, quantity, unit });
+        if (points.length) scalarColorLegend = { minimum, maximum, quantity, unit };
       }
     }
+    updateColorLegend();
     requestRender();
   };
 
@@ -2309,7 +2383,8 @@ export function ThreeGeometryViewport(props) {
 
   createEffect(() => {
     currentResultScene = props.resultVectorScene ?? null;
-    resultVectorStyle = props.resultVectorStyle === "solid" ? "solid" : "thin";
+    resultVectorStyle = props.resultVectorColorMap === true ? "points"
+      : props.resultVectorStyle === "solid" ? "solid" : "thin";
     resultVectorScale = props.resultVectorScale ?? 1;
     resultVectorColor = props.resultVectorColor ?? 0x44ccff;
     if (!ready()) return;

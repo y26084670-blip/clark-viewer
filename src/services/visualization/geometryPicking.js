@@ -102,8 +102,9 @@ export function formatGeometryTooltip(source, instance, coordinates) {
 }
 
 /** Solution tips use the saved node and vector, independent of arrow scale. */
-export function formatResultVectorTooltip(item) {
-    return `${formatCoordinates(item.origin)} мм\n${item.quantity}: (${item.vector.map(formatCoordinate).join("; ")}) ${item.unit}`;
+export function formatResultVectorTooltip(item, { showMagnitude = false } = {}) {
+    const magnitude = showMagnitude ? `; модуль = ${formatCoordinate(item.magnitude)} ${item.unit}` : "";
+    return `${formatCoordinates(item.origin)} мм\n${item.quantity}: (${item.vector.map(formatCoordinate).join("; ")}) ${item.unit}${magnitude}`;
 }
 
 /** Scalar values belong to the same saved nodes as their vector factors. */

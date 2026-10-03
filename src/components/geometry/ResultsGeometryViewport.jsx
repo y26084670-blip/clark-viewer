@@ -671,6 +671,7 @@ export function ResultsGeometryViewport(props) {
             scene={displayScene()}
             geometryRevision={props.model}
             resultVectorScene={props.resultVectorScene}
+            resultVectorColorMap={props.resultVectorColorMap}
             resultScalarScene={props.resultScalarScene}
             resultPickingOnly={props.resultPickingOnly}
             resultVectorStyle={vectorStyle()}

@@ -40,6 +40,7 @@ export default function App() {
       activeReader?.close(); activeReader = reader;
       setTime(0); setElements(data.elements.map(row => row.id)); setRegions(data.regions.map(row => row.id)); setCoils(null);
       setTask({ ...data, reader, metadata }); setPath(newPath);
+      setActive(1);
     } catch (error) {
       reader?.close(); if (revision === loadRevision) setError(`Не удалось загрузить задание: ${error.message}`);
     } finally { if (revision === loadRevision) setBusy(false); }

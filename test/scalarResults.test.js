@@ -143,7 +143,8 @@ test("Scalar colors handle signed, constant and clipped ranges with a matching l
   assert.deepEqual(resultScalarColor(2, -11, 2), maximum);
   assert.deepEqual(resultScalarColor(-100, -11, 2), minimum);
   assert.deepEqual(resultScalarColor(100, -11, 2), maximum);
-  assert.deepEqual(resultScalarColor(0, 0, 0), [33, 145, 140].map(value => value / 255));
+  // A constant field is halfway between entries 127 and 128 of full Viridis.
+  assert.deepEqual(resultScalarColor(0, 0, 0), [33, 144.5, 140.5].map(value => value / 255));
   assert.match(RESULT_SCALAR_GRADIENT, /linear-gradient/);
 });
 

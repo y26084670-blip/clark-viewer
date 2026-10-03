@@ -1,10 +1,11 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { disposeSurfaceObject, updateSurfaceLabel, updateSurfaceMesh } from "../services/visualization/surfaceChartResources.js";
 
 export function SurfaceChart(props) {
-  let host, renderer, scene, camera, controls, surface, gridLines, observer, axes;
-  let labelObjects = [];
+  let host, renderer, scene, camera, controls, surface, observer, axes;
+  const labelObjects = [];
   const [ready, setReady] = createSignal(false);
   const [error, setError] = createSignal("");
   const [limits, setLimits] = createSignal(null);
@@ -18,18 +19,10 @@ export function SurfaceChart(props) {
     const width = Math.max(1, host.clientWidth), height = Math.max(1, host.clientHeight);
     renderer.setSize(width, height); camera.aspect = width / height; camera.updateProjectionMatrix(); draw();
   }
-  function dispose(object) {
-    if (!object) return;
-    scene.remove(object); object.geometry?.dispose(); object.material?.map?.dispose(); object.material?.dispose();
-  }
-  function label(text, position) {
-    const canvas = document.createElement("canvas"); canvas.width = 512; canvas.height = 64;
-    const context = canvas.getContext("2d");
-    context.fillStyle = "#20262d"; context.font = "24px sans-serif"; context.textAlign = "center";
-    context.fillText(text, 256, 40);
-    const material = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false });
-    const sprite = new THREE.Sprite(material); sprite.position.copy(position); sprite.scale.set(1.5, .19, 1);
-    scene.add(sprite); labelObjects.push(sprite);
+  function label(index, text, position) {
+    const sprite = updateSurfaceLabel(labelObjects[index], text, position);
+    if (!sprite.parent) scene.add(sprite);
+    labelObjects[index] = sprite;
   }
   function view(direction) {
     if (!camera) return;
@@ -39,7 +32,7 @@ export function SurfaceChart(props) {
     camera.position.fromArray(positions[direction]); controls.target.set(0, 0, .3); controls.update(); draw();
   }
   function pick(event) {
-    if (!surface || !props.grid) return;
+    if (!surface?.visible || !props.grid) return;
     const rect = host.getBoundingClientRect();
     pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
@@ -77,41 +70,33 @@ export function SurfaceChart(props) {
   createEffect(() => {
     const grid = props.grid; const title = props.label; const unit = props.unit;
     if (!ready()) return;
-    dispose(surface); surface = null; dispose(gridLines); gridLines = null;
-    labelObjects.forEach(dispose); labelObjects = []; setHover(""); setLimits(null);
-    if (!grid) { draw(); return; }
+    setHover("");
+    if (!grid) {
+      if (surface) surface.visible = false;
+      labelObjects.forEach(label => { label.visible = false; });
+      setLimits(null); setError(""); draw(); return;
+    }
     try {
       setError("");
-      let min = Infinity, max = -Infinity;
-      for (const value of grid.values) { min = Math.min(min, value); max = Math.max(max, value); }
-      const span = max - min || Math.max(Math.abs(min), 1);
-      const positions = new Float32Array(grid.values.length * 3), colors = new Float32Array(positions.length);
-      const color = new THREE.Color();
-      for (let i = 0; i < grid.width; i++) for (let j = 0; j < grid.height; j++) {
-        const k = i * grid.height + j;
-        positions.set([2 * i / (grid.width - 1) - 1, 2 * j / (grid.height - 1) - 1, (grid.values[k] - min) / span * 1.5], k * 3);
-        color.setHSL(.66 * (1 - (grid.values[k] - min) / span), .9, .48); color.toArray(colors, k * 3);
-      }
-      const indices = [];
-      for (let i = 0; i < grid.width - 1; i++) for (let j = 0; j < grid.height - 1; j++) {
-        const a = i * grid.height + j, b = a + grid.height;
-        indices.push(a, b, a + 1, b, b + 1, a + 1);
-      }
-      const geometry = new THREE.BufferGeometry(); geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-      geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3)); geometry.setIndex(indices); geometry.computeVertexNormals();
-      surface = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })); scene.add(surface);
+      surface = updateSurfaceMesh(surface, grid);
+      if (!surface.parent) scene.add(surface);
+      const { min, max } = surface.userData.limits;
       // Surface axes are grid node indices; physical xyz is shown on hover.
-      label(`${grid.axes[0]}: 1 … ${grid.width}`, new THREE.Vector3(0, -1.2, -.12));
-      label(`${grid.axes[1]}: 1 … ${grid.height}`, new THREE.Vector3(-1.35, 0, -.12));
-      label(`${title}, ${unit}`, new THREE.Vector3(0, 0, 1.85));
-      label(min.toPrecision(6), new THREE.Vector3(-1.25, -1.25, 0));
-      label(max.toPrecision(6), new THREE.Vector3(-1.25, -1.25, 1.5));
+      label(0, `${grid.axes[0]}: 1 … ${grid.width}`, new THREE.Vector3(0, -1.2, -.12));
+      label(1, `${grid.axes[1]}: 1 … ${grid.height}`, new THREE.Vector3(-1.35, 0, -.12));
+      label(2, `${title}, ${unit}`, new THREE.Vector3(0, 0, 1.85));
+      label(3, min.toPrecision(6), new THREE.Vector3(-1.25, -1.25, 0));
+      label(4, max.toPrecision(6), new THREE.Vector3(-1.25, -1.25, 1.5));
       setLimits({ min, max }); draw();
-    } catch (error) { setError(error.message); }
+    } catch (error) {
+      if (surface) surface.visible = false;
+      labelObjects.forEach(label => { label.visible = false; });
+      setLimits(null); setError(error.message); draw();
+    }
   });
   onCleanup(() => {
     observer?.disconnect(); controls?.removeEventListener("change", cameraChanged); controls?.dispose();
-    dispose(surface); dispose(gridLines); dispose(axes); labelObjects.forEach(dispose);
+    disposeSurfaceObject(surface); disposeSurfaceObject(axes); labelObjects.forEach(disposeSurfaceObject);
     renderer?.dispose(); renderer?.forceContextLoss(); renderer?.domElement.remove();
   });
   return <div class="surface-chart">

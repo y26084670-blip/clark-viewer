@@ -45,8 +45,11 @@ import {
 } from "../../services/visualization/geometryMaterialStyle.js";
 import {
   resultScalarColor,
+  normalizeResultPalette,
   resultScalarLegendBackground,
 } from "../../services/visualization/resultScalarColors.js";
+
+import { updateResultVolumeMeshes } from "../../services/visualization/resultVolumeRenderer.js";
 
 export const GEOMETRY_INSTANCE_BUDGET = 20_000;
 export const GEOMETRY_DISCRETIZATION_SEGMENT_BUDGET =
@@ -117,6 +120,7 @@ function disposeMaterial(material) {
     return;
   }
   material?.map?.dispose?.();
+  for (const texture of material?.userData?.resultOwnedTextures ?? []) texture.dispose();
   material?.dispose?.();
 }
 
@@ -163,6 +167,7 @@ function createPrescribedSourceVectors(
   maximumMagnitude,
   colorOverride,
   previousRoot = null,
+  palette = "Viridis",
 ) {
   const root = sourceVectorRoot(THREE, previousRoot, style);
   if (style === "points") {
@@ -177,12 +182,12 @@ function createPrescribedSourceVectors(
     }
     const previous = root.getObjectByName("result-vector-color-nodes");
     const nodes = updateResultPoints(THREE, previous, points, {
-      colorMap: true, minimum, maximum,
+      colorMap: true, minimum, maximum, palette,
       size: DISCRETIZATION_POINT_SIZE * prescribedSourceScale(scales?.magnetization),
     });
     if (nodes.parent !== root) root.add(nodes);
     root.userData.colorLegend = points.length ? {
-      minimum, maximum, quantity: `Модуль · ${points[0].quantity}`, unit: points[0].unit,
+      minimum, maximum, quantity: `Модуль · ${points[0].quantity}`, unit: points[0].unit, palette,
     } : null;
     return root;
   }
@@ -384,7 +389,7 @@ function resultSphereTexture(THREE) {
 }
 
 function updateResultPoints(THREE, previous, points, {
-  scalar = false, colorMap = false, minimum, maximum, color = 0x44ccff,
+  scalar = false, colorMap = false, minimum, maximum, color = 0x44ccff, palette = "Viridis",
   size = colorMap ? DISCRETIZATION_POINT_SIZE : scalar ? 9 : 4,
 } = {}) {
   const colored = scalar || colorMap;
@@ -437,7 +442,7 @@ function updateResultPoints(THREE, previous, points, {
   points.forEach((item, index) => {
     positions.array.set(item.origin, index * 3);
     if (colored) {
-      rgb.setRGB(...resultScalarColor(colorMap ? item.magnitude : item.value, minimum, maximum), THREE.SRGBColorSpace);
+      rgb.setRGB(...resultScalarColor(colorMap ? item.magnitude : item.value, minimum, maximum, palette), THREE.SRGBColorSpace);
       rgb.toArray(colors.array, index * 3);
     }
   });
@@ -457,6 +462,38 @@ export { updateResultPoints };
 export function resultPointPickRadius(currentResultScene, resultVectorRoot, scale) {
   return currentResultScene && resultVectorRoot?.visible && resultVectorRoot.userData.style === "points"
     ? Math.max(2, DISCRETIZATION_POINT_SIZE * prescribedSourceScale(scale) / 2) : 9;
+}
+
+export function applyViewerGeometryOpacity(layers, value, defaults = new WeakMap()) {
+  const opacity = value ?? 1;
+  for (const [root, enabled, hasEdges] of layers) {
+    if (!root) continue;
+    root.visible = enabled && (opacity > 0 || Boolean(hasEdges && root.getObjectByName("surface-edges")));
+    root.traverse(object => {
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materials) {
+        if (!material) continue;
+        let initial = defaults.get(material);
+        if (!initial) {
+          initial = { opacity: material.opacity, transparent: material.transparent, depthWrite: material.depthWrite };
+          defaults.set(material, initial);
+        }
+        const edge = object.name === "surface-edges";
+        material.opacity = edge ? 1 : initial.opacity * opacity;
+        material.depthWrite = !edge && initial.depthWrite && opacity >= 1;
+        const transparent = edge || initial.transparent || material.opacity < 1;
+        if (material.transparent !== transparent) { material.transparent = transparent; material.needsUpdate = true; }
+        if (edge && Number.isFinite(object.userData.surfaceColor)) {
+          // Choose contrast against the visible fill/background mixture, so a black
+          // contour on a bright solid does not disappear against the dark empty scene.
+          const fill = object.userData.surfaceColor, background = 0x141a20;
+          let visibleColor = 0;
+          for (const shift of [16, 8, 0]) visibleColor |= Math.round(((fill >> shift) & 255) * opacity + ((background >> shift) & 255) * (1 - opacity)) << shift;
+          material.color.setHex(contrastingGeometryEdgeColor(visibleColor));
+        }
+      }
+    });
+  }
 }
 
 function validMatrix(value) {
@@ -757,7 +794,10 @@ function appendSurfaceEdges(
     }),
   );
   edges.name = "surface-edges";
-  edges.renderOrder = 2;
+  edges.userData.surfaceColor = style.color;
+  // Keep contours after transparent volumes while preserving depth occlusion.
+  edges.material.transparent = true;
+  edges.renderOrder = 20;
   surface.add(edges);
 }
 
@@ -1339,6 +1379,8 @@ export function ThreeGeometryViewport(props) {
   let discretizationPointsMaterialized = false;
   let activeRenderMode = "solid";
   let geometryOpacity = null;
+  let resultPalette = "Viridis";
+  let currentVolumeFields = null;
   const geometryMaterialDefaults = new WeakMap();
   let baseRenderStats = {
     budget: GEOMETRY_INSTANCE_BUDGET,
@@ -1608,7 +1650,7 @@ export function ThreeGeometryViewport(props) {
       const scalar = resultHitScalar(hit);
       const vector = resultHitVector(hit);
       if (scalar) showTooltip(formatResultScalarTooltip(scalar), x, y);
-      else if (vector) showTooltip(formatResultVectorTooltip(vector, { showMagnitude: resultVectorStyle === "points" }), x, y);
+      else if (vector) showTooltip(formatResultVectorTooltip(vector, { showMagnitude: resultVectorStyle === "points" || resultVectorStyle === "volume" }), x, y);
       else setHoverTooltip(null);
       return;
     }
@@ -1733,39 +1775,16 @@ export function ThreeGeometryViewport(props) {
     }
   };
 
-  // Geometry and its overlays fade together. Result nodes and vectors live
-  // in separate helper roots and retain their material settings. Updating
-  // this layer never rebuilds geometry, vectors, or the current camera.
+  // Explicit edges retain full opacity, including when the filled surface vanishes.
+  // Other geometry overlays follow geometry transparency; result points remain opaque.
   const updateGeometryOpacity = () => {
-    const opacity = geometryOpacity ?? 1;
-    for (const [root, enabled] of [
-      [geometryRoot, true],
-      [vertexPoints, verticesVisible],
-      [discretizationLines, discretizationLinesVisible],
-      [discretizationPoints, discretizationPointsVisible],
-    ]) {
-      if (!root) continue;
-      root.visible = enabled && opacity > 0;
-      root.traverse(object => {
-        const materials = Array.isArray(object.material) ? object.material : [object.material];
-        for (const material of materials) {
-          if (!material) continue;
-          let defaults = geometryMaterialDefaults.get(material);
-          if (!defaults) {
-            if (geometryOpacity === null) continue;
-            defaults = { opacity: material.opacity, transparent: material.transparent, depthWrite: material.depthWrite };
-            geometryMaterialDefaults.set(material, defaults);
-          }
-          material.opacity = defaults.opacity * opacity;
-          material.depthWrite = defaults.depthWrite && opacity >= 1;
-          const transparent = defaults.transparent || material.opacity < 1;
-          if (material.transparent !== transparent) {
-            material.transparent = transparent;
-            material.needsUpdate = true;
-          }
-        }
-      });
-    }
+    applyViewerGeometryOpacity([
+      [geometryRoot, true, true], [vertexPoints, verticesVisible],
+      [discretizationLines, discretizationLinesVisible], [discretizationPoints, discretizationPointsVisible],
+    ], geometryOpacity, geometryMaterialDefaults);
+    resultVectorRoot?.traverse(object => {
+      if (object.name === "result-volume-domain") object.material.uniforms.uOpacity.value = geometryOpacity ?? 1;
+    });
   };
 
   const materializeVertexPoints = () => {
@@ -2028,12 +2047,37 @@ export function ThreeGeometryViewport(props) {
       const vectors = currentResultScene.vectors.filter(item =>
         primitiveVisible(item, activeResultFilters.objectModes, activeResultFilters.selections)
         && instanceVisible(item.instance, activeResultFilters.symmetry));
-      resultVectorRoot = createPrescribedSourceVectors(THREE, vectors, null,
-        currentResultScene.sceneDiagonal, resultVectorStyle,
-        { current: resultVectorScale, magnetization: resultVectorScale },
-        currentResultScene.maximumMagnitude, resultVectorColor, resultVectorRoot);
+      if (resultVectorStyle === "volume" && currentVolumeFields) {
+        resultVectorRoot = sourceVectorRoot(THREE, resultVectorRoot, "volume");
+        const domains = currentVolumeFields.domains.filter(domain =>
+          primitiveVisible(domain, activeResultFilters.objectModes, activeResultFilters.selections)
+          && instanceVisible(domain.instance, activeResultFilters.symmetry));
+        let minimum = Infinity, maximum = -Infinity;
+        for (const vector of vectors) { minimum = Math.min(minimum, vector.magnitude); maximum = Math.max(maximum, vector.magnitude); }
+        updateResultVolumeMeshes(THREE, resultVectorRoot, domains,
+          { minimum, maximum, palette: resultPalette, opacity: geometryOpacity ?? 1 });
+        const previous = resultVectorRoot.getObjectByName("result-volume-pick-nodes");
+        const pickNodes = updateResultPoints(THREE, previous, vectors);
+        pickNodes.name = "result-volume-pick-nodes";
+        pickNodes.material.colorWrite = false;
+        if (pickNodes.parent !== resultVectorRoot) resultVectorRoot.add(pickNodes);
+        const fallback = (currentVolumeFields.fallbackPoints ?? []).filter(point =>
+          primitiveVisible(point, activeResultFilters.objectModes, activeResultFilters.selections)
+          && instanceVisible(point.instance, activeResultFilters.symmetry));
+        const fallbackNodes = updateResultPoints(THREE, resultVectorRoot.getObjectByName("result-volume-fallback-nodes"), fallback,
+          { colorMap: true, minimum, maximum, palette: resultPalette, size: DISCRETIZATION_POINT_SIZE });
+        fallbackNodes.name = "result-volume-fallback-nodes";
+        if (fallbackNodes.parent !== resultVectorRoot) resultVectorRoot.add(fallbackNodes);
+        if (vectors.length) vectorColorLegend = { minimum, maximum,
+          quantity: `Модуль · ${vectors[0].quantity}`, unit: vectors[0].unit, palette: resultPalette };
+      } else {
+        resultVectorRoot = createPrescribedSourceVectors(THREE, vectors, null,
+          currentResultScene.sceneDiagonal, resultVectorStyle,
+          { current: resultVectorScale, magnetization: resultVectorScale },
+          currentResultScene.maximumMagnitude, resultVectorColor, resultVectorRoot, resultPalette);
+      }
       if (resultVectorStyle === "points") vectorColorLegend = resultVectorRoot.userData.colorLegend;
-      else {
+      else if (resultVectorStyle !== "volume") {
         const previous = resultVectorRoot.getObjectByName("result-vector-nodes");
         const nodes = updateResultPoints(THREE, previous, vectors, { color: resultVectorColor });
         if (nodes.parent !== resultVectorRoot) resultVectorRoot.add(nodes);
@@ -2058,9 +2102,9 @@ export function ThreeGeometryViewport(props) {
         && instanceVisible(item.instance, activeResultFilters.symmetry));
       const { minimum, maximum, quantity, unit } = currentScalarScene;
       if (Number.isFinite(minimum) && Number.isFinite(maximum)) {
-        resultScalarRoot = updateResultPoints(THREE, resultScalarRoot, points, { scalar: true, minimum, maximum });
+        resultScalarRoot = updateResultPoints(THREE, resultScalarRoot, points, { scalar: true, minimum, maximum, palette: resultPalette });
         if (resultScalarRoot.parent !== helperRoot) helperRoot.add(resultScalarRoot);
-        if (points.length) scalarColorLegend = { minimum, maximum, quantity, unit };
+        if (points.length) scalarColorLegend = { minimum, maximum, quantity, unit, palette: resultPalette };
       }
     }
     updateColorLegend();
@@ -2383,7 +2427,9 @@ export function ThreeGeometryViewport(props) {
 
   createEffect(() => {
     currentResultScene = props.resultVectorScene ?? null;
-    resultVectorStyle = props.resultVectorColorMap === true ? "points"
+    currentVolumeFields = props.resultVolumeFields ?? null;
+    resultPalette = normalizeResultPalette(props.resultPalette);
+    resultVectorStyle = props.resultVectorColorMap === true ? (currentVolumeFields ? "volume" : "points")
       : props.resultVectorStyle === "solid" ? "solid" : "thin";
     resultVectorScale = props.resultVectorScale ?? 1;
     resultVectorColor = props.resultVectorColor ?? 0x44ccff;
@@ -2394,6 +2440,7 @@ export function ThreeGeometryViewport(props) {
 
   createEffect(() => {
     currentScalarScene = props.resultScalarScene ?? null;
+    resultPalette = normalizeResultPalette(props.resultPalette);
     if (!ready()) return;
     scalarsDirty = true;
     requestRender();
@@ -2499,7 +2546,7 @@ export function ThreeGeometryViewport(props) {
         {(legend) => (
           <div class="geometry-scalar-legend" aria-label={`Цветовая шкала: ${legend.quantity}, ${legend.unit}`}>
             <div>{legend.quantity}, {legend.unit}</div>
-            <div class="geometry-scalar-legend-gradient" style={{ background: resultScalarLegendBackground(legend.minimum, legend.maximum) }} />
+            <div class="geometry-scalar-legend-gradient" style={{ background: resultScalarLegendBackground(legend.minimum, legend.maximum, legend.palette) }} />
             <div class="geometry-scalar-legend-limits">
               <span>{Number(legend.minimum.toPrecision(6)).toString()}</span>
               <span>{Number(legend.maximum.toPrecision(6)).toString()}</span>

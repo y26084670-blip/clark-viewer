@@ -81,6 +81,46 @@ export function vectorScene(frames, quantity) {
   return { vectors, maximumMagnitude: { current: 0, magnetization: maximum }, sceneDiagonal: extent };
 }
 
+// Full saved grids for volumetric interpolation. Geometric copies are the
+// innermost indices in element files, but outermost in observation files.
+// Never infer spatial neighbours from the order of a sampled vector scene.
+export function resultVolumeDomains(frames, quantity, scene) {
+  const pointsByImage = new Map();
+  const imageKey = (source, instance) => `${source.schemaId}:${source.recordIndex}:${instance.ls}:${instance.as}:${instance.ps}`;
+  for (const point of scene?.vectors ?? scene?.points ?? []) {
+    const key = imageKey(point.source, point.instance);
+    if (!pointsByImage.has(key)) pointsByImage.set(key, []);
+    pointsByImage.get(key).push(point);
+  }
+  const domains = [];
+  for (const { frame, record } of frames) {
+    const planar = quantity.group === "regions";
+    const layout = planar ? regionLayout(record) : elementLayout(record, quantity.file === "HV" || quantity.file === "AV");
+    if (frame.count !== layout.count || (frame.every ?? 1) !== 1 || frame.rowIndices) {
+      throw new Error("Для объёмной карты необходима полная сетка без выборки узлов");
+    }
+    const dimensions = planar ? [layout.n1, layout.n2, 1] : layout.dimensions;
+    const copies = planar ? [layout.copies, 1, 1] : layout.copies;
+    const copyCount = copies.reduce((a, b) => a * b, 1);
+    const nodeCount = dimensions.reduce((a, b) => a * b, 1);
+    for (let ls = 0; ls < copies[0]; ls++) for (let az = 0; az < copies[1]; az++) for (let ps = 0; ps < copies[2]; ps++) {
+      const source = { schemaId: quantity.group, recordIndex: record.recordIndex, name: record.name };
+      const instance = { ls, as: az, ps };
+      const key = imageKey(source, instance);
+      const positions = new Float64Array(nodeCount * 3), values = new Float64Array(nodeCount);
+      const copy = (ls * copies[1] + az) * copies[2] + ps;
+      for (let node = 0; node < nodeCount; node++) {
+        const row = planar ? ls * nodeCount + node : node * copyCount + copy;
+        const offset = row * frame.stride;
+        positions.set(frame.values.subarray(offset, offset + 3), node * 3);
+        values[node] = scalarAt(frame, row, quantity);
+      }
+      domains.push({ key, source, instance, dimensions, positions, values, points: pointsByImage.get(key) ?? [] });
+    }
+  }
+  return domains;
+}
+
 // A selected copy is read as one contiguous LS block. Full unfolding shifts
 // node numbers for each copy, keeping distinct spatial lines disconnected.
 export function lineSeries(frame, record, quantity, component, direction = "i2", { copy = null, unfold = false } = {}) {

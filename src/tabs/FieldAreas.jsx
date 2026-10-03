@@ -4,8 +4,7 @@ import { SurfaceChart } from "../components/SurfaceChart.jsx";
 import { QuantitySelect } from "../components/QuantitySelect.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
 import { QUANTITIES, regionLayout } from "../services/results/resultMappings.js";
-import { regionSurfaceGrid } from "../services/results/resultPlots.js";
-import { resultObjects, useAsyncResult } from "../services/results/resultRequests.js";
+import { readSurfaceFrame, useResultFrame } from "../services/results/resultRequests.js";
 
 export function FieldAreas(props) {
   const [quantityKey, setQuantity] = createSignal("Bs");
@@ -14,16 +13,15 @@ export function FieldAreas(props) {
   const record = createMemo(() => records().find(row => props.regions.includes(row.id)));
   const layout = createMemo(() => record() ? regionLayout(record()) : null);
   createEffect(() => { record(); setCopy(0); });
-  const result = useAsyncResult(() => props.task && record() && ({ task: props.task, quantityKey: quantityKey(), id: record().id,
-    time: props.time, component: component(), copy: copy() }), async request => {
-    const object = resultObjects(request.task, request.quantityKey).find(item => item.record.id === request.id);
-    if (!object) throw new Error("Для выбранной площадки нет этой величины");
-    const layout = regionLayout(object.record);
-    if (!Number.isSafeInteger(request.copy) || request.copy < 0 || request.copy >= layout.copies) throw new Error("Неверный номер LS");
-    const frame = await request.task.reader.read({ name: QUANTITIES[request.quantityKey].file, step: request.time,
-      start: object.start + request.copy * layout.planeCount, count: layout.planeCount });
-    return regionSurfaceGrid(frame, object.record, QUANTITIES[request.quantityKey], request.component, request.copy);
-  });
+  const result = useResultFrame(() => props.task && record() && ({ task: props.task, quantityKey: quantityKey(), selected: [record().id],
+    time: props.time, component: component(), copy: copy() }), readSurfaceFrame);
+  const displayed = createMemo(() => result().frame);
+  const grid = createMemo(() => displayed()?.value ?? null);
+  const status = () => {
+    const frame = displayed();
+    const message = result().loading ? "Чтение поля…" : result().error || frame?.value.title || "Выберите площадку";
+    return frame ? `${message} · показан шаг ${frame.request.time}` : message;
+  };
   return <div class="results-layout">
     <ObjectList title="Площадки" records={records()} selected={record() ? [record().id] : []} onSelect={props.setRegions} multiple={false} />
     <section class="plot-panel">
@@ -31,8 +29,8 @@ export function FieldAreas(props) {
         <Show when={layout()?.copies > 1}><label>LS <input type="number" min="1" max={layout()?.copies ?? 1} step="1" value={copy() + 1}
           onChange={event => setCopy(event.currentTarget.valueAsNumber - 1)} /></label></Show>
       </div>
-      <div class="plot-status" role="status">{result.loading() ? "Чтение поля…" : result.error() || result.value()?.title || "Выберите площадку"}</div>
-      <SurfaceChart grid={result.value()} label={QUANTITIES[quantityKey()].label} unit={QUANTITIES[quantityKey()].unit} emptyText={result.error()} />
+      <div class="plot-status" role="status">{status()}</div>
+      <SurfaceChart grid={grid()} label={QUANTITIES[quantityKey()].label} unit={QUANTITIES[quantityKey()].unit} emptyText={result().error} />
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
     </section>
   </div>;

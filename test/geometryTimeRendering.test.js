@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import solid from "vite-plugin-solid";
 import * as THREE from "three";
+import { updateResultVolumeMeshes } from "../src/services/visualization/resultVolumeRenderer.js";
 import { resultScalarColor } from "../src/services/visualization/resultScalarColors.js";
 import { formatResultVectorTooltip, resultHitVector } from "../src/services/visualization/geometryPicking.js";
 import {
@@ -19,7 +20,7 @@ const server = await createServer({
   server: { middlewareMode: true, hmr: false },
 });
 after(() => server.close());
-const { createPrescribedSourceVectors, captureMotionBuffer, updateMotionBuffer, updateResultPoints, resultPointPickRadius } =
+const { createPrescribedSourceVectors, captureMotionBuffer, updateMotionBuffer, updateResultPoints, resultPointPickRadius, applyViewerGeometryOpacity } =
   await server.ssrLoadModule("/src/components/geometry/ThreeGeometryViewport.jsx");
 
 const source = { recordIndex: 0, schemaId: "elements" };
@@ -278,7 +279,7 @@ test("vector color points use magnitudes, the shared palette and the Nodes base 
   assert.equal(nodes.visible, true);
   assert.equal(nodes.userData.resultVectors, values);
   assert.deepEqual(root.userData.colorLegend,
-    { minimum: 0, maximum: 5, quantity: "Модуль · Напряжённость H", unit: "кА/м" });
+    { minimum: 0, maximum: 5, quantity: "Модуль · Напряжённость H", unit: "кА/м", palette: "Viridis" });
   for (let index = 0; index < values.length; index++) {
     checkPointColor(nodes, index, expectedColor(values[index].magnitude, 0, 5));
     assert.equal(resultHitVector({ object: nodes, index }), values[index]);
@@ -404,4 +405,45 @@ test("surface edges use contrasting black/white colors without extra translucent
     }
     releaseGeometry(root);
   }
+});
+
+
+test("Viewer edges stay opaque at every geometry opacity including zero", () => {
+  const { root } = collectGeometry(renderFixture(1), {}, "solid", true);
+  const surface = root.children[0], edges = surface.getObjectByName("surface-edges");
+  const defaults = new WeakMap();
+  for (const opacity of [1, 0.42, 0, 0.1, 1]) {
+    applyViewerGeometryOpacity([[root, true, true]], opacity, defaults);
+    assert.equal(root.visible, true);
+    assert.equal(surface.material.opacity, opacity);
+    assert.equal(edges.material.opacity, 1);
+    assert.equal(edges.material.transparent, true);
+    assert.ok(edges.renderOrder > 13, "edges are drawn after the transparent volume");
+    assert.equal(edges.material.depthTest, true);
+    if (opacity === 0) assert.equal(edges.material.color.getHex(), 0xffffff);
+  }
+  const hidden = new THREE.Group(); hidden.add(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial()));
+  applyViewerGeometryOpacity([[hidden, true, true]], 0);
+  assert.equal(hidden.visible, false, "zero-opacity geometry without edges must not enlarge visible-fit bounds");
+  releaseGeometry(hidden);
+  releaseGeometry(root);
+});
+
+
+test("returning from volume to arrows releases volume textures and keeps vector picking", () => {
+  const root = new THREE.Group(); root.userData.style = "volume";
+  updateResultVolumeMeshes(THREE, root, [{ key: "source:0", dimensions: [2, 2, 2],
+    bounds: { min: [0, 0, 0], max: [1, 1, 1] }, values: new Float32Array(8), mask: new Uint8Array(8).fill(255) }],
+    { minimum: 0, maximum: 0 });
+  const mesh = root.children[0];
+  let disposals = 0;
+  for (const resource of [mesh.geometry, mesh.material, ...mesh.material.userData.resultOwnedTextures]) {
+    resource.addEventListener("dispose", () => disposals++);
+  }
+  const values = [vector(1)];
+  update(root, "thin", values);
+  assert.equal(disposals, 4);
+  assert.equal(root.userData.style, "thin");
+  assert.equal(root.getObjectByName("result-volume-domain"), undefined);
+  releaseGeometry(root);
 });

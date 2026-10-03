@@ -47,7 +47,8 @@ export function createResultVolumeProcessor({ workerFactory = () => new Worker(
           if (!worker) open();
           const id = ++sequence;
           pending = { id, resolve, reject, domains: new Map(domains.map(domain => [domain.key, domain])) };
-          const grids = domains.map(({ key, dimensions, positions, values }) => ({ key, dimensions, positions, values }));
+          const grids = domains.map(({ key, dimensions, positions, values, support, supportExpected, supportLabel, coordinateBytes }) =>
+            ({ key, dimensions, positions, values, support, supportExpected, supportLabel, coordinateBytes }));
           const transfer = [...new Set(grids.flatMap(grid => [grid.positions.buffer, grid.values.buffer]))];
           worker.postMessage({ id, domains: grids }, transfer);
         } catch (error) {

@@ -5,7 +5,7 @@ import { QuantitySelect } from "../components/QuantitySelect.jsx";
 import { ResultsGeometryViewport } from "../components/geometry/ResultsGeometryViewport.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
 import { QUANTITIES } from "../services/results/resultMappings.js";
-import { readObjectFrames, useResultFrame } from "../services/results/resultRequests.js";
+import { readObjectFrames, resultDisplaySelection, useResultFrame } from "../services/results/resultRequests.js";
 import { RESULT_SCALAR_PALETTES } from "../services/visualization/resultScalarColors.js";
 import { readResultVolumeFrame, VOLUME_MAX_NODES } from "../services/results/resultVolumeRequests.js";
 import { createResultVolumeProcessor } from "../services/results/resultVolumeProcessor.js";
@@ -16,13 +16,19 @@ export function SourcesFields3D(props) {
   const [scale, setScale] = createGeometryViewSetting("resultVectorScale", 1);
   const [colorMap, setColorMap] = createGeometryViewSetting("resultVectorColorMap", false);
   const [palette, setPalette] = createGeometryViewSetting("resultPalette", "Viridis");
+  const [elementsMode] = createGeometryViewSetting("elementsMode", "all");
+  const [regionsMode] = createGeometryViewSetting("regionsMode", "all");
   const quantity = () => QUANTITIES[quantityKey()];
   const isScalar = () => quantity().components === 1;
   const volumeMode = () => !isScalar() && colorMap() && scale() >= 10 - 1e-9;
+  const resultSelected = createMemo(() => quantity().group === "elements"
+    ? resultDisplaySelection(props.task?.elements, props.elements, elementsMode())
+    : resultDisplaySelection(props.task?.regions, props.regions, regionsMode()));
   const volumeProcessor = createResultVolumeProcessor();
   onCleanup(() => volumeProcessor.close());
-  const result = useResultFrame(() => props.task && ({ task: props.task, quantityKey: quantityKey(),
-    selected: quantity().group === "elements" ? props.elements : props.regions, time: props.time, budget: volumeMode() ? VOLUME_MAX_NODES : 5000 }), async request => {
+  const result = useResultFrame(() => props.task && resultSelected().length > 0 && ({ task: props.task, quantityKey: quantityKey(),
+    selected: resultSelected(),
+    time: props.time, budget: volumeMode() ? VOLUME_MAX_NODES : 5000 }), async request => {
     if (request.budget === VOLUME_MAX_NODES) {
       return readResultVolumeFrame(request, null, volumeProcessor);
     }
@@ -53,8 +59,11 @@ export function SourcesFields3D(props) {
         </select></label>
         <Show when={isScalar()}><span>{quantity().formula} · цветовая карта узлов</span></Show>
       </div>
-      <div class="plot-status" role="status">{result().loading ? "Чтение результатов…" : result().error || "Результаты в сохранённых узлах"}
-        <Show when={volumeMode() && value()?.volumeFields?.domains.length}><span> · объёмная карта</span></Show>
+      <div class="plot-status" role="status">{resultSelected().length === 0 ? "Нет объектов для показа"
+        : result().loading ? "Чтение результатов…" : result().error || "Результаты в сохранённых узлах"}
+        <Show when={volumeMode() && value()?.volumeFields}><span> · {value().volumeFields.domains.length
+          ? `Объёмная карта: ${value().volumeFields.domains.length} сеток`
+          : "Объёмная карта недоступна; показаны цветные узлы"}</span></Show>
         <Show when={value()?.volumeNotice}><span> · {value().volumeNotice}</span></Show>
         <Show when={displayed()}><span> · показан шаг {displayed().request.time}</span></Show>
         <Show when={value()}><span>
@@ -77,4 +86,3 @@ export function SourcesFields3D(props) {
     </section>
   </div>;
 }
-

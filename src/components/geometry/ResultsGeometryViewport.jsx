@@ -59,6 +59,7 @@ const OBJECT_MODE_LABELS = Object.freeze({
   all: "все",
   none: "не показывать",
   selected: "выделенные",
+  exceptSelected: "кроме выделенных",
 });
 
 const OPTIONS_PANEL_ID = "geometry-viewer-options-panel";
@@ -527,6 +528,15 @@ export function ResultsGeometryViewport(props) {
                 <input
                   type="radio"
                   name="geometry-elements-mode"
+                  checked={elementsMode() === "exceptSelected"}
+                  onChange={() => setElementsMode("exceptSelected")}
+                />
+                Кроме выделенных
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="geometry-elements-mode"
                   checked={elementsMode() === "none"}
                   onChange={() => setElementsMode("none")}
                 />
@@ -553,6 +563,15 @@ export function ResultsGeometryViewport(props) {
                   onChange={() => setRegionsMode("selected")}
                 />
                 Выделенные в списке
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="geometry-regions-mode"
+                  checked={regionsMode() === "exceptSelected"}
+                  onChange={() => setRegionsMode("exceptSelected")}
+                />
+                Кроме выделенных
               </label>
               <label>
                 <input

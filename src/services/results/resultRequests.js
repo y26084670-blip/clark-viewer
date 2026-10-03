@@ -4,6 +4,16 @@ import { planResultSampling } from "./resultSampling.js";
 import { createResultFrameController } from "./resultFrameController.js";
 import { lineSeries, regionSurfaceGrid } from "./resultPlots.js";
 import { isFmm } from "./fmmCharacteristics.js";
+import { OBJECT_VISIBILITY_MODES } from "../visualization/geometryRenderFilters.js";
+
+// The 3D lists use one-based record IDs; scene filters use zero-based indices.
+// Read excluded-list complements before building a scene, otherwise the display
+// filter could only hide selected results and have no remaining rows to show.
+export function resultDisplaySelection(records = [], selected = [], mode) {
+  if (mode !== OBJECT_VISIBILITY_MODES.EXCEPT_SELECTED) return selected;
+  const excluded = new Set(selected);
+  return records.filter(record => !excluded.has(record.id)).map(record => record.id);
+}
 
 export function useAsyncResult(source, load) {
   const [value, setValue] = createSignal(null);

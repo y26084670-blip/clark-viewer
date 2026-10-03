@@ -1,7 +1,8 @@
 import { QUANTITIES } from "./resultMappings.js";
 import { readObjectFrames, resultObjects } from "./resultRequests.js";
 import { resultVolumeDomains, scalarScene, vectorScene } from "./resultPlots.js";
-import { buildResultVolumeField, ResultVolumeLimitError } from "../visualization/resultVolumeField.js";
+import { buildResultVolumeField, ResultVolumeLimitError, VOLUME_MAX_DOMAINS } from "../visualization/resultVolumeField.js";
+import { attachResultVolumeSupport } from "./resultVolumeSupport.js";
 
 export const VOLUME_MAX_NODES = 100_000;
 const POINT_BUDGET = 5000;
@@ -26,7 +27,12 @@ export async function readResultVolumeFrame(request, previousVolumeFields = null
     }
     const frames = await readObjectFrames({ ...request, budget: null });
     const result = scenes(frames, quantity);
-    const domains = resultVolumeDomains(frames, quantity, result.scene ?? result.scalarScene);
+    const savedDomains = resultVolumeDomains(frames, quantity, result.scene ?? result.scalarScene);
+    if (savedDomains.length > VOLUME_MAX_DOMAINS) {
+      throw new ResultVolumeLimitError(`Для объёмной карты допускается не более ${VOLUME_MAX_DOMAINS} отдельных образов`);
+    }
+    const domains = attachResultVolumeSupport(savedDomains,
+      { task: request.task, quantity, time: request.time });
     const volumeFields = processor ? await processor.process(domains)
       : buildResultVolumeField({ domains, previous: previousVolumeFields });
     return { ...result, volumeFields, volumeNotice: volumeFields.notice };

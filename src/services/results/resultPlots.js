@@ -115,7 +115,8 @@ export function resultVolumeDomains(frames, quantity, scene) {
         positions.set(frame.values.subarray(offset, offset + 3), node * 3);
         values[node] = scalarAt(frame, row, quantity);
       }
-      domains.push({ key, source, instance, dimensions, positions, values, points: pointsByImage.get(key) ?? [] });
+      domains.push({ key, source, instance, dimensions, positions, values,
+        coordinateBytes: frame.values.BYTES_PER_ELEMENT, points: pointsByImage.get(key) ?? [] });
     }
   }
   return domains;

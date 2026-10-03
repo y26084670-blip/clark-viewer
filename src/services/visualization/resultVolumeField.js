@@ -1,4 +1,6 @@
-// Resample only the structured cells saved by the solver. Each source/symmetry
+import { extendResultVolumeSupport } from "../results/resultVolumeSupport.js";
+
+// Resample the structured cells and validated physical boundary layers. Each source/symmetry
 // image has a separate texture: no interpolation between unrelated objects.
 export const VOLUME_MAX_VOXELS = 262_144;
 export const VOLUME_MAX_AXIS = 64;
@@ -85,10 +87,15 @@ function createSamplingPlan(domain, bounds, dimensions, work) {
   for (let cell = 0; cell < cellCount; cell++) {
     const corners = cornerIndices(cell, domain.dimensions);
     const positions = corners.map(index => [domain.positions[index * 3], domain.positions[index * 3 + 1], domain.positions[index * 3 + 2]]);
+    if (positions.some(point => !point.every(Number.isFinite))) continue;
     const tetrahedra = TETRAHEDRA.map(tetra => tetraTransform(tetra.map(c => positions[c])));
-    // A folded/degenerate hexahedron is not an interpolation domain.
-    if (tetrahedra.some(tetra => !tetra) || tetrahedra.some(tetra => Math.sign(tetra.determinant) !== Math.sign(tetrahedra[0].determinant))) continue;
+    // A pyramid may legitimately have a collapsed boundary face. Its zero-
+    // volume tetrahedra contribute nothing; the finite tetrahedra must still
+    // agree in orientation. Mixed signs indicate a folded cell and reject it.
+    const orientation = tetrahedra.find(Boolean)?.determinant;
+    if (orientation === undefined || tetrahedra.some(tetra => tetra && Math.sign(tetra.determinant) !== Math.sign(orientation))) continue;
     for (let ti = 0; ti < tetrahedra.length; ti++) {
+      if (!tetrahedra[ti]) continue;
       const { p, inverse } = tetrahedra[ti];
       const low = [0, 1, 2].map(axis => Math.max(0, Math.ceil((Math.min(...p.map(v => v[axis])) - bounds.min[axis]) / steps[axis] - 1e-7)));
       const high = [0, 1, 2].map(axis => Math.min(dimensions[axis] - 1, Math.floor((Math.max(...p.map(v => v[axis])) - bounds.min[axis]) / steps[axis] + 1e-7)));
@@ -152,7 +159,13 @@ export function buildResultVolumeField({ domains, previous = null, maxVoxels = V
     throw new Error("Недопустимый лимит объёмной карты");
   }
   if (domains.length > VOLUME_MAX_DOMAINS) throw new ResultVolumeLimitError(`Для объёмной карты допускается не более ${VOLUME_MAX_DOMAINS} отдельных образов`);
-  const candidates = domains.map(domain => ({ domain, dims: checkedDimensions(domain), bounds: boundsOf(domain.positions) }));
+  const supportNotices = new Set();
+  const candidates = domains.map(original => {
+    checkedDimensions(original);
+    const { domain, reason } = extendResultVolumeSupport(original);
+    if (reason) supportNotices.add(`${original.supportLabel ?? "Элемент"}: ${reason}`);
+    return { domain, dims: checkedDimensions(domain), bounds: boundsOf(domain.positions) };
+  });
   const volumetricCount = candidates.filter(({ dims }) => dims.every(n => n >= 2)).length;
   const budget = Math.floor(maxVoxels / Math.max(1, volumetricCount));
   const output = [], fallbackPoints = [], fallbackDomainKeys = [];
@@ -179,5 +192,6 @@ export function buildResultVolumeField({ domains, previous = null, maxVoxels = V
   }
   return { domains: output, fallbackPoints, fallbackDomainKeys, minimum: Number.isFinite(minimum) ? minimum : 0,
     maximum: Number.isFinite(maximum) ? maximum : 0,
-    notice: fallbackDomainKeys.length ? "Плоские или вырожденные сетки показаны узлами; объёмная карта строится только внутри трёхмерных ячеек" : "" };
+    notice: [fallbackDomainKeys.length ? `Цветные узлы вместо объёма: ${fallbackDomainKeys.length} сеток. Плоские или вырожденные сетки не задают трёхмерных ячеек` : "",
+      supportNotices.size ? `Границы не достроены: ${[...supportNotices].slice(0, 3).join("; ")}${supportNotices.size > 3 ? "; …" : ""}` : ""].filter(Boolean).join(". ") };
 }

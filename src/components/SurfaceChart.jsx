@@ -1,7 +1,7 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { disposeSurfaceObject, surfaceMovieLimits, updateSurfaceLabel, updateSurfaceMesh } from "../services/visualization/surfaceChartResources.js";
+import { disposeSurfaceObject, updateSurfaceLabel, updateSurfaceMesh } from "../services/visualization/surfaceChartResources.js";
 import { captureMovieCanvas } from "../services/movie/movieCanvas.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../services/movie/renderedFrameGate.js";
 
@@ -70,8 +70,8 @@ export function SurfaceChart(props) {
       draw();
       if (error()) throw new Error(error());
       setHover("");
-      movieSnapshot = { ...snapshotMovieCamera(camera, controls), limits: surfaceMovieLimits(surface.userData.limits) };
-      applyGrid(props.grid, props.label, props.unit, props.captureFrameKey);
+      // Lock the camera and canvas; each frame keeps the normal automatic field scale.
+      movieSnapshot = snapshotMovieCamera(camera, controls);
     },
     renderReady(expectedKey, { signal } = {}) {
       if (disposed || contextLost || error()) return Promise.reject(new Error(error() || "Поверхность недоступна"));
@@ -145,7 +145,7 @@ export function SurfaceChart(props) {
     }
     try {
       setError("");
-      surface = updateSurfaceMesh(surface, grid, movieSnapshot?.limits);
+      surface = updateSurfaceMesh(surface, grid);
       if (!surface.parent) scene.add(surface);
       const { min, max } = surface.userData.limits;
       // Surface axes are grid node indices; physical xyz is shown on hover.

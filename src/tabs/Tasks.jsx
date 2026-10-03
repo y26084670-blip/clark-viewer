@@ -3,12 +3,14 @@ import { loadTaskInput, readTaskSummaries } from "../services/taskLoadService.js
 import { useAsyncResult } from "../services/results/resultRequests.js";
 import { buildGeometryScene } from "../services/visualization/geometrySceneModel.js";
 import { ThreeGeometryViewport } from "../components/geometry/ThreeGeometryViewport.jsx";
+import { TaskGifGallery } from "../components/tasks/TaskGifGallery.jsx";
 import "../components/geometry/ResultsGeometryViewport.css";
 
 export function Tasks(props) {
   const [root, setRoot] = createSignal(null), [projects, setProjects] = createSignal([]);
   const [project, setProject] = createSignal(""), [tasks, setTasks] = createSignal([]);
   const [candidate, setCandidate] = createSignal(null), [error, setError] = createSignal("");
+  const [galleryBusy, setGalleryBusy] = createSignal(false);
   let revision = 0;
   async function subdirectories(handle) {
     const result = [];
@@ -16,6 +18,7 @@ export function Tasks(props) {
     return result.sort((a, b) => a.name.localeCompare(b.name, "ru", { numeric: true }));
   }
   async function pickRoot() {
+    if (galleryBusy()) return;
     setError("");
     if (!window.isSecureContext || typeof window.showDirectoryPicker !== "function") {
       setError("Выбор каталога недоступен. Откройте приложение по HTTPS или localhost в Chrome либо Edge."); return;
@@ -29,6 +32,7 @@ export function Tasks(props) {
     } catch (error) { if (error.name !== "AbortError") setError(error.message); }
   }
   async function pickProject(name) {
+    if (galleryBusy()) return;
     const current = ++revision;
     setProject(name); setTasks([]); setCandidate(null); setError("");
     if (!name) return;
@@ -44,21 +48,22 @@ export function Tasks(props) {
       error: model.status === "rejected" ? model.reason.message : "" };
   });
   async function load() {
-    if (props.busy) return;
+    if (props.busy || galleryBusy()) return;
     const item = candidate();
     if (item) props.onLoad(item.handle, `${root().name}/${project()}/${item.name}`);
   }
   return <div class="tasks-layout">
     <section class="task-browser-panel">
       <div class="task-browser-content">
-        <button class="folder-button" onClick={pickRoot}>Выбрать каталог с проектами</button>
+        <button class="folder-button" disabled={galleryBusy()} onClick={pickRoot}>Выбрать каталог с проектами</button>
         <div class="root-name">{root() ? `Корневой каталог: ${root().name}` : "Каталог не выбран"}</div>
         <label class="field-label">Список проектов</label>
-        <select class="project-select" value={project()} onChange={event => pickProject(event.currentTarget.value)} aria-label="Список проектов">
+        <select class="project-select" value={project()} disabled={galleryBusy()} onChange={event => pickProject(event.currentTarget.value)} aria-label="Список проектов">
           <option value="">Выберите проект</option><For each={projects()}>{item => <option value={item.name}>{item.name}</option>}</For>
         </select>
         <div class="field-label">Список заданий</div>
         <div class="task-list" role="listbox" aria-label="Список заданий" onClick={event => {
+          if (galleryBusy()) return;
           const list = event.currentTarget;
           if (event.target !== list) return;
           const bounds = list.getBoundingClientRect();
@@ -66,12 +71,12 @@ export function Tasks(props) {
           const y = event.clientY - bounds.top - list.clientTop;
           if (x >= 0 && y >= 0 && x < list.clientWidth && y < list.clientHeight) setCandidate(null);
         }}>
-          <For each={tasks()}>{item => <button role="option" aria-selected={candidate()?.handle === item.handle}
-            classList={{ selected: candidate()?.handle === item.handle }} onClick={() => setCandidate({ ...item })}
+          <For each={tasks()}>{item => <button role="option" aria-selected={candidate()?.handle === item.handle} disabled={galleryBusy()}
+            classList={{ selected: candidate()?.handle === item.handle }} onClick={() => { if (!galleryBusy()) setCandidate({ ...item }); }}
             onDblClick={() => { if (candidate()?.handle === item.handle) void load(); }}
             title="Двойной щелчок — загрузить задание для просмотра">{item.name}</button>}</For>
         </div>
-        <button class="load-button" disabled={!candidate() || props.busy} onClick={load}>{props.busy ? "Загрузка…" : "Загрузить для просмотра"}</button>
+        <button class="load-button" disabled={!candidate() || props.busy || galleryBusy()} onClick={load}>{props.busy ? "Загрузка…" : "Загрузить для просмотра"}</button>
         <Show when={props.loadedHandle === candidate()?.handle && props.loadedHandle}><div class="loaded-note">✓ Задание загружено</div></Show>
         <Show when={error() || props.error || info.value()?.error}><div class="task-error" role="alert">{error() || props.error || info.value()?.error}</div></Show>
       </div>
@@ -88,6 +93,8 @@ export function Tasks(props) {
       <footer>исходные данные</footer>
     </section>
     <section class="task-results-panel">
+      <TaskGifGallery taskHandle={candidate()?.handle} active={props.active} disabled={props.busy}
+        onBusyChange={setGalleryBusy} />
       <textarea readOnly aria-label="Сводка результатов расчёта" value={info.value()?.summary.output ?? ""} />
       <footer>результаты</footer>
     </section>

@@ -82,7 +82,7 @@ export function SourcesFields3D(props) {
   const selections = createMemo(() => ({
     elements: props.elements.map(id => id - 1), regions: props.regions.map(id => id - 1),
   }));
-  const movie = createMovieTabAdapter(props, { title: "Источники/Поля 3D", readFrame: index => {
+  const movie = createMovieTabAdapter(props, { title: "Источники/Поля 3D", filenamePrefix: "3d", readFrame: index => {
     const status = completedMovieFrame(result(), { task: props.task, index });
     if (!status.ready) return status;
     const errors = status.value.value.errors ?? [];

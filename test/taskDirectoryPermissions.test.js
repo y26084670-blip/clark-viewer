@@ -9,7 +9,7 @@ assert.ok(start >= 0 && end > start);
 
 // Run the actual picker and directory enumeration without mounting unrelated JSX.
 const createPicker = new Function("dependencies", `
-    const { window, setError, setRoot, setProjects, setProject, setTasks, setCandidate } = dependencies;
+    const { window, setError, setRoot, setProjects, setProject, setTasks, setCandidate, galleryBusy } = dependencies;
     ${source.slice(start, end)}
     return pickRoot;
 `);
@@ -21,7 +21,7 @@ function directory(name, items = []) {
 }
 
 function runtime(picker, windowOverrides = {}) {
-    const state = { root: null, projects: [], project: "Previous", tasks: [1], candidate: 1, error: "", permissions: [] };
+    const state = { root: null, projects: [], project: "Previous", tasks: [1], candidate: 1, error: "", permissions: [], galleryBusy: false };
     const pick = createPicker({
         window: {
             isSecureContext: true,
@@ -37,6 +37,7 @@ function runtime(picker, windowOverrides = {}) {
         setProject: value => { state.project = value; },
         setTasks: value => { state.tasks = value; },
         setCandidate: value => { state.candidate = value; },
+        galleryBusy: () => state.galleryBusy,
     });
     return { state, pick };
 }
@@ -86,6 +87,13 @@ test("viewer checks browser support and secure context before opening the picker
         assert.deepEqual(state.permissions, []);
         assert.match(state.error, /HTTPS или localhost/u);
     }
+});
+
+test("viewer waits for GIF deletion before allowing a different root", async () => {
+    const handle = directory("Next"), { state, pick } = runtime(() => handle);
+    const previous = directory("Previous");state.root = previous;state.galleryBusy = true;
+    await pick();assert.equal(state.root, previous);assert.deepEqual(state.permissions, []);
+    state.galleryBusy = false;await pick();assert.equal(state.root, handle);
 });
 
 test("a delayed previous directory cannot replace the newest viewer selection", async () => {
@@ -150,7 +158,7 @@ test("viewer opens 3D only after the task and HDF5 metadata finish loading", asy
     assert.equal(h.state.active, 1); assert.equal(h.state.opened.length, 1);
     assert.equal(h.state.opened[0].task.name, "New"); assert.equal(h.state.opened[0].path, "Projects/New");
     assert.equal(h.state.busy, false);
-    assert.match(source, /onClick=\{\(\) => setCandidate\(\{ \.\.\.item \}\)\}/u);
+    assert.match(source, /onClick=\{\(\) => \{ if \(!galleryBusy\(\)\) setCandidate\(\{ \.\.\.item \}\); \}\}/u);
 });
 
 test("viewer load errors preserve the current tab and previously loaded task", async () => {

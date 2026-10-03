@@ -21,7 +21,7 @@ export function Fluxes(props) {
   const emptyText = () => result.loading() ? "Чтение потокосцеплений…" : result.error()
     || (catalog().records.length ? "Выберите измерительные катушки" : "В задании нет измерительных катушек");
   const movieFrame = createMemo(() => ({ frame: result.state().frame, time: props.time }));
-  const movie = createMovieTabAdapter(props, { title: "Потоки", readFrame: index => {
+  const movie = createMovieTabAdapter(props, { title: "Потоки", filenamePrefix: "flux", readFrame: index => {
     const current = completedMovieFrame(result.state(), { task: props.task, index, timed: false });
     if (!current.ready) return current;
     const series = current.value.value;

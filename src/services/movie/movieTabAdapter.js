@@ -14,7 +14,7 @@ export function completedMovieFrame(state, { task, index, timed = true }) {
 /** Connect an active tab's published data to its local renderer. Renderer state
  * remains owned by the chart; this adapter never changes geometry or selection.
  */
-export function createMovieTabAdapter(props, { title, readFrame }) {
+export function createMovieTabAdapter(props, { title, filenamePrefix, readFrame }) {
   const [renderer, setRenderer] = createSignal(null);
   let lifetime = new AbortController(), lifetimeTask = props.task;
   let alive = true, prepared = null, preparedTask = null;
@@ -35,6 +35,7 @@ export function createMovieTabAdapter(props, { title, readFrame }) {
   }, { signal });
   const adapter = {
     getContext: () => ({ task: props.task, title,
+      filenamePrefix: typeof filenamePrefix === "function" ? filenamePrefix() : filenamePrefix,
       frameCount: (props.task?.general.countTimeSteps ?? 0) + 1,
       timeStep: props.task?.general.timeStep ?? 0, originalTime: props.time }),
     async prepare({ signal } = {}) {

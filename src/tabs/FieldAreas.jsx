@@ -23,7 +23,7 @@ export function FieldAreas(props) {
     const message = result().loading ? "Чтение поля…" : result().error || frame?.value.title || "Выберите площадку";
     return frame ? `${message} · показан шаг ${frame.request.time}` : message;
   };
-  const movie = createMovieTabAdapter(props, { title: "Поле в областях", readFrame: index =>
+  const movie = createMovieTabAdapter(props, { title: "Поле в областях", filenamePrefix: "areas", readFrame: index =>
     record() ? completedMovieFrame(result(), { task: props.task, index }) : { error: "Выберите площадку" } });
   return <div class="results-layout">
     <ObjectList title="Площадки" records={records()} selected={record() ? [record().id] : []} onSelect={props.setRegions} multiple={false} />

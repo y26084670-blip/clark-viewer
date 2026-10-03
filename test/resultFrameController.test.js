@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createResultFrameController, sameFrameContext } from "../src/services/results/resultFrameController.js";
-import { readObjectFrames } from "../src/services/results/resultRequests.js";
+import { readObjectFrames, readSurfaceFrame } from "../src/services/results/resultRequests.js";
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function harness() {
@@ -162,4 +162,41 @@ test("a failed line image drains other regions before the next frame can start",
   finish({values:new Float64Array(12),stride:6,count:2});
   assert.match((await result).message,/line read failure/);
   assert.equal(settled,true);
+});
+
+test("surface frame reads one selected LS plane with coordinates and component values", async () => {
+  const record = { id: 8, name: "Area", dp: [[2], [3]], symLs: 2 };
+  const requests = [];
+  const task = { regions: [record], metadata: { HS: { steps: [0, 1], header: { inds1: [1], numbs: [12] } } },
+    reader: { read: async request => {
+      requests.push(request);
+      return { stride: 6, count: 6, values: new Float64Array(Array.from({ length: 6 }, (_, i) => [i, 10 + i, 20, 3, 4 + i, 0]).flat()) };
+    } } };
+  const request = { task, quantityKey: "Bs", selected: [8], time: 1, component: "1", copy: 1 };
+  const value = await readSurfaceFrame(request);
+  assert.deepEqual(requests, [{ name: "HS", step: 1, start: 6, count: 6 }]);
+  assert.deepEqual([value.width, value.height, value.copy], [2, 3, 1]);
+  assert.deepEqual([...value.values], [4, 5, 6, 7, 8, 9]);
+  assert.deepEqual([...value.coordinates.slice(0, 6)], [0, 10, 20, 1, 11, 20]);
+  await assert.rejects(readSurfaceFrame({ ...request, copy: 2 }), /номер LS/);
+  await assert.rejects(readSurfaceFrame({ ...request, selected: [9] }), /выбранной площадки/);
+  assert.equal(requests.length, 1);
+});
+
+test("surface frame requests retain completed surfaces for time bursts and read failures", async () => {
+  const h = harness(), context = { quantityKey: "Bs", selected: [8], component: "norm", copy: 0 };
+  h.request(0, context); h.start();
+  const surface = { width: 2, height: 2, values: new Float64Array([1, 2, 3, 4]) };
+  h.reads[0].resolve(surface); await tick();
+  const frame = h.state().frame;
+  h.request(1, context); h.start();
+  for (let time = 2; time <= 20; time++) h.request(time, context);
+  assert.equal(h.state().frame, frame);
+  h.reads[1].resolve("obsolete"); await tick(); h.start();
+  assert.deepEqual(h.reads.map(read => read.request.time), [0, 1, 20]);
+  h.reads[2].reject(new Error("surface read failure")); await tick();
+  assert.equal(h.state().frame, frame); assert.equal(h.state().frame.value, surface);
+  assert.match(h.state().error, /surface read failure/);
+  h.request(21, { ...context, copy: 1 }); assert.equal(h.state().frame, null);
+  h.controller.close();
 });

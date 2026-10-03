@@ -55,7 +55,7 @@ export function WorkingPoints(props) {
   return <div class="results-layout">
     <ObjectList title="Элементы ФММ" records={records()} selected={props.elements} onSelect={props.setElements} />
     <section class="plot-panel">
-      <LineChart series={[...(curves.value()?.series ?? []), ...(points.value()?.series ?? [])]}
+      <LineChart series={[...(curves.value()?.series ?? []), ...(points.value()?.series ?? [])]} autoScaleToggle={true}
         toolbar={<><strong>M(H)</strong><span class="chart-toolbar-note"
           title="Изотропные ФММ: модули · Анизотропные: проекции на ось намагничивания">
           Изотропные ФММ: модули · Анизотропные: проекции на ось намагничивания

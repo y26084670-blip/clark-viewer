@@ -1,36 +1,47 @@
-// A shared sequential scale for saved scalar nodes and its browser legend.
-// Values, including negative values, map monotonically from minimum to maximum.
-const COLOR_STOPS = Object.freeze([
-  [68, 1, 84],
-  [59, 82, 139],
-  [33, 145, 140],
-  [94, 201, 98],
-  [253, 231, 37],
-]);
-
-export const RESULT_SCALAR_GRADIENT = `linear-gradient(to right, ${
-  COLOR_STOPS.map((rgb, index) => `rgb(${rgb.join(", ")}) ${index * 25}%`).join(", ")
-})`;
-
-/** Returns an sRGB triplet in [0, 1]. A constant field uses the scale midpoint. */
-export function resultScalarColor(value, minimum, maximum) {
+// Palette tables below are rounded to 8-bit RGB from Matplotlib 3.10.8 _cm_listed.py.
+// Viridis/Inferno/Plasma: BIDS/colormap, CC0 (https://github.com/BIDS/colormap).
+// Turbo: Copyright 2019 Google LLC, Apache-2.0;
+// https://gist.github.com/mikhailov-work/ee72ba4191942acecc03fe6da94fc73f
+// Rainbow: Three.js examples/jsm/math/Lut.js (MIT). See public/third-party-notices.txt.
+export const RESULT_SCALAR_PALETTES = Object.freeze(["Rainbow", "Viridis", "Inferno", "Plasma", "Turbo"]);
+const HEX_PALETTES = Object.freeze({
+  Viridis: "44015444025645045745055946075a46085c460a5d460b5e470d60470e6147106347116447136548146748166848176948186a481a6c481b6d481c6e481d6f481f70482071482173482374482475482576482677482878482979472a7a472c7a472d7b472e7c472f7d46307e46327e46337f463480453581453781453882443983443a83443b84433d84433e85423f854240864241864142874144874045884046883f47883f48893e49893e4a893e4c8a3d4d8a3d4e8a3c4f8a3c508b3b518b3b528b3a538b3a548c39558c39568c38588c38598c375a8c375b8d365c8d365d8d355e8d355f8d34608d34618d33628d33638d32648e32658e31668e31678e31688e30698e306a8e2f6b8e2f6c8e2e6d8e2e6e8e2e6f8e2d708e2d718e2c718e2c728e2c738e2b748e2b758e2a768e2a778e2a788e29798e297a8e297b8e287c8e287d8e277e8e277f8e27808e26818e26828e26828e25838e25848e25858e24868e24878e23888e23898e238a8d228b8d228c8d228d8d218e8d218f8d21908d21918c20928c20928c20938c1f948c1f958b1f968b1f978b1f988b1f998a1f9a8a1e9b8a1e9c891e9d891f9e891f9f881fa0881fa1881fa1871fa28720a38620a48621a58521a68522a78522a88423a98324aa8325ab8225ac8226ad8127ad8128ae8029af7f2ab07f2cb17e2db27d2eb37c2fb47c31b57b32b67a34b67935b77937b87838b9773aba763bbb753dbc743fbc7340bd7242be7144bf7046c06f48c16e4ac16d4cc26c4ec36b50c46a52c56954c56856c66758c7655ac8645cc8635ec96260ca6063cb5f65cb5e67cc5c69cd5b6ccd5a6ece5870cf5773d05675d05477d1537ad1517cd2507fd34e81d34d84d44b86d54989d5488bd6468ed64590d74393d74195d84098d83e9bd93c9dd93ba0da39a2da37a5db36a8db34aadc32addc30b0dd2fb2dd2db5de2bb8de29bade28bddf26c0df25c2df23c5e021c8e020cae11fcde11dd0e11cd2e21bd5e21ad8e219dae319dde318dfe318e2e418e5e419e7e419eae51aece51befe51cf1e51df4e61ef6e620f8e621fbe723fde725",
+  Inferno: "00000401000501010601010802010a02020c02020e03021004031204031405041706041907051b08051d09061f0a07220b07240c08260d08290e092b10092d110a30120a32140b34150b37160b39180c3c190c3e1b0c411c0c431e0c451f0c48210c4a230c4c240c4f260c51280b53290b552b0b572d0b592f0a5b310a5c320a5e340a5f3609613809623909633b09643d09653e0966400a67420a68440a68450a69470b6a490b6a4a0c6b4c0c6b4d0d6c4f0d6c510e6c520e6d540f6d550f6d57106e59106e5a116e5c126e5d126e5f136e61136e62146e64156e65156e67166e69166e6a176e6c186e6d186e6f196e71196e721a6e741a6e751b6e771c6d781c6d7a1d6d7c1d6d7d1e6d7f1e6c801f6c82206c84206b85216b87216b88226a8a226a8c23698d23698f24699025689225689326679526679727669827669a28659b29649d29649f2a63a02a63a22b62a32c61a52c60a62d60a82e5fa92e5eab2f5ead305dae305cb0315bb1325ab3325ab43359b63458b73557b93556ba3655bc3754bd3853bf3952c03a51c13a50c33b4fc43c4ec63d4dc73e4cc83f4bca404acb4149cc4248ce4347cf4446d04545d24644d34743d44842d54a41d74b3fd84c3ed94d3dda4e3cdb503bdd513ade5238df5337e05536e15635e25734e35933e45a31e55c30e65d2fe75e2ee8602de9612bea632aeb6429eb6628ec6726ed6925ee6a24ef6c23ef6e21f06f20f1711ff1731df2741cf3761bf37819f47918f57b17f57d15f67e14f68013f78212f78410f8850ff8870ef8890cf98b0bf98c0af98e09fa9008fa9207fa9407fb9606fb9706fb9906fb9b06fb9d07fc9f07fca108fca309fca50afca60cfca80dfcaa0ffcac11fcae12fcb014fcb216fcb418fbb61afbb81dfbba1ffbbc21fbbe23fac026fac228fac42afac62df9c72ff9c932f9cb35f8cd37f8cf3af7d13df7d340f6d543f6d746f5d949f5db4cf4dd4ff4df53f4e156f3e35af3e55df2e661f2e865f2ea69f1ec6df1ed71f1ef75f1f179f2f27df2f482f3f586f3f68af4f88ef5f992f6fa96f8fb9af9fc9dfafda1fcffa4",
+  Plasma: "0d088710078813078916078a19068c1b068d1d068e20068f2206902406912605912805922a05932c05942e05952f059631059733059735049837049938049a3a049a3c049b3e049c3f049c41049d43039e44039e46039f48039f4903a04b03a14c02a14e02a25002a25102a35302a35502a45601a45801a45901a55b01a55c01a65e01a66001a66100a76300a76400a76600a76700a86900a86a00a86c00a86e00a86f00a87100a87201a87401a87501a87701a87801a87a02a87b02a87d03a87e03a88004a88104a78305a78405a78606a68707a68808a68a09a58b0aa58d0ba58e0ca48f0da4910ea3920fa39410a29511a19613a19814a099159f9a169f9c179e9d189d9e199da01a9ca11b9ba21d9aa31e9aa51f99a62098a72197a82296aa2395ab2494ac2694ad2793ae2892b02991b12a90b22b8fb32c8eb42e8db52f8cb6308bb7318ab83289ba3388bb3488bc3587bd3786be3885bf3984c03a83c13b82c23c81c33d80c43e7fc5407ec6417dc7427cc8437bc9447aca457acb4679cc4778cc4977cd4a76ce4b75cf4c74d04d73d14e72d24f71d35171d45270d5536fd5546ed6556dd7566cd8576bd9586ada5a6ada5b69db5c68dc5d67dd5e66de5f65de6164df6263e06363e16462e26561e26660e3685fe4695ee56a5de56b5de66c5ce76e5be76f5ae87059e97158e97257ea7457eb7556eb7655ec7754ed7953ed7a52ee7b51ef7c51ef7e50f07f4ff0804ef1814df1834cf2844bf3854bf3874af48849f48948f58b47f58c46f68d45f68f44f79044f79143f79342f89441f89540f9973ff9983ef99a3efa9b3dfa9c3cfa9e3bfb9f3afba139fba238fca338fca537fca636fca835fca934fdab33fdac33fdae32fdaf31fdb130fdb22ffdb42ffdb52efeb72dfeb82cfeba2cfebb2bfebd2afebe2afec029fdc229fdc328fdc527fdc627fdc827fdca26fdcb26fccd25fcce25fcd025fcd225fbd324fbd524fbd724fad824fada24f9dc24f9dd25f8df25f8e125f7e225f7e425f6e626f6e826f5e926f5eb27f4ed27f3ee27f3f027f2f227f1f426f1f525f0f724f0f921",
+  Turbo: "30123b32154333184a341b51351e5836215f37246638276d392a733a2d793b2f803c32863d358b3e38913f3b973f3e9c4040a24143a74146ac4249b1424bb5434eba4451bf4454c34456c74559cb455ccf455ed34661d64664da4666dd4669e0466be3476ee64771e94773eb4776ee4778f0477bf2467df44680f64682f84685fa4687fb458afc458cfd448ffe4391fe4294ff4196ff4099ff3e9bfe3d9efe3ba0fd3aa3fc38a5fb37a8fa35abf833adf731aff52fb2f42eb4f22cb7f02ab9ee28bceb27bee925c0e723c3e422c5e220c7df1fc9dd1ecbda1ccdd81bd0d51ad2d21ad4d019d5cd18d7ca18d9c818dbc518ddc218dec018e0bd19e2bb19e3b91ae4b61ce6b41de7b21fe9af20eaac22ebaa25eca727eea42aefa12cf09e2ff19b32f29835f39438f4913cf58e3ff68a43f78746f8844af8804ef97d52fa7a55fa7659fb735dfc6f61fc6c65fd6969fd666dfe6271fe5f75fe5c79fe597dff5680ff5384ff5188ff4e8bff4b8fff4992ff4796fe4499fe429cfe409ffd3fa1fd3da4fc3ca7fc3aa9fb39acfb38affa37b1f936b4f836b7f735b9f635bcf534bef434c1f334c3f134c6f034c8ef34cbed34cdec34d0ea34d2e935d4e735d7e535d9e436dbe236dde037dfdf37e1dd37e3db38e5d938e7d739e9d539ebd339ecd13aeecf3aefcd3af1cb3af2c93af4c73af5c53af6c33af7c13af8be39f9bc39faba39fbb838fbb637fcb336fcb136fdae35fdac34fea933fea732fea431fea130fe9e2ffe9b2dfe992cfe962bfe932afe9029fd8d27fd8a26fc8725fc8423fb8122fb7e21fa7b1ff9781ef9751df8721cf76f1af66c19f56918f46617f36315f26014f15d13f05b12ef5811ed5510ec530feb500eea4e0de84b0ce7490ce5470be4450ae2430ae14109df3f08dd3d08dc3b07da3907d83706d63506d43305d23105d02f05ce2d04cc2b04ca2a04c82803c52603c32503c12302be2102bc2002b91e02b71d02b41b01b21a01af1801ac1701a91601a71401a41301a112019e10019b0f01980e01950d01920b018e0a018b09028808028507028106027e05027a0403",
+});
+const RAINBOW = [[0, [0, 0, 255]], [0.2, [0, 255, 255]], [0.5, [0, 255, 0]], [0.8, [255, 255, 0]], [1, [255, 0, 0]]];
+const PALETTE_TABLES = Object.fromEntries(Object.entries(HEX_PALETTES).map(([name, hex]) => [name,
+  Array.from({ length: 256 }, (_, index) => [0, 1, 2].map(channel => parseInt(hex.slice(index * 6 + channel * 2, index * 6 + channel * 2 + 2), 16))),
+]));
+export function normalizeResultPalette(value) {
+  return RESULT_SCALAR_PALETTES.includes(value) ? value : "Viridis";
+}
+export function resultScalarPosition(value, minimum, maximum) {
   const span = maximum - minimum;
-  const position = maximum > minimum
+  return maximum > minimum
     ? Math.max(0, Math.min(1, Number.isFinite(span)
       ? (value - minimum) / span
       : (value / 2 - minimum / 2) / (maximum / 2 - minimum / 2)))
     : 0.5;
-  const scaled = position * (COLOR_STOPS.length - 1);
-  const first = Math.min(Math.floor(scaled), COLOR_STOPS.length - 2);
-  const fraction = scaled - first;
-  return COLOR_STOPS[first].map((component, index) => (
-    component + (COLOR_STOPS[first + 1][index] - component) * fraction
-  ) / 255);
 }
-
-/** A constant field has one color, including the common all-zero first frame. */
-export function resultScalarLegendBackground(minimum, maximum) {
-  return minimum === maximum
-    ? `rgb(${resultScalarColor(minimum, minimum, maximum).map(value => Math.round(value * 255)).join(", ")})`
-    : RESULT_SCALAR_GRADIENT;
+/** sRGB in [0,1]. Constant fields, including all-zero frames, use the midpoint. */
+export function resultScalarColor(value, minimum, maximum, palette = "Viridis") {
+  const position = resultScalarPosition(value, minimum, maximum);
+  const name = normalizeResultPalette(palette);
+  if (name === "Rainbow") {
+    const last = RAINBOW.findIndex(stop => stop[0] >= position);
+    const right = RAINBOW[Math.max(1, last)], left = RAINBOW[Math.max(0, last - 1)];
+    const fraction = (position - left[0]) / (right[0] - left[0]);
+    return left[1].map((v, channel) => (v + fraction * (right[1][channel] - v)) / 255);
+  }
+  const scaled = position * 255, first = Math.min(Math.floor(scaled), 254), fraction = scaled - first;
+  const colors = PALETTE_TABLES[name];
+  return colors[first].map((component, channel) => (component + (colors[first + 1][channel] - component) * fraction) / 255);
 }
+export function resultScalarLegendBackground(minimum, maximum, palette = "Viridis") {
+  const rgb = value => `rgb(${resultScalarColor(value, 0, 1, palette).map(component => Math.round(component * 255)).join(", ")})`;
+  return minimum === maximum ? rgb(0.5)
+    : `linear-gradient(to right, ${Array.from({ length: 17 }, (_, index) => `${rgb(index / 16)} ${index * 100 / 16}%`).join(", ")})`;
+}
+export const RESULT_SCALAR_GRADIENT = resultScalarLegendBackground(0, 1);

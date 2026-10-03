@@ -34,7 +34,7 @@ export function FieldLines(props) {
   return <div class="results-layout">
     <ObjectList title="Площадки" records={records()} selected={props.regions} onSelect={props.setRegions} />
     <section class="plot-panel">
-      <LineChart series={series()} freezeAutoScale={true}
+      <LineChart series={series()} autoScaleToggle={true}
         toolbar={<><QuantitySelect options={["Bs", "As"]} value={quantityKey()} onChange={setQuantity} component={component()} onComponentChange={setComponent} />
         <label>По оси X <select value={direction()} onChange={event => setDirection(event.currentTarget.value)}><option value="i1">i1</option><option value="i2">i2</option></select></label>
         <label>Локальный образ <input type="number" min="1" max={copyCount()} step="1" value={localCopy() + 1}

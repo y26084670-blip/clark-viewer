@@ -1,4 +1,4 @@
-import { createEffect, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { batch, createEffect, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import Chart from "chart.js/auto";
 import { chartPanLimits, chartZoomLimits, clampChartPoint } from "../services/visualization/chartZoom.js";
 
@@ -58,6 +58,7 @@ export function LineChart(props) {
   const [menu, setMenu] = createSignal(null);
   const [message, setMessage] = createSignal("");
   const [limits, setLimits] = createSignal({});
+  const [autoScale, setAutoScale] = createSignal(true);
   const [showLegend, setShowLegend] = createSignal(false);
   const [selection, setSelection] = createSignal(null);
   const [panning, setPanning] = createSignal(false);
@@ -83,7 +84,7 @@ export function LineChart(props) {
     if (finished?.mode === "pan" && finished.currentLimits) applyChartLimits(finished.previousLimits);
   }
   function captureAutoLimits() {
-    if (!props.freezeAutoScale || !autoPending || !chart
+    if (!props.autoScaleToggle || untrack(autoScale) || !autoPending || !chart
       || !currentSeries.some(series => series.points.some(point => Number.isFinite(point.x) && Number.isFinite(point.y)))) return;
     autoPending = false;
     setLimits({ xMin: chart.scales.x.min, xMax: chart.scales.x.max,
@@ -92,9 +93,26 @@ export function LineChart(props) {
   function resetLimits() {
     cancelSelection(); autoPending = true; setLimits({});
   }
-  // Keep the chosen range when time or data changes, but reset it for different axes.
+  function toggleAutoScale() {
+    if (!props.autoScaleToggle) { resetLimits(); return; }
+    cancelSelection();
+    const enabled = !untrack(autoScale);
+    batch(() => {
+      setAutoScale(enabled); autoPending = true;
+      setLimits({});
+      // Turning Auto off freezes the actual displayed axes, including tick padding.
+      // Before the first valid frame, defer the snapshot until it arrives.
+      if (!enabled) captureAutoLimits();
+    });
+  }
+  function commitManualLimits(range) {
+    autoPending = false;
+    batch(() => { if (props.autoScaleToggle) setAutoScale(false); setLimits(range); });
+  }
+  // Toggle charts keep frozen limits across quantity/axis changes too. Other
+  // charts retain their previous reset-on-axis-change behavior.
   createEffect(on(() => [props.xLabel, props.yLabel, props.integerX], () => {
-    if (!props.freezeAutoScale) resetLimits();
+    if (!props.autoScaleToggle) resetLimits();
   }));
   const cancelOnEscape = event => {
     if (!event.defaultPrevented && !event.isComposing && event.code === "Escape") cancelSelection();
@@ -236,13 +254,13 @@ export function LineChart(props) {
     if (drag.mode === "pan") {
       event.preventDefault(); updateDrag(chartPoint(event));
       const finished = releaseSelection();
-      if (finished?.moved) setLimits(finished.currentLimits);
+      if (finished?.moved) commitManualLimits(finished.currentLimits);
       else if (finished) openChartMenu(event);
       return;
     }
     const range = chartZoomLimits(drag.start, chartPoint(event), drag.area, chart.scales);
     releaseSelection();
-    if (range) setLimits(range);
+    if (range) commitManualLimits(range);
   }
   function cancelPointerSelection(event) {
     if (drag?.pointerId === event.pointerId) cancelSelection();
@@ -278,7 +296,8 @@ export function LineChart(props) {
       {props.toolbar}
       <div class="chart-scale-controls">
         {props.toolbarEnd}
-        <button type="button" onClick={resetLimits} title={props.freezeAutoScale ? "Подобрать пределы по показанным данным и сохранить их при смене времени" : "Автоматические пределы по обеим осям"}>Авто</button>
+        <button type="button" onClick={toggleAutoScale} aria-pressed={props.autoScaleToggle ? autoScale() : undefined}
+          title={props.autoScaleToggle ? (autoScale() ? "Автомасштаб включён: нажмите, чтобы сохранить текущие пределы" : "Автомасштаб выключен: нажмите для автоматического подбора пределов") : "Автоматические пределы по обеим осям"}>Авто</button>
         <Show when={props.legendMode !== "overlay"}>
           <label><input type="checkbox" checked={showLegend()} onChange={event => setShowLegend(event.currentTarget.checked)} />Показать легенду</label>
         </Show>

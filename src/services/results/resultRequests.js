@@ -2,7 +2,7 @@ import { createEffect, createSignal, onCleanup } from "solid-js";
 import { mapResultObjects, QUANTITIES, regionLayout } from "./resultMappings.js";
 import { planResultSampling } from "./resultSampling.js";
 import { createResultFrameController } from "./resultFrameController.js";
-import { lineSeries } from "./resultPlots.js";
+import { lineSeries, regionSurfaceGrid } from "./resultPlots.js";
 import { isFmm } from "./fmmCharacteristics.js";
 
 export function useAsyncResult(source, load) {
@@ -25,7 +25,7 @@ export function useAsyncResult(source, load) {
   return { value, error, loading };
 }
 
-// Opt-in for 3D and line fields; other tabs keep useAsyncResult semantics.
+// Opt-in for 3D, line and surface fields; other tabs keep useAsyncResult semantics.
 export function useResultFrame(source, load) {
   const [state, setState] = createSignal({ frame: null, requested: null, loading: false, error: "" });
   const controller = createResultFrameController({ load, publish: setState });
@@ -99,4 +99,15 @@ export async function readLineFrame(request) {
     return lineSeries(frame, object.record, quantity, request.component, request.direction, { copy: request.copy });
   }));
   return { series: series.flat(), skipped: objects.filter(item => !available.includes(item)).map(item => `№${item.record.id}`) };
+}
+
+export async function readSurfaceFrame(request) {
+  const quantity = QUANTITIES[request.quantityKey];
+  const object = resultObjects(request.task, request.quantityKey).find(item => item.record.id === request.selected[0]);
+  if (!object) throw new Error("Для выбранной площадки нет этой величины");
+  const layout = regionLayout(object.record);
+  if (!Number.isSafeInteger(request.copy) || request.copy < 0 || request.copy >= layout.copies) throw new Error("Неверный номер LS");
+  const frame = await request.task.reader.read({ name: quantity.file, step: request.time,
+    start: object.start + request.copy * layout.planeCount, count: layout.planeCount });
+  return regionSurfaceGrid(frame, object.record, quantity, request.component, request.copy);
 }

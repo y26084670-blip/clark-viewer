@@ -76,16 +76,17 @@ function runtime({initial=series(), failInit=false, autoScaleToggle=true, ChartI
 const bounds=chart=>({xMin:chart.scales.x.min,xMax:chart.scales.x.max,yMin:chart.scales.y.min,yMax:chart.scales.y.max});
 const pointer=(x,y,button=0)=>({clientX:x,clientY:y,button,buttons:button===2?2:1,pointerId:1,isPrimary:true,preventDefault(){}});
 
-test("capture freezes exact displayed axes and visibility without changing Auto, then restores both", async()=>{
+test("capture follows Auto while preserving visibility and restores the original chart settings", async()=>{
   const h=runtime(),chart=h.chart();chart.setDatasetVisibility(1,false);h.setShowLegend(true);
   const initial=bounds(chart),first=h.frame();await h.captureAdapter.renderReady(first);
   h.captureAdapter.prepare();assert.equal(h.autoScale(),true);assert.equal(h.capturing(),true);
   assert.equal(chart.options.responsive,false);assert.equal(chart.options.devicePixelRatio,2);
   const next={step:1};h.publish(series(100),next);await h.captureAdapter.renderReady(next);
-  assert.deepEqual(bounds(chart),initial);assert.equal(chart.isDatasetVisible(1),false);assert.equal(h.autoScale(),true);
+  assert.deepEqual(bounds(chart),{xMin:0,xMax:100,yMin:0,yMax:200});assert.equal(chart.isDatasetVisible(1),false);assert.equal(h.autoScale(),true);
   const image=h.captureAdapter.capture(next,{caption:"Frame 1"});assert.equal(h.copies[0].output,image);assert.equal(image.width,800);
   assert.equal(h.copies[0].options.caption,"Frame 1");assert.deepEqual(chart.tooltipActive,[]);assert.deepEqual(chart.active,[]);
-  h.captureAdapter.restore();assert.equal(h.capturing(),false);assert.equal(chart.options.responsive,true);assert.equal(chart.options.devicePixelRatio,undefined);
+  h.publish(series(),first);await h.captureAdapter.renderReady(first);
+  h.captureAdapter.restore();assert.deepEqual(bounds(chart),initial);assert.equal(h.capturing(),false);assert.equal(chart.options.responsive,true);assert.equal(chart.options.devicePixelRatio,undefined);
   assert.deepEqual(h.canvas.style,{width:"100%",height:"100%"});assert.equal(chart.isDatasetVisible(1),false);assert.equal(h.autoScale(),true);assert.equal(h.showLegend(),true);
   h.publish(series(25),{step:2});assert.equal(chart.scales.x.max,25);h.dispose();assert.equal(h.registered,null);
 });
@@ -149,13 +150,92 @@ test("real Chart.js preserves precise padded axes, visibility and restores autom
   chart.setDatasetVisibility(1,false);chart.update("none");
   const original=bounds(chart),rawDpr=chart.config.options.devicePixelRatio;
   assert.equal(rawDpr,undefined);assert.equal(chart.options.devicePixelRatio,1);
+  h.toggleAutoScale();assert.equal(h.autoScale(),false);
   h.captureAdapter.prepare();assert.equal(chart.options.responsive,false);
   const key={step:1};h.publish(series(200),key,{time:200,step:1});await h.captureAdapter.renderReady(key);
   assert.deepEqual(bounds(chart),original);assert.equal(chart.isDatasetVisible(1),false);
   h.captureAdapter.capture(key);h.captureAdapter.restore();
   assert.equal(chart.config.options.devicePixelRatio,undefined);assert.equal(Object.hasOwn(chart.config.options,"devicePixelRatio"),false);
-  assert.equal(chart.options.responsive,true);assert.equal(chart.isDatasetVisible(1),false);assert.equal(h.autoScale(),true);
-  assert.ok(chart.scales.x.max>=200);
+  assert.equal(chart.options.responsive,true);assert.equal(chart.isDatasetVisible(1),false);assert.equal(h.autoScale(),false);
+  assert.deepEqual(bounds(chart),original);
   chart.platform.getDevicePixelRatio=()=>2;chart.update("none");chart.resize();assert.equal(chart.currentDevicePixelRatio,2);
   h.dispose();
+});
+
+function assertAutomaticAxes(chart) {
+  for (const axis of ["x","y"]) {
+    assert.equal(chart.options.scales[axis].min,undefined);
+    assert.equal(chart.options.scales[axis].max,undefined);
+  }
+}
+
+for (const autoScaleToggle of [true,false]) {
+  test(`real Chart.js movie Auto matches ordinary viewing through large growth and shrinkage (toggle=${autoScaleToggle})`,async()=>{
+    const initial=series(3.7),h=runtime({initial,autoScaleToggle,ChartImplementation:RealChart});
+    const ordinary=runtime({initial,autoScaleToggle,ChartImplementation:RealChart});
+    try {
+      for (const current of [h,ordinary]) {
+        current.chart().setDatasetVisibility(1,false);current.setShowLegend(true);current.chart().update("none");
+      }
+      const originalKey=h.frame(),original=bounds(h.chart());
+      h.captureAdapter.prepare();assertAutomaticAxes(h.chart());
+      const snapshots=[];
+      for (const [step,maximum] of [0.0000137,8.42e8,0.000000026,197].entries()) {
+        const key={step},data=series(maximum);
+        ordinary.publish(data,key);h.publish(data,key);await h.captureAdapter.renderReady(key);
+        assert.deepEqual(bounds(h.chart()),bounds(ordinary.chart()));assertAutomaticAxes(h.chart());
+        h.captureAdapter.capture(key);
+        assert.deepEqual(bounds(h.chart()),bounds(ordinary.chart()));assertAutomaticAxes(h.chart());
+        assert.equal(h.chart().isDatasetVisible(1),false);snapshots.push(bounds(h.chart()));
+      }
+      assert.ok(snapshots[1].yMax>snapshots[0].yMax*1e12);
+      assert.ok(snapshots[2].yMax<snapshots[1].yMax/1e12);
+      h.publish(initial,originalKey);await h.captureAdapter.renderReady(originalKey);h.captureAdapter.restore();
+      assert.deepEqual(bounds(h.chart()),original);assert.deepEqual(h.limits(),{});assertAutomaticAxes(h.chart());
+      assert.equal(h.autoScale(),true);assert.equal(h.showLegend(),true);assert.equal(h.capturing(),false);
+      const next=series(915);h.publish(next,{step:9});ordinary.publish(next,{step:9});
+      assert.deepEqual(bounds(h.chart()),bounds(ordinary.chart()));
+    } finally { h.captureAdapter.restore();h.dispose();ordinary.dispose(); }
+  });
+}
+
+for (const mode of ["Auto-off","manual zoom","manual zoom without toggle"]) {
+  test(`real Chart.js preserves ${mode} through movie frames and cancellation`,async()=>{
+    const h=runtime({initial:series(3.7),autoScaleToggle:mode!=="manual zoom without toggle",ChartImplementation:RealChart});
+    try {
+      const originalKey=h.frame(),chart=h.chart();
+      chart.setDatasetVisibility(1,false);chart.update("none");
+      if (mode==="Auto-off") h.toggleAutoScale();
+      else { h.startSelection(pointer(80,40));h.finishSelection(pointer(240,140)); }
+      const original=bounds(chart),stored={...h.limits()},originalAuto=h.autoScale();
+      assert.equal(Object.values(stored).length,4);
+      h.captureAdapter.prepare();
+      for (const [step,maximum] of [8.42e8,0.000000026].entries()) {
+        const key={step};h.publish(series(maximum),key);await h.captureAdapter.renderReady(key);h.captureAdapter.capture(key);
+        assert.deepEqual(bounds(chart),original);assert.deepEqual(h.limits(),stored);
+      }
+      const controller=new AbortController(),waiting=h.captureAdapter.renderReady({step:99},{signal:controller.signal});
+      controller.abort();await assert.rejects(waiting,{name:"AbortError"});
+      h.publish(series(3.7),originalKey);await h.captureAdapter.renderReady(originalKey);h.captureAdapter.restore();
+      assert.deepEqual(bounds(chart),original);assert.deepEqual(h.limits(),stored);assert.equal(h.autoScale(),originalAuto);
+      assert.equal(chart.isDatasetVisible(1),false);assert.equal(chart.options.responsive,true);assert.equal(h.capturing(),false);
+      // Restoring also unlocks the original Auto toggle or one-shot reset.
+      h.toggleAutoScale();h.publish(series(197),{step:5});assertAutomaticAxes(chart);assert.ok(chart.scales.x.max>=197);
+    } finally { h.captureAdapter.restore();h.dispose(); }
+  });
+}
+
+test("real Chart.js cancellation restores Auto after the final movie frame changed scale",async()=>{
+  const h=runtime({initial:series(3.7),ChartImplementation:RealChart});
+  try {
+    const original=bounds(h.chart()),originalKey=h.frame();h.captureAdapter.prepare();
+    const key={step:1};h.publish(series(8.42e8),key);await h.captureAdapter.renderReady(key);h.captureAdapter.capture(key);
+    const controller=new AbortController(),waiting=h.captureAdapter.renderReady({step:2},{signal:controller.signal});
+    controller.abort();await assert.rejects(waiting,{name:"AbortError"});
+    // The tab restores its original time with a fresh lifecycle signal, then releases the renderer.
+    h.publish(series(3.7),originalKey);await h.captureAdapter.renderReady(originalKey);h.captureAdapter.restore();
+    assert.deepEqual(bounds(h.chart()),original);assertAutomaticAxes(h.chart());assert.deepEqual(h.limits(),{});
+    assert.equal(h.autoScale(),true);assert.equal(h.capturing(),false);
+    h.publish(series(0.000000026),{step:3});assert.ok(h.chart().scales.x.max<0.000001);
+  } finally { h.captureAdapter.restore();h.dispose(); }
 });

@@ -294,13 +294,19 @@ export function LineChart(props) {
       if (!Object.values(range).every(Number.isFinite) || range.xMin >= range.xMax || range.yMin >= range.yMax) {
         throw new Error("Пределы графика недоступны для записи фильма");
       }
-      movieState = { range, width: canvas.width, height: canvas.height,
+      const savedLimits = { ...untrack(limits) };
+      const automatic = props.autoScaleToggle ? untrack(autoScale)
+        : !Object.values(savedLimits).some(Number.isFinite);
+      // Keep the user's scale mode throughout the movie. Empty limits let
+      // Chart.js fit every frame just as it does during ordinary Auto viewing;
+      // manual limits and Auto-off retain the exact displayed axes.
+      movieState = { range: automatic ? {} : range, width: canvas.width, height: canvas.height,
         logicalWidth: chart.width, logicalHeight: chart.height,
         responsive: chart.options.responsive,
         devicePixelRatio: (chart.config?.options ?? chart.options).devicePixelRatio,
         hadDevicePixelRatio: Object.hasOwn(chart.config?.options ?? chart.options, "devicePixelRatio"),
         styleWidth: canvas.style.width, styleHeight: canvas.style.height,
-        autoPending, limits: { ...untrack(limits) }, autoScale: untrack(autoScale), showLegend: untrack(showLegend),
+        autoPending, limits: savedLimits, autoScale: untrack(autoScale), showLegend: untrack(showLegend),
         visibility: new Map(chart.data.datasets.map((dataset, index) => [dataset._seriesKey, chart.isDatasetVisible(index)])),
       };
       pendingVisibility = null;

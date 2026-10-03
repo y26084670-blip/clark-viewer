@@ -180,7 +180,7 @@ export function ViewerToolsMenu(props) {
               onInput={event => setIntervalMs(event.currentTarget.valueAsNumber)} />
           </label>
           <p>Длительность GIF: {validInterval() ? duration() : "—"} с.</p>
-          <p class="viewer-movie-note">Камера и масштабы сохраняются. Размер кадра ограничен для GIF; подпись показывает время расчёта.</p>
+          <p class="viewer-movie-note">Сохраняются камера и режим масштаба; «Авто» действует на каждом кадре. Размер кадра ограничен для GIF, подпись показывает время расчёта.</p>
         </Show>
         <Show when={running()}>
           <p role="status" aria-live="polite">{progressText()}</p>

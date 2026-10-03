@@ -13,7 +13,7 @@ export function ViewerToolsMenu(props) {
   const [progress, setProgress] = createSignal({ phase: "preparing", completed: 0, total: 0, step: null });
   const [error, setError] = createSignal("");
   const [result, setResult] = createSignal(null);
-  const [saveInTask, setSaveInTask] = createSignal(false);
+  const [saveInTask, setSaveInTask] = createSignal(true);
   const [saving, setSaving] = createSignal(false);
   const [savedNotice, setSavedNotice] = createSignal("");
   let trigger, menu, menuItem, dialog, intervalInput, cancelButton, saveButton;
@@ -48,7 +48,7 @@ export function ViewerToolsMenu(props) {
   function openSetup() {
     if (!props.eligible || running() || saving()) return;
     closeMenu(); discardResult(); setError(""); setPhase("setup");
-    setSaveInTask(false); setSavedNotice("");
+    setSaveInTask(true); setSavedNotice("");
     openedTask = props.task; openedTab = props.tabIndex; closeAfterRun = false;
     setDialogOpen(true);
     queueMicrotask(() => intervalInput?.focus());

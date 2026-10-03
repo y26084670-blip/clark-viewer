@@ -38,7 +38,7 @@ function prepareLayer(request, layer) {
   return { result, key: layer.key, quantity, count, minimum,
     request: { task: request.task, time: request.time, quantityKey: layer.quantityKey,
       selected: objects.map(object => object.record.id) },
-    volumeMode: layer.volumeMode === true && quantity.components !== 1 };
+    volumeMode: layer.volumeMode === true };
 }
 
 /** Reserve one visible point per saved image, then share unused space. If the

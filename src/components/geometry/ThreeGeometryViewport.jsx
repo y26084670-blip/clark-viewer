@@ -51,6 +51,7 @@ import {
 } from "../../services/visualization/resultScalarColors.js";
 
 import { updateResultVolumeMeshes } from "../../services/visualization/resultVolumeRenderer.js";
+import { updateResultSurfaceMeshes } from "../../services/visualization/resultSurfaceRenderer.js";
 import { captureMovieCanvas } from "../../services/movie/movieCanvas.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../../services/movie/renderedFrameGate.js";
 
@@ -505,6 +506,7 @@ export function updateResultLayers(THREE, previous, definitions, {
       if (vectorStyle === "volume") {
         state.vectorRoot = sourceVectorRoot(THREE, state.vectorRoot, "volume");
         const domains = volumeFields.domains.filter(visible);
+        const surfaces = (volumeFields.surfaces ?? []).filter(visible);
         let minimum = Infinity, maximum = -Infinity;
         for (const vector of vectors) {
           minimum = Math.min(minimum, vector.magnitude);
@@ -512,10 +514,12 @@ export function updateResultLayers(THREE, previous, definitions, {
         }
         updateResultVolumeMeshes(THREE, state.vectorRoot, domains,
           { minimum, maximum, palette, opacity });
+        updateResultSurfaceMeshes(THREE, state.vectorRoot, surfaces,
+          { minimum, maximum, palette, opacity });
         const fallback = (volumeFields.fallbackPoints ?? []).filter(visible);
         // Unrendered fallback samples must not become invisible picking targets.
         // Successful domains retain their saved nodes, never boundary support nodes.
-        const pickVectors = [...new Set([...domains.flatMap(domain => domain.points ?? []), ...fallback])].filter(visible);
+        const pickVectors = [...new Set([...domains, ...surfaces].flatMap(domain => domain.points ?? []).concat(fallback))].filter(visible);
         const pickNodes = updateResultPoints(THREE,
           state.vectorRoot.getObjectByName("result-volume-pick-nodes"), pickVectors);
         pickNodes.name = "result-volume-pick-nodes";
@@ -548,12 +552,49 @@ export function updateResultLayers(THREE, previous, definitions, {
       state.vectorRoot = null;
     }
     if (scalarScene) {
-      const points = scalarScene.points.filter(item => Number.isFinite(item.value)
-        && item.origin?.length === 3 && Array.from(item.origin).every(Number.isFinite) && visible(item));
+      const validScalar = item => Number.isFinite(item.value)
+        && item.origin?.length === 3 && Array.from(item.origin).every(Number.isFinite) && visible(item);
+      const points = scalarScene.points.filter(validScalar);
       const { minimum, maximum, quantity, unit } = scalarScene;
       if (Number.isFinite(minimum) && Number.isFinite(maximum)) {
-        state.scalarRoot = updateResultPoints(THREE, state.scalarRoot, points,
-          { scalar: true, minimum, maximum, palette });
+        const volume = Boolean(volumeFields);
+        if (state.scalarRoot && (volume ? state.scalarRoot.isPoints : !state.scalarRoot.isPoints)) {
+          releaseResultRoot(state.scalarRoot);
+          state.scalarRoot = null;
+        }
+        if (volume) {
+          state.scalarRoot ??= new THREE.Group();
+          state.scalarRoot.userData.style = "volume";
+          const domains = volumeFields.domains.filter(visible);
+          const surfaces = (volumeFields.surfaces ?? []).filter(visible);
+          updateResultVolumeMeshes(THREE, state.scalarRoot, domains,
+            { minimum, maximum, palette, opacity });
+          updateResultSurfaceMeshes(THREE, state.scalarRoot, surfaces,
+            { minimum, maximum, palette, opacity });
+          const fallback = (volumeFields.fallbackPoints ?? []).filter(validScalar);
+          // Only original saved nodes and the displayed fallback belong to
+          // picking. Interpolation support vertices and proxy boxes do not.
+          const saved = [...new Set([...domains, ...surfaces].flatMap(domain => domain.points ?? []).concat(fallback))].filter(validScalar);
+          const pickNodes = updateResultPoints(THREE,
+            state.scalarRoot.getObjectByName("result-scalar-volume-pick-nodes"), saved,
+            { scalar: true, minimum, maximum, palette, size: DISCRETIZATION_POINT_SIZE });
+          pickNodes.name = "result-scalar-volume-pick-nodes";
+          pickNodes.material.colorWrite = false;
+          pickNodes.material.depthWrite = false;
+          if (pickNodes.parent !== state.scalarRoot) state.scalarRoot.add(pickNodes);
+          const fallbackNodes = updateResultPoints(THREE,
+            state.scalarRoot.getObjectByName("result-scalar-volume-fallback-nodes"), fallback,
+            { scalar: true, minimum, maximum, palette, size: DISCRETIZATION_POINT_SIZE });
+          fallbackNodes.name = "result-scalar-volume-fallback-nodes";
+          // The shared saved-node target already covers these markers.
+          fallbackNodes.raycast = () => {};
+          if (fallbackNodes.parent !== state.scalarRoot) state.scalarRoot.add(fallbackNodes);
+          state.scalarRoot.name = `result-${key}-scalars`;
+        } else {
+          state.scalarRoot = updateResultPoints(THREE, state.scalarRoot, points,
+            { scalar: true, minimum, maximum, palette,
+              size: DISCRETIZATION_POINT_SIZE * prescribedSourceScale(scale) });
+        }
         if (points.length) state.legends.push({ key: `${key}:scalar`, groupLabel: layer.groupLabel,
           minimum, maximum, quantity, unit, palette });
       } else {
@@ -583,9 +624,15 @@ export function intersectResultLayers(raycaster, states, unitsPerPixel) {
       root.traverseVisible(object => {
         if (object.isPoints || object.isLineSegments || object.isMesh) targets.push(object);
       });
-      raycaster.params.Points.threshold = unitsPerPixel * (root === state.vectorRoot
-        ? resultPointPickRadius(state.scene, root, state.scale) : 9);
-      hits.push(...raycaster.intersectObjects(targets, false));
+      if (root === state.vectorRoot) {
+        raycaster.params.Points.threshold = unitsPerPixel * resultPointPickRadius(state.scene, root, state.scale);
+        hits.push(...raycaster.intersectObjects(targets, false));
+      } else {
+        for (const target of targets) {
+          raycaster.params.Points.threshold = unitsPerPixel * Math.max(2, (target.material?.size ?? DISCRETIZATION_POINT_SIZE) / 2);
+          hits.push(...raycaster.intersectObject(target, false));
+        }
+      }
     }
   }
   return hits.sort((a, b) => a.distance - b.distance);

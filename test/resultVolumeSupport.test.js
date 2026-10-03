@@ -161,3 +161,60 @@ test("full result read and the real worker publish volume instead of points for 
     }
   } finally { processor.close(); }
 });
+
+for (const [quantityKey, file, factor, unit] of [
+  ["MHdot", "MH", 0.4 * Math.PI, "Дж/м³"],
+  ["JEdot", "JE", 1e-3, "Вт/мм³"],
+]) test(`${quantityKey} keeps signed units once through the real worker and fills the physical boundary`, async () => {
+  for (const dimensions of [[1, 1, 1], [2, 2, 2], [4, 3, 1]]) {
+    const { task, frame } = fixture({ dimensions }), expected = [], reads = [];
+    task.metadata[file] = task.metadata.MH;
+    task.reader.read = async request => { reads.push(request); return frame; };
+    for (let row = 0; row < frame.count; row++) {
+      const [x, y, z] = frame.values.subarray(row * 9, row * 9 + 3);
+      if (frame.count === 1) {
+        frame.values.set([2, -3, 4, -5, 1, 0], row * 9 + 3);
+        expected.push(-13 * factor);
+      } else {
+        frame.values.set([1, 2, -3, x - 2, y - 3, z - 4], row * 9 + 3);
+        expected.push(((x - 2) + 2 * (y - 3) - 3 * (z - 4)) * factor);
+      }
+    }
+    let workers = 0;
+    const processor = createResultVolumeProcessor({ workerFactory: () => { workers++; return workerFactory(); } });
+    try {
+      const first = await readResultVolumeFrame({ task, quantityKey, selected: [1], time: 0 }, null, processor);
+      assert.equal(first.scene, null);
+      assert.equal(first.scalarScene.unit, unit);
+      assert.equal(first.scalarScene.minimum, Math.min(...expected));
+      assert.equal(first.scalarScene.maximum, Math.max(...expected));
+      assert.equal(first.volumeFields.minimum, first.scalarScene.minimum);
+      assert.equal(first.volumeFields.maximum, first.scalarScene.maximum);
+      assert.deepEqual(first.scalarScene.points.map(point => point.value), expected);
+      assert.equal(first.volumeFields.domains.length, 1);
+      assert.equal(first.volumeFields.fallbackPoints.length, 0);
+      assert.equal(first.volumeNotice, "");
+      const field = first.volumeFields.domains[0];
+      assert.deepEqual(field.bounds, { min: [0, 0, 0], max: [4, 6, 8] });
+      assert.ok(field.mask.every(value => value === 255));
+      assert.equal(field.points.length, frame.count, "support boundaries must not invent picking nodes");
+      assert.deepEqual(field.points.map(point => point.origin), first.scalarScene.points.map(point => point.origin));
+      let minimum = Infinity, maximum = -Infinity;
+      for (const value of field.values) { minimum = Math.min(minimum, value); maximum = Math.max(maximum, value); }
+      const tolerance = Math.max(1, Math.abs(Math.min(...expected)), Math.abs(Math.max(...expected))) * 1e-6;
+      assert.ok(Math.abs(minimum - Math.min(...expected)) < tolerance);
+      assert.ok(Math.abs(maximum - Math.max(...expected)) < tolerance);
+      if (frame.count > 1) assert.ok(minimum < 0 && maximum > 0, "signed products must not become vector magnitudes");
+      assert.equal(frame.values.byteLength, frame.count * 9 * 8, "worker transfers must preserve original HDF5 data");
+      for (let row = 0; row < frame.count; row++) for (let axis = 0; axis < 3; axis++) frame.values[row * 9 + 6 + axis] *= 2;
+      const second = await readResultVolumeFrame({ task, quantityKey, selected: [1], time: 1 }, null, processor);
+      assert.equal(workers, 1, "successive scalar frames retain worker ownership");
+      assert.deepEqual(reads.map(read => [read.name, read.step, read.every]), [[file, 0, 1], [file, 1, 1]]);
+      assert.deepEqual(second.scalarScene.points.map(point => point.value), expected.map(value => value * 2));
+      assert.deepEqual(second.volumeFields.domains[0].bounds, field.bounds);
+      for (let i = 0; i < field.values.length; i += 97) {
+        assert.ok(Math.abs(second.volumeFields.domains[0].values[i] - field.values[i] * 2) < tolerance * 2);
+      }
+    } finally { processor.close(); }
+  }
+});

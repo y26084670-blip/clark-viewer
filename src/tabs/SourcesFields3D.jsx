@@ -17,7 +17,7 @@ export function SourcesFields3D(props) {
   const [virtualQuantity, setVirtualQuantity] = createGeometryViewSetting("resultVirtualQuantity", "none");
   const [scale, setScale] = createGeometryViewSetting("resultVectorScale", 1);
   const [colorMap, setColorMap] = createGeometryViewSetting("resultVectorColorMap", false);
-  const [palette, setPalette] = createGeometryViewSetting("resultPalette", "Viridis");
+  const [palette, setPalette] = createGeometryViewSetting("resultPalette", "Rainbow");
   const [elementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode] = createGeometryViewSetting("regionsMode", "all");
   const quantities = {
@@ -29,7 +29,10 @@ export function SourcesFields3D(props) {
     QUANTITIES[quantities[group.key].read()]?.components === 3));
   const hasScalars = createMemo(() => RESULT_LAYER_GROUPS.some(group =>
     QUANTITIES[quantities[group.key].read()]?.components === 1));
-  const volumeMode = createMemo(() => colorMap() && scale() >= 10 - 1e-9);
+  // Scalars require a color map, but must not replace the user's vector-mode
+  // preference when a later quantity selection contains only vectors again.
+  const effectiveColorMap = createMemo(() => hasScalars() || colorMap());
+  const volumeMode = createMemo(() => effectiveColorMap() && scale() >= 10 - 1e-9);
   const requestedLayers = createMemo(() => RESULT_LAYER_GROUPS.map(group => {
     const records = group.key === "regions" ? props.task?.regions ?? []
       : (props.task?.elements ?? []).filter(record => group.key === "virtual" ? record.targ === 3 : record.targ !== 3);
@@ -38,7 +41,7 @@ export function SourcesFields3D(props) {
       group.key === "regions" ? regionsMode() : elementsMode()).filter(id => recordIds.has(id));
     const quantityKey = quantities[group.key].read();
     return { key: group.key, quantityKey, selected,
-      volumeMode: QUANTITIES[quantityKey]?.components === 3 && volumeMode() };
+      volumeMode: quantityKey !== "none" && volumeMode() };
   }));
   const hasRequestedResults = createMemo(() => requestedLayers().some(layer => layer.quantityKey !== "none" && layer.selected.length > 0));
   const layerReader = createResultLayerReader();
@@ -71,9 +74,10 @@ export function SourcesFields3D(props) {
     const maximum = layer.scene?.maximumMagnitude?.magnetization;
     const number = value => Number.isFinite(value) ? value.toPrecision(6) : "—";
     const range = scalar ? `${number(scalar.minimum)} … ${number(scalar.maximum)}` : `max ${number(maximum)}`;
-    const volume = layer.volumeFields ? layer.volumeFields.domains.length
-      ? ` · Объёмная карта: ${layer.volumeFields.domains.length} сеток`
-      : " · Объёмная карта недоступна; показаны цветные узлы" : "";
+    const representations = [];
+    if (layer.volumeFields?.domains?.length) representations.push(`Объёмная карта: ${layer.volumeFields.domains.length} сеток`);
+    if (layer.volumeFields?.surfaces?.length) representations.push(`Поверхность: ${layer.volumeFields.surfaces.length} площадок`);
+    const volume = layer.volumeFields ? ` · ${representations.join(" · ") || "Объёмная карта недоступна; показаны цветные узлы"}` : "";
     return `${quantity.formula ? quantity.formula + " · " : ""}${range} ${quantity.unit}`
       + volume + (layer.volumeNotice ? ` · ${layer.volumeNotice}` : "")
       + (layer.sampled ? " · показана выборка узлов" : "");
@@ -102,9 +106,13 @@ export function SourcesFields3D(props) {
           </select>
           <span class="unit-label">{QUANTITIES[quantities[group.key].read()]?.unit ?? ""}</span>
         </label>}</For>
-        <Show when={hasVectors()}>
-          <label>{colorMap() ? "Размер точки" : "Векторы"} <input type="range" min="-1" max="1" step="0.05" value={Math.log10(scale())} onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} /></label>
-          <label><input type="checkbox" checked={colorMap()} onChange={event => setColorMap(event.currentTarget.checked)} /> Цветовая карта</label>
+        <Show when={hasVectors() || hasScalars()}>
+          <label>{effectiveColorMap() ? "Размер точки" : "Векторы"}
+            <span class="source-result-size-slider" classList={{ "is-color-map": effectiveColorMap() }}>
+              <input type="range" min="-1" max="1" step="0.05" value={Math.log10(scale())} onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} />
+            </span>
+          </label>
+          <label><input type="checkbox" checked={effectiveColorMap()} disabled={hasScalars()} onChange={event => !hasScalars() && setColorMap(event.currentTarget.checked)} /> Цветовая карта</label>
         </Show>
         <label>Палитра <select aria-label="Палитра" value={palette()} disabled={!hasScalars() && !(hasVectors() && colorMap())} onChange={event => setPalette(event.currentTarget.value)}>
           <For each={RESULT_SCALAR_PALETTES}>{name => <option value={name}>{name}</option>}</For>
@@ -121,7 +129,7 @@ export function SourcesFields3D(props) {
           selections={selections()} resultLayers={resultLayers()}
           captureFrameKey={displayed()} onCaptureReady={movie.onCaptureReady}
           resultVectorScale={scale()} resultPickingOnly={true}
-          resultVectorColorMap={colorMap()} resultPalette={palette()} />
+          resultVectorColorMap={effectiveColorMap()} resultPalette={palette()} />
       </div>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
     </section>

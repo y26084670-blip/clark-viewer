@@ -42,7 +42,7 @@
 .viewer-movie-dialog h2 { margin: 0 0 15px; font-size: 1.2rem; }
 .viewer-movie-dialog p { margin: 10px 0; }
 .viewer-movie-interval { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.viewer-movie-interval input { width: 120px; border: 1px solid #7f8d99; background: #151b21; color: #f0f4f7; }
+.viewer-movie-dialog .viewer-movie-interval input[type="number"] { width: 120px; border: 1px solid #7f8d99; background: #151b21; color: #f0f4f7; }
 .viewer-movie-note { color: #c3cfd8; font-size: .875rem; line-height: 1.4; }
 .viewer-movie-dialog progress { width: 100%; height: 18px; accent-color: #75baff; }
 .viewer-movie-error { color: #ffaaa3; overflow-wrap: anywhere; }

@@ -168,13 +168,16 @@ test("encoder errors remain retryable and disposal aborts without publishing a l
   assert.equal(second.urls.length, 0); assert.deepEqual(second.busy, [true, false]);
 });
 
-test("save-in-task defaults off and writes only on a click using the captured loaded task", async () => {
+test("save-in-task defaults on, allows Downloads and writes only on a click using the captured loaded task", async () => {
   const write = deferred(), saved = [];
   const task = { handle: { name: "loaded-task" } };
   const ui = runtime({ task, onRun: async () => gif(), saveTaskGif: (...args) => { saved.push(args); return write.promise; } });
+  assert.equal(ui.state().saveInTask, true, "task destination is enabled at initialization");
   ui.openSetup(); await ui.startCapture();
-  assert.equal(ui.state().saveInTask, false);
+  assert.equal(ui.state().saveInTask, true);
+  assert.equal(saved.length, 0, "the default destination does not save automatically");
   assert.equal(ui.state().result.task, task);
+  ui.changeSaveLocation(false);
   await ui.saveToTask(); assert.equal(saved.length, 0);
   ui.changeSaveLocation(true); assert.equal(saved.length, 0, "checking a destination never creates files");
   const save = ui.saveToTask();
@@ -196,8 +199,9 @@ test("save-in-task defaults off and writes only on a click using the captured lo
   assert.equal(ui.state().phase, "ready");
   assert.deepEqual(ui.busy, [true, false, true, false]);
   assert.equal(ui.urls.length, 1); assert.equal(ui.revoked.length, 0);
+  ui.changeSaveLocation(false);
   ui.closeDialog(); ui.openSetup();
-  assert.equal(ui.state().saveInTask, false, "each new movie starts with normal download destination");
+  assert.equal(ui.state().saveInTask, true, "reopening restores the default task destination after Downloads was selected");
   ui.dispose();
 });
 
@@ -208,7 +212,8 @@ test("denied write permission preserves GIF, enables retry and keeps normal down
     return { name: "example.gif" };
   } });
   ui.openSetup(); await ui.startCapture(); const movie = ui.state().result;
-  ui.changeSaveLocation(true); await ui.saveToTask();
+  assert.equal(ui.state().saveInTask, true);
+  await ui.saveToTask();
   assert.equal(ui.state().phase, "ready"); assert.equal(ui.state().result, movie);
   assert.equal(ui.state().saving, false); assert.match(ui.state().error, /разрешения/);
   assert.equal(ui.revoked.length, 0);

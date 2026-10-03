@@ -22,6 +22,7 @@ test("3D quantity groups expose exact independent choices and M/none/none defaul
   assert.equal(RESULT_LAYER_QUANTITY_LABELS.H, "Напряженность МП");
   assert.equal(RESULT_LAYER_QUANTITY_LABELS.E, "Напряженность ЭП");
   const props = fixture(), ui = sourcesFields3DSetup(props);
+  assert.equal(ui.palette(), "Rainbow");
   assert.deepEqual(ui.request().layers.map(layer => layer.quantityKey), ["M", "none", "none"]);
   ui.quantities.regions.write("As"); ui.quantities.virtual.write("Bv");
   assert.deepEqual(ui.request().layers.map(layer => layer.quantityKey), ["M", "As", "Bv"]);
@@ -42,16 +43,44 @@ test("inverse visibility uses the independent physical and virtual complements",
   ui.close();
 });
 
-test("shared color controls affect vector layers while scalar layers keep node representation", () => {
+test("scalar maps expose size controls, force every active layer to color mode and preserve the vector preference", () => {
   const settings = { resultElementsQuantity: "MHdot", resultRegionsQuantity: "Bs", resultVirtualQuantity: "Av",
-    resultVectorScale: 10, resultVectorColorMap: true };
+    resultVectorScale: 1, resultVectorColorMap: false };
   const ui = sourcesFields3DSetup(fixture(), settings);
   assert.equal(ui.hasVectors(), true); assert.equal(ui.hasScalars(), true);
-  assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [false, true, true]);
-  settings.resultVectorColorMap = false;
+  assert.equal(ui.effectiveColorMap(), true);
+  assert.equal(ui.colorMap(), false);
+  assert.equal(ui.controls().visible, true);
+  assert.equal(ui.controls().label, "Размер точки");
+  assert.equal(ui.controls().checked, true);
+  assert.equal(ui.controls().disabled, true);
+  assert.equal(ui.controls().viewportColorMap, true);
   assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [false, false, false]);
+  ui.controls().onChange({ currentTarget: { checked: true } });
+  assert.equal(settings.resultVectorColorMap, false, "forced scalar mode must not overwrite the vector preference");
+  ui.controls().onInput({ currentTarget: { valueAsNumber: 1 } });
+  assert.equal(ui.scale(), 10);
+  assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [true, true, true]);
   ui.quantities.regions.write("none"); ui.quantities.virtual.write("none");
   assert.equal(ui.hasVectors(), false); assert.equal(ui.hasScalars(), true);
+  assert.equal(ui.controls().visible, true);
+  assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [true, false, false]);
+  ui.quantities.elements.write("JEdot");
+  assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [true, false, false]);
+  ui.quantities.elements.write("M");
+  assert.equal(ui.controls().checked, false);
+  assert.equal(ui.controls().disabled, false);
+  assert.equal(ui.controls().label, "Векторы");
+  assert.equal(ui.controls().viewportColorMap, false);
+  assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [false, false, false]);
+  ui.controls().onChange({ currentTarget: { checked: true } });
+  ui.quantities.elements.write("MHdot"); ui.quantities.elements.write("M");
+  assert.equal(ui.colorMap(), true, "an enabled user preference also survives scalar selection");
+  assert.equal(ui.controls().checked, true);
+  assert.equal(ui.controls().disabled, false);
+  assert.equal(ui.controls().viewportColorMap, true);
+  ui.quantities.elements.write("none");
+  assert.equal(ui.controls().visible, false);
   ui.close();
 });
 
@@ -96,6 +125,24 @@ test("all disabled quantities immediately hide results and follow time without c
   ui.close();
 });
 
+test("surface-only layers report continuous planes without the volume fallback warning", () => {
+  const ui = sourcesFields3DSetup(fixture());
+  const base = { key: "regions", quantityKey: "Bs", state: "ready",
+    scene: { maximumMagnitude: { magnetization: 3 } } };
+  const status = ui.layerStatus({ ...base, volumeFields: { domains: [], surfaces: [{}, {}] } });
+  assert.match(status, /Поверхность: 2 площадок/);
+  assert.doesNotMatch(status, /недоступна|цветные узлы/);
+  const partial = ui.layerStatus({ ...base, volumeFields: { domains: [], surfaces: [{}] },
+    volumeNotice: "Вырожденная площадка показана узлами" });
+  assert.match(partial, /Поверхность: 1 площадок/);
+  assert.match(partial, /Вырожденная площадка показана узлами/);
+  const mixed = ui.layerStatus({ ...base, volumeFields: { domains: [{}], surfaces: [{}] } });
+  assert.match(mixed, /Объёмная карта: 1 сеток.*Поверхность: 1 площадок/);
+  const fallback = ui.layerStatus({ ...base, volumeFields: { domains: [], surfaces: [] } });
+  assert.match(fallback, /недоступна; показаны цветные узлы/);
+  ui.close();
+});
+
 test("Solid subscriptions reread data only when point/volume mode changes, not for palette or vector size", () => {
   execFileSync(process.execPath, ["--conditions=browser", "--input-type=module", "-e", `
     import assert from "node:assert/strict";
@@ -130,6 +177,22 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
     assert.equal(requests.at(-1).layers[0].volumeMode, false);
     set("resultVectorColorMap", false);
     assert.equal(requests.length, 3);
+    set("resultElementsQuantity", "MHdot");
+    assert.equal(requests.length, 4);
+    assert.equal(requests.at(-1).layers[0].volumeMode, false);
+    assert.equal(ui.controls().checked, true);
+    set("resultPalette", "Rainbow"); set("resultVectorScale", 8);
+    assert.equal(requests.length, 4);
+    set("resultVectorScale", 10);
+    assert.equal(requests.length, 5);
+    assert.equal(requests.at(-1).layers[0].volumeMode, true);
+    set("resultElementsQuantity", "JEdot");
+    assert.equal(requests.length, 6);
+    assert.equal(requests.at(-1).layers[0].volumeMode, true);
+    set("resultElementsQuantity", "M");
+    assert.equal(requests.length, 7);
+    assert.equal(requests.at(-1).layers[0].volumeMode, false);
+    assert.equal(ui.controls().checked, false);
     ui.close(); dispose();
   `], { cwd: new URL("../", import.meta.url), stdio: "pipe" });
 });

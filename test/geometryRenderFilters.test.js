@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
-import { createMemo } from "solid-js";
 import { OBJECT_VISIBILITY_MODES, instanceVisible, primitiveVisible }
     from "../src/services/visualization/geometryRenderFilters.js";
 import { readObjectFrames, resultDisplaySelection }
     from "../src/services/results/resultRequests.js";
-import { readResultVolumeFrame, VOLUME_MAX_NODES } from "../src/services/results/resultVolumeRequests.js";
-import { QUANTITIES } from "../src/services/results/resultMappings.js";
+import { readResultVolumeFrame } from "../src/services/results/resultVolumeRequests.js";
 import { createResultFrameController } from "../src/services/results/resultFrameController.js";
+import { sourcesFields3DSetup } from "../scripts/test-support/sourcesFields3DSetup.js";
 
 function primitive(schemaId, recordIndex) {
     return { source: { schemaId, recordIndex } };
@@ -70,49 +68,36 @@ test("3D result selection reads the complement without changing list selection o
     }
 });
 
-// Execute the production component's request setup. JSX rendering is excluded;
-// only lifecycle and frame-hook adapters are replaced to capture its real source.
-function componentRequest(props, settings) {
-    const source = readFileSync(new URL("../src/tabs/SourcesFields3D.jsx", import.meta.url), "utf8");
-    const setup = source.slice(source.indexOf("export function SourcesFields3D"), source.indexOf("  return <div"))
-        .replace("export function", "function");
-    return new Function("props", "createGeometryViewSetting", "createMemo", "onCleanup",
-        "QUANTITIES", "resultDisplaySelection", "createResultVolumeProcessor", "useResultFrame",
-        "VOLUME_MAX_NODES", "readObjectFrames", "readResultVolumeFrame",
-        `${setup} return result; } return SourcesFields3D(props);`)(props,
-            (name, initial) => [() => settings[name] ?? initial], createMemo, () => {},
-            QUANTITIES, resultDisplaySelection, () => ({ close() {} }),
-            (request, load) => ({ request, load }), VOLUME_MAX_NODES, readObjectFrames, readResultVolumeFrame);
-}
-
-test("3D empty complements request no frame and never inspect HDF5 metadata", () => {
+test("3D empty complements publish an empty coherent frame without inspecting HDF5 metadata", async () => {
     let metadataReads = 0;
-    const task = { elements: [{ id: 1 }, { id: 2 }], regions: [{ id: 1 }],
+    const task = { elements: [{ id: 1, targ: 0 }, { id: 2, targ: 0 }], regions: [{ id: 1 }],
         get metadata() { metadataReads++; throw new Error("No results are required"); } };
     for (const settings of [
         { elementsMode: "exceptSelected" },
-        { resultQuantity: "Bs", regionsMode: "exceptSelected" },
+        { resultElementsQuantity: "none", resultRegionsQuantity: "Bs", regionsMode: "exceptSelected" },
         { elementsMode: "exceptSelected", resultVectorColorMap: true, resultVectorScale: 10 },
     ]) {
-        const hook = componentRequest({ task, elements: [1, 2], regions: [1], time: 0 }, settings);
-        assert.equal(Boolean(hook.request()), false);
-        let scheduled = 0, loaded = 0, state;
-        const controller = createResultFrameController({
-            load: request => { loaded++; return hook.load(request); },
-            publish: next => { state = next; }, schedule: () => { scheduled++; return 1; }, cancel() {},
+        const hook = sourcesFields3DSetup({ task, elements: [1, 2], regions: [1], time: 7 }, settings);
+        assert.equal(hook.hasRequestedResults(), false);
+        assert.equal(hook.timeIndex(), 7);
+        assert.deepEqual(hook.resultLayers(), []);
+        let run, state;
+        const controller = createResultFrameController({ load: request => hook.load(request),
+            publish: next => { state = next; }, schedule: callback => { run = callback; return 1; }, cancel() {},
         });
         controller.request(hook.request());
-        assert.equal(scheduled, 0);
-        assert.equal(loaded, 0);
-        assert.equal(state.frame, null);
+        await run();
+        assert.equal(state.frame.request.time, 7);
+        assert.ok(state.frame.value.layers.every(layer => ["disabled", "empty"].includes(layer.state)));
         assert.equal(state.loading, false);
         assert.equal(state.error, "");
-        controller.close();
+        controller.close(); hook.close();
     }
-    const ordinary = componentRequest({ task, elements: [1], regions: [], time: 3 }, { elementsMode: "exceptSelected" });
-    assert.deepEqual(ordinary.request().selected, [2]);
+    const ordinary = sourcesFields3DSetup({ task, elements: [1], regions: [], time: 3 }, { elementsMode: "exceptSelected" });
+    assert.deepEqual(ordinary.request().layers.find(layer => layer.key === "elements").selected, [2]);
     assert.equal(ordinary.request().time, 3);
     assert.equal(metadataReads, 0);
+    ordinary.close();
 });
 
 test("ordinary and volume 3D requests load unselected HDF5 records with original source metadata", async () => {

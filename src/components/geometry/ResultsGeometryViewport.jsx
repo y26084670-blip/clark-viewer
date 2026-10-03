@@ -689,6 +689,7 @@ export function ResultsGeometryViewport(props) {
           <ThreeGeometryViewport
             scene={displayScene()}
             geometryRevision={props.model}
+            resultLayers={props.resultLayers}
             resultVectorScene={props.resultVectorScene}
             resultVectorColorMap={props.resultVectorColorMap}
             resultPalette={props.resultPalette}

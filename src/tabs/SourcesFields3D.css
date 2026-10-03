@@ -1,0 +1,19 @@
+.sources-fields-toolbar {
+  gap: 6px 12px;
+}
+.sources-fields-toolbar .source-quantity-selector {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sources-fields-toolbar .source-quantity-selector select {
+  max-width: min(245px, 55vw);
+}
+.sources-fields-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 16px;
+}
+.sources-fields-status .source-layer-error {
+  color: #aa2525;
+}

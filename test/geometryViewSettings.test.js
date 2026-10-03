@@ -16,6 +16,10 @@ test("опции компонентов сохраняются после уни
   assert.equal(new Map(entries).get("vectorStyle"), "thin");
   assert.equal(new Map(entries).get("resultVectorColorMap"), false);
   assert.equal(new Map(entries).get("resultPalette"), "Viridis");
+  assert.equal(new Map(entries).get("resultElementsQuantity"), "M");
+  assert.equal(new Map(entries).get("resultRegionsQuantity"), "none");
+  assert.equal(new Map(entries).get("resultVirtualQuantity"), "none");
+  assert.equal(new Map(entries).has("resultQuantity"), false);
   const expected = new Map();
   let dispose;
   createRoot(cleanup => {

@@ -79,6 +79,8 @@ test("reflected symmetry grids remain valid while folded cells are not filled", 
   const invalid = buildResultVolumeField({ domains: [folded], maxAxis: 8 });
   assert.equal(invalid.domains.length, 0);
   assert.equal(invalid.fallbackPoints.length, folded.points.length);
+  const nonfinite = grid(); nonfinite.positions[0] = NaN;
+  assert.equal(buildResultVolumeField({ domains: [nonfinite], maxAxis: 8 }).domains.length, 0);
 });
 
 test("time updates reuse spatial weights while updating all values and holes", () => {

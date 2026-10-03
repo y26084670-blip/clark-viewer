@@ -1,5 +1,6 @@
 import { batch, createEffect, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import Chart from "chart.js/auto";
+import { captureMovieCanvas } from "../services/movie/movieCanvas.js";
 import { chartPanLimits, chartZoomLimits, clampChartPoint } from "../services/visualization/chartZoom.js";
 
 const colors = ["#1776bd", "#d94943", "#289447", "#994bbc", "#db8b19", "#15a2a2"];
@@ -54,6 +55,11 @@ function drawOverlayLegend(chart, series) {
 export function LineChart(props) {
   let canvas, chart, drag, skipContextMenu = false, legendHitBoxes = [];
   let currentSeries = [], overlayLegend = false, autoPending = true;
+  let movieState = null, renderedFrameKey = null, currentMovieCursor = null, disposed = false;
+  let pendingVisibility = null, drawingFailure = null;
+  const renderWaiters = new Set();
+  const [capturing, setCapturing] = createSignal(false);
+  const [renderError, setRenderError] = createSignal("");
   const [ready, setReady] = createSignal(false);
   const [menu, setMenu] = createSignal(null);
   const [message, setMessage] = createSignal("");
@@ -65,9 +71,19 @@ export function LineChart(props) {
   const [legendHover, setLegendHover] = createSignal(false);
   function applyChartLimits(range) {
     if (!chart) return;
+    range = movieState?.range ?? range;
     Object.assign(chart.options.scales.x, { min: range.xMin, max: range.xMax });
     Object.assign(chart.options.scales.y, { min: range.yMin, max: range.yMax });
-    chart.update("none");
+    try {
+      chart.update("none");
+      drawingFailure = null; setRenderError("");
+      return true;
+    } catch (error) { recordRenderFailure(error); return false; }
+  }
+  function recordRenderFailure(error) {
+    drawingFailure = error instanceof Error ? error : new Error(String(error));
+    renderedFrameKey = null; setRenderError(`График недоступен: ${drawingFailure.message}`);
+    rejectRenderWaiters(drawingFailure);
   }
   function releaseSelection() {
     const finished = drag, pointerId = finished?.pointerId;
@@ -84,16 +100,18 @@ export function LineChart(props) {
     if (finished?.mode === "pan" && finished.currentLimits) applyChartLimits(finished.previousLimits);
   }
   function captureAutoLimits() {
-    if (!props.autoScaleToggle || untrack(autoScale) || !autoPending || !chart
+    if (movieState || !props.autoScaleToggle || untrack(autoScale) || !autoPending || !chart
       || !currentSeries.some(series => series.points.some(point => Number.isFinite(point.x) && Number.isFinite(point.y)))) return;
     autoPending = false;
     setLimits({ xMin: chart.scales.x.min, xMax: chart.scales.x.max,
       yMin: chart.scales.y.min, yMax: chart.scales.y.max });
   }
   function resetLimits() {
+    if (movieState) return;
     cancelSelection(); autoPending = true; setLimits({});
   }
   function toggleAutoScale() {
+    if (movieState) return;
     if (!props.autoScaleToggle) { resetLimits(); return; }
     cancelSelection();
     const enabled = !untrack(autoScale);
@@ -106,6 +124,7 @@ export function LineChart(props) {
     });
   }
   function commitManualLimits(range) {
+    if (movieState) return;
     autoPending = false;
     batch(() => { if (props.autoScaleToggle) setAutoScale(false); setLimits(range); });
   }
@@ -115,53 +134,71 @@ export function LineChart(props) {
     if (!props.autoScaleToggle) resetLimits();
   }));
   const cancelOnEscape = event => {
-    if (!event.defaultPrevented && !event.isComposing && event.code === "Escape") cancelSelection();
+    if (!movieState && !event.defaultPrevented && !event.isComposing && event.code === "Escape") cancelSelection();
   };
-  onMount(() => { window.addEventListener("keydown", cancelOnEscape); setReady(true); });
+  onMount(() => {
+    props.onCaptureReady?.(captureAdapter);
+    window.addEventListener("keydown", cancelOnEscape); setReady(true);
+  });
   createEffect(() => {
     const series = props.series ?? [];
     const marker = props.marker;
+    const frameKey = props.captureFrameKey;
+    const captureError = props.captureError;
+    currentMovieCursor = props.movieCursor ?? null;
+    renderedFrameKey = null;
     overlayLegend = props.legendMode === "overlay";
     currentSeries = series;
     const xLabel = props.xLabel, yLabel = props.yLabel, integerX = props.integerX;
     if (!ready()) return;
-    const datasets = series.map((item, index) => ({ _seriesKey: `series:${item.label}:${index}`, label: item.label,
-      data: item.points, borderColor: colors[index % colors.length], backgroundColor: colors[index % colors.length],
-      showLine: item.showLine ?? true, pointRadius: item.pointRadius ?? (item.points.length === 1 ? 4 : 0),
-      pointHitRadius: 5, borderWidth: item.borderWidth ?? 1.6, spanGaps: false,
-      order: item.showLine === false ? 1 : 2 }));
-    if (marker?.points?.length) datasets.push({ _seriesKey: "marker", label: "Текущий момент", data: marker.points,
-      borderColor: "#161616", backgroundColor: "#f0ac24", pointRadius: 6, showLine: false });
-    const range = untrack(limits);
-    cancelSelection();
-    legendHitBoxes = [];
-    if (!chart) chart = new Chart(canvas, { type: "scatter", data: { datasets },
-      plugins: [{ id: "selectionFrame", beforeEvent: () => drag ? false : undefined },
-        { id: "overlayLegend", afterDatasetsDraw: current => {
-          legendHitBoxes = overlayLegend ? drawOverlayLegend(current, currentSeries) : [];
-        } }], options: {
-      responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
-      onResize: cancelSelection,
-      scales: { x: { type: "linear", min: range.xMin, max: range.xMax,
-        ticks: integerX ? { precision: 0 } : {}, title: { display: true, text: xLabel } },
-        y: { min: range.yMin, max: range.yMax, title: { display: true, text: yLabel } } },
-      plugins: { legend: { display: !overlayLegend && untrack(showLegend), position: "top" }, tooltip: { callbacks: {
-        title: items => items[0]?.dataset.label ?? "",
-        label: context => currentSeries[context.datasetIndex]?.tooltip?.(context.raw)
-          ?? `${context.parsed.x}, ${context.parsed.y}`,
-      } } },
-    } });
-    else {
-      // Keep the canvas, Chart instance and dataset metadata (including visibility).
-      const previous = new Map(chart.data.datasets.map(dataset => [dataset._seriesKey, dataset]));
-      chart.data.datasets = datasets.map(dataset => Object.assign(previous.get(dataset._seriesKey) ?? {}, dataset));
-      chart.options.scales.x.title.text = xLabel;
-      chart.options.scales.y.title.text = yLabel;
-      chart.options.scales.x.ticks = integerX ? { precision: 0 } : {};
-      chart.options.plugins.legend.display = !overlayLegend && untrack(showLegend);
-      applyChartLimits(range);
+    try {
+      const datasets = series.map((item, index) => ({ _seriesKey: `series:${item.label}:${index}`, label: item.label,
+        data: item.points, borderColor: colors[index % colors.length], backgroundColor: colors[index % colors.length],
+        showLine: item.showLine ?? true, pointRadius: item.pointRadius ?? (item.points.length === 1 ? 4 : 0),
+        pointHitRadius: 5, borderWidth: item.borderWidth ?? 1.6, spanGaps: false,
+        order: item.showLine === false ? 1 : 2 }));
+      if (marker?.points?.length) datasets.push({ _seriesKey: "marker", label: "Текущий момент", data: marker.points,
+        borderColor: "#161616", backgroundColor: "#f0ac24", pointRadius: 6, showLine: false });
+      const range = untrack(limits);
+      cancelSelection();
+      legendHitBoxes = [];
+      if (!chart) chart = new Chart(canvas, { type: "scatter", data: { datasets },
+        plugins: [{ id: "selectionFrame", beforeEvent: () => movieState || drag ? false : undefined },
+          { id: "movieTimeCursor", afterDatasetsDraw: drawMovieCursor },
+          { id: "overlayLegend", afterDatasetsDraw: current => {
+            legendHitBoxes = overlayLegend ? drawOverlayLegend(current, currentSeries) : [];
+          } }], options: {
+        responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+        onResize: cancelSelection,
+        scales: { x: { type: "linear", min: range.xMin, max: range.xMax,
+          ticks: integerX ? { precision: 0 } : {}, title: { display: true, text: xLabel } },
+          y: { min: range.yMin, max: range.yMax, title: { display: true, text: yLabel } } },
+        plugins: { legend: { display: !overlayLegend && untrack(showLegend), position: "top" }, tooltip: { callbacks: {
+          title: items => items[0]?.dataset.label ?? "",
+          label: context => currentSeries[context.datasetIndex]?.tooltip?.(context.raw)
+            ?? `${context.parsed.x}, ${context.parsed.y}`,
+        } } },
+      } });
+      else {
+        // Keep the canvas, Chart instance and dataset metadata (including visibility).
+        const previous = new Map(chart.data.datasets.map(dataset => [dataset._seriesKey, dataset]));
+        chart.data.datasets = datasets.map(dataset => Object.assign(previous.get(dataset._seriesKey) ?? {}, dataset));
+        chart.options.scales.x.title.text = xLabel;
+        chart.options.scales.y.title.text = yLabel;
+        chart.options.scales.x.ticks = integerX ? { precision: 0 } : {};
+        chart.options.plugins.legend.display = !overlayLegend && untrack(showLegend);
+      }
+      applyFrozenVisibility();
+      // Chart.js animation is disabled. The identity is published only after the
+      // corresponding datasets, cursor and exact axes have been drawn.
+      if (!applyChartLimits(range)) return;
+      captureAutoLimits();
+      renderedFrameKey = frameKey;
+      settleRenderWaiters(captureError);
+    } catch (error) {
+      if (!chart) Chart.getChart?.(canvas)?.destroy();
+      recordRenderFailure(error);
     }
-    captureAutoLimits();
   });
   createEffect(() => {
     const range = limits(), legend = props.legendMode !== "overlay" && showLegend();
@@ -172,8 +209,149 @@ export function LineChart(props) {
     captureAutoLimits();
   });
   onCleanup(() => {
+    disposed = true;
+    rejectRenderWaiters(new Error("График закрыт во время записи фильма"));
+    props.onCaptureReady?.(null);
     cancelSelection(); window.removeEventListener("keydown", cancelOnEscape); chart?.destroy();
   });
+
+  function abortError() {
+    return Object.assign(new Error("Запись фильма отменена"), { name: "AbortError" });
+  }
+  function assertCaptureSource() {
+    if (disposed || !chart || !canvas || !ready()) throw new Error("График ещё не готов к записи фильма");
+    if (drawingFailure) throw drawingFailure;
+    if (props.captureError) throw new Error(String(props.captureError));
+    if (!currentSeries.some((series, index) => chart.isDatasetVisible(index)
+      && series.points.some(point => Number.isFinite(point.x) && Number.isFinite(point.y)))) {
+      throw new Error("Нет видимых данных для записи фильма");
+    }
+    if (movieState && (canvas.width !== movieState.width || canvas.height !== movieState.height
+      || chart.width !== movieState.logicalWidth || chart.height !== movieState.logicalHeight)) {
+      throw new Error("Размер графика изменился во время записи фильма. Повторите запись при неизменном размере окна.");
+    }
+  }
+  function removeWaiter(waiter) {
+    renderWaiters.delete(waiter);
+    waiter.signal?.removeEventListener("abort", waiter.abort);
+  }
+  function rejectRenderWaiters(error) {
+    for (const waiter of [...renderWaiters]) { removeWaiter(waiter); waiter.reject(error); }
+  }
+  function settleRenderWaiters(error = props.captureError) {
+    if (error) { rejectRenderWaiters(new Error(String(error))); return; }
+    for (const waiter of [...renderWaiters]) {
+      if (!Object.is(renderedFrameKey, waiter.key)) continue;
+      removeWaiter(waiter);
+      try { assertCaptureSource(); waiter.resolve(); } catch (error) { waiter.reject(error); }
+    }
+  }
+  function applyFrozenVisibility() {
+    const visibility = movieState?.visibility ?? pendingVisibility;
+    if (!visibility || !chart) return;
+    for (let index = 0; index < chart.data.datasets.length; index++) {
+      const key = chart.data.datasets[index]._seriesKey;
+      if (visibility.has(key)) chart.setDatasetVisibility(index, visibility.get(key));
+      if (!movieState) visibility.delete(key);
+    }
+    if (!movieState && visibility.size === 0) pendingVisibility = null;
+  }
+  function clearChartHover() {
+    cancelSelection(); setMenu(null); setMessage("");
+    chart.setActiveElements([]);
+    chart.tooltip?.setActiveElements([], { x: 0, y: 0 });
+  }
+  function drawMovieCursor(current) {
+    const cursor = currentMovieCursor, area = current.chartArea;
+    if (!movieState || !cursor || !Number.isFinite(cursor.time) || !area) return;
+    const x = current.scales.x.getPixelForValue(cursor.time), ctx = current.ctx;
+    if (!Number.isFinite(x)) return;
+    ctx.save();
+    try {
+      ctx.beginPath(); ctx.rect(area.left, area.top, area.right - area.left, area.bottom - area.top); ctx.clip();
+      ctx.strokeStyle = "#303840"; ctx.lineWidth = 1.5; ctx.setLineDash([5, 3]);
+      ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke(); ctx.setLineDash([]);
+      currentSeries.forEach((series, index) => {
+        if (!current.isDatasetVisible(index)) return;
+        // Histories carry the solver step explicitly. Never invent an
+        // interpolated value for a missing saved instant.
+        const point = series.points.find(point => point.step === cursor.step
+          && Number.isFinite(point.x) && Number.isFinite(point.y));
+        if (!point) return;
+        const px = current.scales.x.getPixelForValue(point.x), py = current.scales.y.getPixelForValue(point.y);
+        ctx.fillStyle = colors[index % colors.length]; ctx.strokeStyle = "#161616"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      });
+    } finally { ctx.restore(); }
+  }
+  const captureAdapter = {
+    prepare({ signal } = {}) {
+      if (signal?.aborted) throw abortError();
+      if (movieState) throw new Error("Запись этого графика уже выполняется");
+      assertCaptureSource(); clearChartHover();
+      const range = { xMin: chart.scales.x.min, xMax: chart.scales.x.max,
+        yMin: chart.scales.y.min, yMax: chart.scales.y.max };
+      if (!Object.values(range).every(Number.isFinite) || range.xMin >= range.xMax || range.yMin >= range.yMax) {
+        throw new Error("Пределы графика недоступны для записи фильма");
+      }
+      movieState = { range, width: canvas.width, height: canvas.height,
+        logicalWidth: chart.width, logicalHeight: chart.height,
+        responsive: chart.options.responsive,
+        devicePixelRatio: (chart.config?.options ?? chart.options).devicePixelRatio,
+        hadDevicePixelRatio: Object.hasOwn(chart.config?.options ?? chart.options, "devicePixelRatio"),
+        styleWidth: canvas.style.width, styleHeight: canvas.style.height,
+        autoPending, limits: { ...untrack(limits) }, autoScale: untrack(autoScale), showLegend: untrack(showLegend),
+        visibility: new Map(chart.data.datasets.map((dataset, index) => [dataset._seriesKey, chart.isDatasetVisible(index)])),
+      };
+      pendingVisibility = null;
+      setCapturing(true);
+      chart.options.responsive = false;
+      chart.options.devicePixelRatio = chart.currentDevicePixelRatio;
+      canvas.style.width = `${chart.width}px`; canvas.style.height = `${chart.height}px`;
+      applyChartLimits(range);
+      assertCaptureSource();
+    },
+    renderReady(expectedKey, { signal } = {}) {
+      if (signal?.aborted) return Promise.reject(abortError());
+      if (disposed) return Promise.reject(new Error("График закрыт во время записи фильма"));
+      if (drawingFailure) return Promise.reject(drawingFailure);
+      if (expectedKey === null || expectedKey === undefined) return Promise.reject(new Error("Нет идентификатора готового кадра графика"));
+      if (props.captureError) return Promise.reject(new Error(String(props.captureError)));
+      if (Object.is(renderedFrameKey, expectedKey)) {
+        try { assertCaptureSource(); return Promise.resolve(); } catch (error) { return Promise.reject(error); }
+      }
+      return new Promise((resolve, reject) => {
+        const waiter = { key: expectedKey, resolve, reject, signal };
+        waiter.abort = () => { removeWaiter(waiter); reject(abortError()); };
+        renderWaiters.add(waiter); signal?.addEventListener("abort", waiter.abort, { once: true });
+      });
+    },
+    capture(expectedKey, { caption } = {}) {
+      if (!movieState || expectedKey === null || expectedKey === undefined || !Object.is(renderedFrameKey, expectedKey)) throw new Error("Запрошенный кадр графика ещё не отрисован");
+      assertCaptureSource(); clearChartHover(); applyFrozenVisibility(); applyChartLimits(movieState.range);
+      assertCaptureSource();
+      return captureMovieCanvas(canvas, { caption, background: "#ffffff" });
+    },
+    restore() {
+      if (!movieState) return;
+      const snapshot = movieState; movieState = null;
+      setCapturing(false);
+      rejectRenderWaiters(new Error("Запись графика завершена"));
+      pendingVisibility = new Map(snapshot.visibility);
+      if (chart && !disposed) {
+        chart.options.responsive = snapshot.responsive;
+        if (snapshot.hadDevicePixelRatio) chart.options.devicePixelRatio = snapshot.devicePixelRatio;
+        else delete chart.options.devicePixelRatio;
+        canvas.style.width = snapshot.styleWidth; canvas.style.height = snapshot.styleHeight;
+        applyFrozenVisibility();
+        autoPending = snapshot.autoPending;
+        batch(() => { setLimits(snapshot.limits); setAutoScale(snapshot.autoScale); setShowLegend(snapshot.showLegend); });
+        applyChartLimits(snapshot.limits);
+        if (snapshot.responsive) chart.resize();
+      }
+    },
+  };
+
   function chartPoint(event) {
     const bounds = canvas.getBoundingClientRect();
     return { x: (event.clientX - bounds.left) * chart.width / bounds.width,
@@ -185,7 +363,7 @@ export function LineChart(props) {
   }
   function startSelection(event) {
     skipContextMenu = false;
-    if (![0, 2].includes(event.button) || event.isPrimary === false || !chart?.chartArea || !props.series?.some(series => series.points.length)) return;
+    if (movieState || ![0, 2].includes(event.button) || event.isPrimary === false || !chart?.chartArea || !props.series?.some(series => series.points.length)) return;
     const point = chartPoint(event), area = chart.chartArea;
     if (point.x < area.left || point.x > area.right || point.y < area.top || point.y > area.bottom) return;
     const legendItem = event.button === 0 ? legendItemAt(point) : null;
@@ -227,6 +405,7 @@ export function LineChart(props) {
       height: `${100 * Math.abs(point.y - drag.start.y) / chart.height}%` });
   }
   function updateSelection(event) {
+    if (movieState) return;
     if (!drag) {
       setLegendHover(Boolean(chart && legendItemAt(chartPoint(event))));
       return;
@@ -237,7 +416,7 @@ export function LineChart(props) {
     updateDrag(chartPoint(event));
   }
   function finishSelection(event) {
-    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (movieState || !drag || drag.pointerId !== event.pointerId) return;
     if (drag.mode === "legend") {
       if (event.button !== 0) return;
       event.preventDefault();
@@ -272,6 +451,7 @@ export function LineChart(props) {
   }
   function handleContextMenu(event) {
     event.preventDefault();
+    if (movieState) return;
     if (drag?.mode === "pan") { drag.contextMenuSeen = true; return; }
     if (skipContextMenu) { skipContextMenu = false; return; }
     cancelSelection(); openChartMenu(event);
@@ -296,10 +476,10 @@ export function LineChart(props) {
       {props.toolbar}
       <div class="chart-scale-controls">
         {props.toolbarEnd}
-        <button type="button" onClick={toggleAutoScale} aria-pressed={props.autoScaleToggle ? autoScale() : undefined}
+        <button type="button" disabled={capturing()} onClick={toggleAutoScale} aria-pressed={props.autoScaleToggle ? autoScale() : undefined}
           title={props.autoScaleToggle ? (autoScale() ? "Автомасштаб включён: нажмите, чтобы сохранить текущие пределы" : "Автомасштаб выключен: нажмите для автоматического подбора пределов") : "Автоматические пределы по обеим осям"}>Авто</button>
         <Show when={props.legendMode !== "overlay"}>
-          <label><input type="checkbox" checked={showLegend()} onChange={event => setShowLegend(event.currentTarget.checked)} />Показать легенду</label>
+          <label><input type="checkbox" disabled={capturing()} checked={showLegend()} onChange={event => { if (!movieState) setShowLegend(event.currentTarget.checked); }} />Показать легенду</label>
         </Show>
       </div>
     </div>
@@ -311,7 +491,8 @@ export function LineChart(props) {
         onPointerLeave={() => setLegendHover(false)}
         onPointerCancel={cancelPointerSelection} onLostPointerCapture={cancelPointerSelection} />
       <Show when={selection()}><div class="chart-selection-frame" style={selection()} /></Show>
-      <Show when={!(props.series?.length)}><div class="plot-empty">{props.emptyText || "Выберите объект и величину"}</div></Show>
+      <Show when={renderError()}><div class="plot-empty" role="alert">{renderError()}</div></Show>
+      <Show when={!renderError() && !(props.series?.length)}><div class="plot-empty">{props.emptyText || "Выберите объект и величину"}</div></Show>
       <Show when={menu()}><div class="chart-menu" style={{ left: `${menu().x}px`, top: `${menu().y}px` }}>
         <button onClick={copyTable}>Копировать таблицу</button><button onClick={copyImage}>Копировать картинку</button>
       </div></Show>

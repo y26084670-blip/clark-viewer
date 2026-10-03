@@ -7,15 +7,19 @@ import { createGeometryViewSetting } from "../src/services/visualization/geometr
 
 test("опции компонентов сохраняются после уничтожения владельца и смены задания", () => {
   const components = ["../src/components/geometry/ResultsGeometryViewport.jsx","../src/tabs/SourcesFields3D.jsx"];
-  const entries = components.flatMap(path => {
+  const entries = [...new Map(components.flatMap(path => {
     const source = readFileSync(new URL(path, import.meta.url), "utf8");
     return [...source.matchAll(/createGeometryViewSetting\("([^"]+)",\s*([^)]*)\)/g)]
       .map(([, name, initial]) => [name, JSON.parse(initial)]);
-  });
+  })).entries()];
   assert.ok(entries.length > 0);
   assert.equal(new Map(entries).get("vectorStyle"), "thin");
   assert.equal(new Map(entries).get("resultVectorColorMap"), false);
   assert.equal(new Map(entries).get("resultPalette"), "Viridis");
+  assert.equal(new Map(entries).get("resultElementsQuantity"), "M");
+  assert.equal(new Map(entries).get("resultRegionsQuantity"), "none");
+  assert.equal(new Map(entries).get("resultVirtualQuantity"), "none");
+  assert.equal(new Map(entries).has("resultQuantity"), false);
   const expected = new Map();
   let dispose;
   createRoot(cleanup => {

@@ -4,25 +4,36 @@ import { planResultSampling } from "./resultSampling.js";
 import { createResultFrameController } from "./resultFrameController.js";
 import { lineSeries, regionSurfaceGrid } from "./resultPlots.js";
 import { isFmm } from "./fmmCharacteristics.js";
+import { OBJECT_VISIBILITY_MODES } from "../visualization/geometryRenderFilters.js";
+
+// The 3D lists use one-based record IDs; scene filters use zero-based indices.
+// Read excluded-list complements before building a scene, otherwise the display
+// filter could only hide selected results and have no remaining rows to show.
+export function resultDisplaySelection(records = [], selected = [], mode) {
+  if (mode !== OBJECT_VISIBILITY_MODES.EXCEPT_SELECTED) return selected;
+  const excluded = new Set(selected);
+  return records.filter(record => !excluded.has(record.id)).map(record => record.id);
+}
 
 export function useAsyncResult(source, load) {
-  const [value, setValue] = createSignal(null);
-  const [error, setError] = createSignal("");
-  const [loading, setLoading] = createSignal(false);
+  const [state, setState] = createSignal({ requested: null, frame: null, loading: false, error: "" });
   let revision = 0;
   createEffect(() => {
     const request = source();
     const current = ++revision;
-    setValue(null); setError(""); setLoading(Boolean(request));
+    setState({ requested: request, frame: null, loading: Boolean(request), error: "" });
     if (!request) return;
     Promise.resolve().then(() => load(request)).then(result => {
-      if (current === revision) setValue(() => result);
+      if (current === revision) setState({ requested: request, frame: { request, value: result }, loading: false, error: "" });
     }).catch(error => {
-      if (current === revision) setError(error.message ?? String(error));
-    }).finally(() => { if (current === revision) setLoading(false); });
+      if (current === revision) setState({ requested: request, frame: null, loading: false, error: error.message ?? String(error) });
+    });
   });
   onCleanup(() => { revision++; });
-  return { value, error, loading };
+  // Request identity is required by deterministic capture: loading=false alone
+  // can describe the previous step before the new reactive effect has started.
+  return { value: () => state().frame?.value ?? null, error: () => state().error,
+    loading: () => state().loading, state };
 }
 
 // Opt-in for 3D, line and surface fields; other tabs keep useAsyncResult semantics.

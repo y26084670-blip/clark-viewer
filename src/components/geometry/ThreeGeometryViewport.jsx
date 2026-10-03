@@ -1,4 +1,5 @@
 import {
+  For,
   Show,
   createEffect,
   createSignal,
@@ -50,6 +51,8 @@ import {
 } from "../../services/visualization/resultScalarColors.js";
 
 import { updateResultVolumeMeshes } from "../../services/visualization/resultVolumeRenderer.js";
+import { captureMovieCanvas } from "../../services/movie/movieCanvas.js";
+import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../../services/movie/renderedFrameGate.js";
 
 export const GEOMETRY_INSTANCE_BUDGET = 20_000;
 export const GEOMETRY_DISCRETIZATION_SEGMENT_BUDGET =
@@ -458,6 +461,135 @@ function updateResultPoints(THREE, previous, points, {
 }
 
 export { updateResultPoints };
+
+/** Retained Three.js roots, one independent normalization domain per result category. */
+export function resultLayerRoots(states) {
+  return [...states.values()].flatMap(state => [state.vectorRoot, state.scalarRoot].filter(Boolean));
+}
+
+function releaseResultRoot(root) {
+  if (!root) return;
+  root.removeFromParent();
+  disposeObject(root);
+}
+
+export function updateResultLayers(THREE, previous, definitions, {
+  filters = {}, colorMap = false, style = "thin", scale = 1,
+  palette = "Viridis", opacity = 1,
+} = {}) {
+  const next = new Map();
+  const visible = item => primitiveVisible(item, filters.objectModes, filters.selections)
+    && instanceVisible(item.instance, filters.symmetry);
+  for (const layer of definitions ?? []) {
+    if (!layer || layer.state && layer.state !== "ready") continue;
+    const scene = layer.scene ?? null, scalarScene = layer.scalarScene ?? null;
+    if (!scene && !scalarScene) continue;
+    const key = layer.key;
+    // The three categories are independent; a repeated key must never share roots.
+    if (next.has(key)) continue;
+    const old = previous.get(key);
+    const volumeFields = layer.volumeFields ?? null;
+    const vectorStyle = colorMap ? (volumeFields ? "volume" : "points") : style;
+    const signature = [scene, scalarScene, volumeFields, layer.color, layer.quantityKey,
+      layer.groupLabel, filters, colorMap, vectorStyle, scale, palette, opacity];
+    if (old && signature.every((value, index) => Object.is(value, old.signature[index]))) {
+      next.set(key, old);
+      continue;
+    }
+    const state = { key, signature, scene, vectorStyle, scale,
+      vectorRoot: old?.vectorRoot ?? null, scalarRoot: old?.scalarRoot ?? null, legends: [] };
+    const color = layer.color ?? 0x44ccff;
+    if (scene) {
+      const vectors = scene.vectors.filter(visible);
+      let legend = null;
+      if (vectorStyle === "volume") {
+        state.vectorRoot = sourceVectorRoot(THREE, state.vectorRoot, "volume");
+        const domains = volumeFields.domains.filter(visible);
+        let minimum = Infinity, maximum = -Infinity;
+        for (const vector of vectors) {
+          minimum = Math.min(minimum, vector.magnitude);
+          maximum = Math.max(maximum, vector.magnitude);
+        }
+        updateResultVolumeMeshes(THREE, state.vectorRoot, domains,
+          { minimum, maximum, palette, opacity });
+        const fallback = (volumeFields.fallbackPoints ?? []).filter(visible);
+        // Unrendered fallback samples must not become invisible picking targets.
+        // Successful domains retain their saved nodes, never boundary support nodes.
+        const pickVectors = [...new Set([...domains.flatMap(domain => domain.points ?? []), ...fallback])].filter(visible);
+        const pickNodes = updateResultPoints(THREE,
+          state.vectorRoot.getObjectByName("result-volume-pick-nodes"), pickVectors);
+        pickNodes.name = "result-volume-pick-nodes";
+        pickNodes.material.colorWrite = false;
+        if (pickNodes.parent !== state.vectorRoot) state.vectorRoot.add(pickNodes);
+        const fallbackNodes = updateResultPoints(THREE,
+          state.vectorRoot.getObjectByName("result-volume-fallback-nodes"), fallback,
+          { colorMap: true, minimum, maximum, palette, size: DISCRETIZATION_POINT_SIZE });
+        fallbackNodes.name = "result-volume-fallback-nodes";
+        if (fallbackNodes.parent !== state.vectorRoot) state.vectorRoot.add(fallbackNodes);
+        if (vectors.length) legend = { minimum, maximum,
+          quantity: `Модуль · ${vectors[0].quantity}`, unit: vectors[0].unit, palette };
+      } else {
+        state.vectorRoot = createPrescribedSourceVectors(THREE, vectors, null,
+          scene.sceneDiagonal, vectorStyle,
+          { current: scale, magnetization: scale },
+          scene.maximumMagnitude, color, state.vectorRoot, palette);
+        if (vectorStyle === "points") legend = state.vectorRoot.userData.colorLegend;
+        else {
+          const nodes = updateResultPoints(THREE,
+            state.vectorRoot.getObjectByName("result-vector-nodes"), vectors, { color });
+          if (nodes.parent !== state.vectorRoot) state.vectorRoot.add(nodes);
+        }
+      }
+      state.vectorRoot.name = `result-${key}-vectors`;
+      state.vectorRoot.visible = true;
+      if (legend) state.legends.push({ ...legend, key: `${key}:vector`, groupLabel: layer.groupLabel });
+    } else {
+      releaseResultRoot(state.vectorRoot);
+      state.vectorRoot = null;
+    }
+    if (scalarScene) {
+      const points = scalarScene.points.filter(item => Number.isFinite(item.value)
+        && item.origin?.length === 3 && Array.from(item.origin).every(Number.isFinite) && visible(item));
+      const { minimum, maximum, quantity, unit } = scalarScene;
+      if (Number.isFinite(minimum) && Number.isFinite(maximum)) {
+        state.scalarRoot = updateResultPoints(THREE, state.scalarRoot, points,
+          { scalar: true, minimum, maximum, palette });
+        if (points.length) state.legends.push({ key: `${key}:scalar`, groupLabel: layer.groupLabel,
+          minimum, maximum, quantity, unit, palette });
+      } else {
+        releaseResultRoot(state.scalarRoot);
+        state.scalarRoot = null;
+      }
+    } else {
+      releaseResultRoot(state.scalarRoot);
+      state.scalarRoot = null;
+    }
+    next.set(key, state);
+  }
+  for (const [key, state] of previous) if (!next.has(key)) {
+    releaseResultRoot(state.vectorRoot);
+    releaseResultRoot(state.scalarRoot);
+  }
+  return next;
+}
+
+/** Each result layer keeps its own pixel picking radius, including small scalars. */
+export function intersectResultLayers(raycaster, states, unitsPerPixel) {
+  const hits = [];
+  for (const state of states.values()) {
+    for (const root of [state.vectorRoot, state.scalarRoot]) {
+      if (!root) continue;
+      const targets = [];
+      root.traverseVisible(object => {
+        if (object.isPoints || object.isLineSegments || object.isMesh) targets.push(object);
+      });
+      raycaster.params.Points.threshold = unitsPerPixel * (root === state.vectorRoot
+        ? resultPointPickRadius(state.scene, root, state.scale) : 9);
+      hits.push(...raycaster.intersectObjects(targets, false));
+    }
+  }
+  return hits.sort((a, b) => a.distance - b.distance);
+}
 
 export function resultPointPickRadius(currentResultScene, resultVectorRoot, scale) {
   return currentResultScene && resultVectorRoot?.visible && resultVectorRoot.userData.style === "points"
@@ -1322,12 +1454,10 @@ export function ThreeGeometryViewport(props) {
   let controls;
   let geometryRoot;
   let helperRoot;
-  let resultVectorRoot = null;
-  let currentResultScene = null;
-  let resultScalarRoot = null;
-  let currentScalarScene = null;
+  let resultLayers = [];
+  let resultLayerStates = new Map();
   let resultVectorScale = 1;
-  let resultVectorColor = 0x44ccff;
+  let resultVectorColorMap = false;
   let activeResultFilters = {};
   let prescribedSourceRoot;
   let prescribedSourceScene = null;
@@ -1366,7 +1496,6 @@ export function ThreeGeometryViewport(props) {
   let pendingGeometry = null;
   let sourcesDirty = false;
   let vectorsDirty = false;
-  let scalarsDirty = false;
   let pickFrame = 0;
   let pickTimer = 0;
   let lastPickTime = Number.NEGATIVE_INFINITY;
@@ -1380,7 +1509,6 @@ export function ThreeGeometryViewport(props) {
   let activeRenderMode = "solid";
   let geometryOpacity = null;
   let resultPalette = "Viridis";
-  let currentVolumeFields = null;
   const geometryMaterialDefaults = new WeakMap();
   let baseRenderStats = {
     budget: GEOMETRY_INSTANCE_BUDGET,
@@ -1399,6 +1527,9 @@ export function ThreeGeometryViewport(props) {
   let controlsInteracting = false;
   let contextLost = false;
   let disposed = false;
+  let movieSnapshot = null;
+  let captureFrameKey;
+  const captureGate = createRenderedFrameGate();
   let hasFramedGeometry = false;
   let activeProjection = DEFAULT_PROJECTION;
   let OrbitControlsClass;
@@ -1409,15 +1540,13 @@ export function ThreeGeometryViewport(props) {
   const [error, setError] = createSignal("");
   const [renderedCount, setRenderedCount] = createSignal(0);
   const [hoverTooltip, setHoverTooltip] = createSignal(null);
-  const [scalarLegend, setScalarLegend] = createSignal(null);
-  let vectorColorLegend = null;
-  let scalarColorLegend = null;
-  const updateColorLegend = () => setScalarLegend(scalarColorLegend ?? vectorColorLegend);
+  const [scalarLegends, setScalarLegends] = createSignal([]);
 
   const reportError = (value) => {
     const message = value instanceof Error ? value.message : String(value);
     setError(message);
     props.onError?.(message);
+    captureGate.fail(new Error(message));
   };
 
   const publishRenderStats = () => {
@@ -1437,56 +1566,119 @@ export function ThreeGeometryViewport(props) {
     });
   };
 
-  const requestRender = () => {
-    if (!renderer || !threeScene || !camera || renderFrame || rendering || disposed) return;
-    renderFrame = requestAnimationFrame(() => {
-      renderFrame = 0;
-      rendering = true;
-      try {
-        if (pendingResize) applyRendererSize();
-        if (pendingGeometry) {
-          const {sceneModel, filters, mode, showEdges} = pendingGeometry;
-          pendingGeometry = null;
-          untrack(() => replaceGeometry(sceneModel, filters, mode, showEdges));
-        }
-        if (sourcesDirty) { sourcesDirty = false; replacePrescribedSources(); }
-        if (vectorsDirty) { vectorsDirty = false; replaceResultVectors(); }
-        if (scalarsDirty) { scalarsDirty = false; replaceResultScalars(); }
-        if (!hasFramedGeometry || props.autoFit === true) hasFramedGeometry = fitVisibleObjects();
+  const renderNow = () => {
+    if (!renderer || !threeScene || !camera || disposed || contextLost || rendering) return;
+    if (renderFrame) { cancelAnimationFrame(renderFrame); renderFrame = 0; }
+    rendering = true;
+    try {
+      if (pendingResize && !movieSnapshot) applyRendererSize();
+      if (pendingGeometry) {
+        const {sceneModel, filters, mode, showEdges} = pendingGeometry;
+        pendingGeometry = null;
+        untrack(() => replaceGeometry(sceneModel, filters, mode, showEdges));
+      }
+      if (sourcesDirty) { sourcesDirty = false; replacePrescribedSources(); }
+      if (vectorsDirty) { vectorsDirty = false; replaceResultLayers(); }
+      if (!movieSnapshot && (!hasFramedGeometry || props.autoFit === true)) hasFramedGeometry = fitVisibleObjects();
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, viewportWidth, viewportHeight);
+      renderer.clear(true, true, true);
+      renderer.render(threeScene, camera);
+
+      if (axesScene && axesCamera && axesRoot && controls) {
+        const size = axesGizmoSize();
+        const direction = camera.position.clone().sub(controls.target);
+        if (direction.lengthSq() < 1e-12) direction.set(1, 1, 1);
+        axesCamera.position.copy(direction.normalize().multiplyScalar(5));
+        axesCamera.up.copy(camera.up);
+        axesCamera.lookAt(0, 0, 0);
+        axesCamera.updateMatrixWorld();
+
+        renderer.clearDepth();
+        renderer.setScissor(
+          AXES_GIZMO_MARGIN,
+          AXES_GIZMO_MARGIN,
+          size,
+          size,
+        );
+        renderer.setViewport(
+          AXES_GIZMO_MARGIN,
+          AXES_GIZMO_MARGIN,
+          size,
+          size,
+        );
+        renderer.setScissorTest(true);
+        renderer.render(axesScene, axesCamera);
         renderer.setScissorTest(false);
         renderer.setViewport(0, 0, viewportWidth, viewportHeight);
-        renderer.clear(true, true, true);
-        renderer.render(threeScene, camera);
+      }
+      captureGate.rendered(captureFrameKey);
+    } catch (error) { reportError(error); }
+    finally { rendering = false; }
+  };
+  const requestRender = () => {
+    if (!renderer || !threeScene || !camera || renderFrame || rendering || disposed) return;
+    renderFrame = requestAnimationFrame(() => { renderFrame = 0; renderNow(); });
+  };
 
-        if (axesScene && axesCamera && axesRoot && controls) {
-          const size = axesGizmoSize();
-          const direction = camera.position.clone().sub(controls.target);
-          if (direction.lengthSq() < 1e-12) direction.set(1, 1, 1);
-          axesCamera.position.copy(direction.normalize().multiplyScalar(5));
-          axesCamera.up.copy(camera.up);
-          axesCamera.lookAt(0, 0, 0);
-          axesCamera.updateMatrixWorld();
+  const captureAdapter = {
+    prepare({ signal } = {}) {
+      signal?.throwIfAborted();
+      if (!ready() || disposed || contextLost || error()) throw new Error(error() || "3D-окно ещё не готово");
+      if (movieSnapshot) return;
+      renderNow();
+      if (error()) throw new Error(error());
+      clearHoverTooltip();
+      movieSnapshot = { ...snapshotMovieCamera(camera, controls), hasFramedGeometry };
+    },
+    renderReady(expectedKey, { signal } = {}) {
+      if (disposed || contextLost || error()) return Promise.reject(new Error(error() || "3D-окно недоступно"));
+      const completion = captureGate.wait(expectedKey, { signal });
+      requestRender();
+      return completion;
+    },
+    capture(expectedKey, { caption } = {}) {
+      if (!movieSnapshot || disposed || contextLost || error()) throw new Error(error() || "Захват 3D-окна не подготовлен");
+      return captureRenderedMovieFrame(captureGate, expectedKey, renderNow, () =>
+        captureMovieCanvas(renderer.domElement, { caption, overlay: drawMovieLegends }));
+    },
+    restore() {
+      if (!movieSnapshot) return;
+      const snapshot = movieSnapshot; movieSnapshot = null;
+      if (disposed || !camera || !controls) return;
+      restoreMovieCamera(camera, controls, snapshot);
+      hasFramedGeometry = snapshot.hasFramedGeometry;
+      pendingResize = true;
+      requestRender();
+    },
+  };
 
-          renderer.clearDepth();
-          renderer.setScissor(
-            AXES_GIZMO_MARGIN,
-            AXES_GIZMO_MARGIN,
-            size,
-            size,
-          );
-          renderer.setViewport(
-            AXES_GIZMO_MARGIN,
-            AXES_GIZMO_MARGIN,
-            size,
-            size,
-          );
-          renderer.setScissorTest(true);
-          renderer.render(axesScene, axesCamera);
-          renderer.setScissorTest(false);
-          renderer.setViewport(0, 0, viewportWidth, viewportHeight);
-        }
-      } catch (error) { reportError(error); }
-      finally { rendering = false; }
+  const drawMovieLegends = (context, { width, height }) => {
+    const legends = scalarLegends();
+    if (!legends.length) return;
+    const boxWidth = Math.min(300, width - 16);
+    const boxHeight = Math.min(86, (height - 16) / legends.length);
+    context.font = "12px sans-serif";
+    context.textBaseline = "top";
+    legends.forEach((legend, index) => {
+      const x = width - boxWidth - 8, y = 8 + index * boxHeight;
+      context.fillStyle = "rgba(27, 34, 41, .95)";
+      context.fillRect(x, y, boxWidth, boxHeight - 4);
+      context.fillStyle = "#f1f5f8";
+      context.fillText(`${legend.groupLabel ? `${legend.groupLabel} · ` : ""}${legend.quantity}`, x + 7, y + 6, boxWidth - 14);
+      context.fillText(legend.unit, x + 7, y + 23, boxWidth - 14);
+      const gradient = context.createLinearGradient(x + 7, 0, x + boxWidth - 7, 0);
+      for (let stop = 0; stop <= 20; stop++) {
+        const rgb = resultScalarColor(legend.minimum === legend.maximum ? 10 : stop, 0, 20, legend.palette)
+          .map(value => Math.round(value * 255));
+        gradient.addColorStop(stop / 20, `rgb(${rgb.join(",")})`);
+      }
+      context.fillStyle = gradient; context.fillRect(x + 7, y + 41, boxWidth - 14, 10);
+      context.fillStyle = "#f1f5f8";
+      context.fillText(Number(legend.minimum.toPrecision(6)).toString(), x + 7, y + 57);
+      context.textAlign = "right";
+      context.fillText(Number(legend.maximum.toPrecision(6)).toString(), x + boxWidth - 7, y + 57);
+      context.textAlign = "left";
     });
   };
 
@@ -1513,6 +1705,7 @@ export function ThreeGeometryViewport(props) {
 
   const resizeRenderer = () => { pendingResize = true; requestRender(); };
   const applyRendererSize = () => {
+    if (movieSnapshot) return;
     pendingResize = false;
     if (!host || !renderer || !camera) return;
     const width = Math.max(1, Math.floor(host.clientWidth));
@@ -1633,24 +1826,18 @@ export function ThreeGeometryViewport(props) {
       bounds.height,
     );
     raycaster.params.Line.threshold = unitsPerPixel * 5;
-    raycaster.params.Points.threshold = unitsPerPixel * resultPointPickRadius(currentResultScene, resultVectorRoot, resultVectorScale);
+    raycaster.params.Points.threshold = unitsPerPixel * 9;
 
     if (props.resultPickingOnly) {
       // Report saved nodes, including for an intersection on a scaled vector.
-      const resultTargets = [];
-      for (const root of [resultVectorRoot, resultScalarRoot]) {
-        root?.traverseVisible(object => {
-          if (object.isPoints || object.isLineSegments || object.isMesh) resultTargets.push(object);
-        });
-      }
-      const hits = raycaster.intersectObjects(resultTargets, false);
+      const hits = intersectResultLayers(raycaster, resultLayerStates, unitsPerPixel);
       const geometryHit = activeRenderMode === "solid" && (geometryOpacity ?? 1) >= 1
         ? raycaster.intersectObjects(geometryPickTargets, false)[0] : null;
       const hit = hits.find(candidate => !geometryHit || candidate.distance <= geometryHit.distance + unitsPerPixel * 5);
       const scalar = resultHitScalar(hit);
       const vector = resultHitVector(hit);
       if (scalar) showTooltip(formatResultScalarTooltip(scalar), x, y);
-      else if (vector) showTooltip(formatResultVectorTooltip(vector, { showMagnitude: resultVectorStyle === "points" || resultVectorStyle === "volume" }), x, y);
+      else if (vector) showTooltip(formatResultVectorTooltip(vector, { showMagnitude: resultVectorColorMap }), x, y);
       else setHoverTooltip(null);
       return;
     }
@@ -1747,6 +1934,7 @@ export function ThreeGeometryViewport(props) {
   };
 
   const queuePointerPick = (event) => {
+    if (movieSnapshot) return;
     if (controlsInteracting) return;
     pendingPointer = {
       clientX: event.clientX,
@@ -1782,7 +1970,7 @@ export function ThreeGeometryViewport(props) {
       [geometryRoot, true, true], [vertexPoints, verticesVisible],
       [discretizationLines, discretizationLinesVisible], [discretizationPoints, discretizationPointsVisible],
     ], geometryOpacity, geometryMaterialDefaults);
-    resultVectorRoot?.traverse(object => {
+    for (const state of resultLayerStates.values()) state.vectorRoot?.traverse(object => {
       if (object.name === "result-volume-domain") object.material.uniforms.uOpacity.value = geometryOpacity ?? 1;
     });
   };
@@ -1986,7 +2174,7 @@ export function ThreeGeometryViewport(props) {
   const switchProjection = (value) => {
     const projection = normalizeProjection(value);
     if (
-      !ready() ||
+      movieSnapshot || !ready() ||
       !THREE ||
       !camera ||
       !controls ||
@@ -2038,76 +2226,17 @@ export function ThreeGeometryViewport(props) {
 
   // Result xyz and vectors are already in the global coordinate system.
   // Apply display filters only; never reapply motion, amplitudes or symmetry.
-  const replaceResultVectors = () => {
+  const replaceResultLayers = () => {
     if (!THREE || !helperRoot) return;
     clearHoverTooltip();
-    vectorColorLegend = null;
-    if (resultVectorRoot) resultVectorRoot.visible = Boolean(currentResultScene);
-    if (currentResultScene) {
-      const vectors = currentResultScene.vectors.filter(item =>
-        primitiveVisible(item, activeResultFilters.objectModes, activeResultFilters.selections)
-        && instanceVisible(item.instance, activeResultFilters.symmetry));
-      if (resultVectorStyle === "volume" && currentVolumeFields) {
-        resultVectorRoot = sourceVectorRoot(THREE, resultVectorRoot, "volume");
-        const domains = currentVolumeFields.domains.filter(domain =>
-          primitiveVisible(domain, activeResultFilters.objectModes, activeResultFilters.selections)
-          && instanceVisible(domain.instance, activeResultFilters.symmetry));
-        let minimum = Infinity, maximum = -Infinity;
-        for (const vector of vectors) { minimum = Math.min(minimum, vector.magnitude); maximum = Math.max(maximum, vector.magnitude); }
-        updateResultVolumeMeshes(THREE, resultVectorRoot, domains,
-          { minimum, maximum, palette: resultPalette, opacity: geometryOpacity ?? 1 });
-        const previous = resultVectorRoot.getObjectByName("result-volume-pick-nodes");
-        const pickNodes = updateResultPoints(THREE, previous, vectors);
-        pickNodes.name = "result-volume-pick-nodes";
-        pickNodes.material.colorWrite = false;
-        if (pickNodes.parent !== resultVectorRoot) resultVectorRoot.add(pickNodes);
-        const fallback = (currentVolumeFields.fallbackPoints ?? []).filter(point =>
-          primitiveVisible(point, activeResultFilters.objectModes, activeResultFilters.selections)
-          && instanceVisible(point.instance, activeResultFilters.symmetry));
-        const fallbackNodes = updateResultPoints(THREE, resultVectorRoot.getObjectByName("result-volume-fallback-nodes"), fallback,
-          { colorMap: true, minimum, maximum, palette: resultPalette, size: DISCRETIZATION_POINT_SIZE });
-        fallbackNodes.name = "result-volume-fallback-nodes";
-        if (fallbackNodes.parent !== resultVectorRoot) resultVectorRoot.add(fallbackNodes);
-        if (vectors.length) vectorColorLegend = { minimum, maximum,
-          quantity: `Модуль · ${vectors[0].quantity}`, unit: vectors[0].unit, palette: resultPalette };
-      } else {
-        resultVectorRoot = createPrescribedSourceVectors(THREE, vectors, null,
-          currentResultScene.sceneDiagonal, resultVectorStyle,
-          { current: resultVectorScale, magnetization: resultVectorScale },
-          currentResultScene.maximumMagnitude, resultVectorColor, resultVectorRoot, resultPalette);
-      }
-      if (resultVectorStyle === "points") vectorColorLegend = resultVectorRoot.userData.colorLegend;
-      else if (resultVectorStyle !== "volume") {
-        const previous = resultVectorRoot.getObjectByName("result-vector-nodes");
-        const nodes = updateResultPoints(THREE, previous, vectors, { color: resultVectorColor });
-        if (nodes.parent !== resultVectorRoot) resultVectorRoot.add(nodes);
-      }
-      resultVectorRoot.visible = true;
-      if (resultVectorRoot.parent !== helperRoot) helperRoot.add(resultVectorRoot);
+    resultLayerStates = updateResultLayers(THREE, resultLayerStates, resultLayers, {
+      filters: activeResultFilters, colorMap: resultVectorColorMap, style: resultVectorStyle,
+      scale: resultVectorScale, palette: resultPalette, opacity: geometryOpacity ?? 1,
+    });
+    for (const root of resultLayerRoots(resultLayerStates)) {
+      if (root.parent !== helperRoot) helperRoot.add(root);
     }
-    updateColorLegend();
-    requestRender();
-  };
-
-  const replaceResultScalars = () => {
-    if (!THREE || !helperRoot) return;
-    clearHoverTooltip();
-    scalarColorLegend = null;
-    if (resultScalarRoot) resultScalarRoot.visible = Boolean(currentScalarScene);
-    if (currentScalarScene) {
-      const points = currentScalarScene.points.filter(item =>
-        Number.isFinite(item.value) && item.origin?.length === 3
-        && Array.from(item.origin).every(Number.isFinite)
-        && primitiveVisible(item, activeResultFilters.objectModes, activeResultFilters.selections)
-        && instanceVisible(item.instance, activeResultFilters.symmetry));
-      const { minimum, maximum, quantity, unit } = currentScalarScene;
-      if (Number.isFinite(minimum) && Number.isFinite(maximum)) {
-        resultScalarRoot = updateResultPoints(THREE, resultScalarRoot, points, { scalar: true, minimum, maximum, palette: resultPalette });
-        if (resultScalarRoot.parent !== helperRoot) helperRoot.add(resultScalarRoot);
-        if (points.length) scalarColorLegend = { minimum, maximum, quantity, unit, palette: resultPalette };
-      }
-    }
-    updateColorLegend();
+    setScalarLegends([...resultLayerStates.values()].flatMap(state => state.legends));
     requestRender();
   };
 
@@ -2142,11 +2271,11 @@ export function ThreeGeometryViewport(props) {
     for (const batch of vertexBatches) batch.instances = resolve(batch.primitive.source, batch.instances);
     for (const batch of discretizationBatches) batch.instances = resolve(batch.primitive.source, batch.instances);
     currentBounds = new THREE.Box3().setFromObject(geometryRoot);
-    if (props.autoFit === true && !currentBounds.isEmpty()) {
+    if (!movieSnapshot && props.autoFit === true && !currentBounds.isEmpty()) {
       fitVisibleObjects();
     }
     clearHoverTooltip();
-    sourcesDirty = vectorsDirty = scalarsDirty = true;
+    sourcesDirty = vectorsDirty = true;
     requestRender();
     return true;
   };
@@ -2163,7 +2292,7 @@ export function ThreeGeometryViewport(props) {
       disposeObject(geometryRoot);
     }
     if (helperRoot) {
-      for (const layer of [prescribedSourceRoot, resultVectorRoot, resultScalarRoot]) {
+      for (const layer of [prescribedSourceRoot, ...resultLayerRoots(resultLayerStates)]) {
         if (layer) helperRoot.remove(layer);
       }
       threeScene.remove(helperRoot);
@@ -2177,7 +2306,7 @@ export function ThreeGeometryViewport(props) {
     helperRoot = new THREE.Group();
     helperRoot.name = "geometry-helpers";
     threeScene.add(geometryRoot, helperRoot);
-    for (const layer of [prescribedSourceRoot, resultVectorRoot, resultScalarRoot]) {
+    for (const layer of [prescribedSourceRoot, ...resultLayerRoots(resultLayerStates)]) {
       if (layer) helperRoot.add(layer);
     }
     geometryPickTargets = [];
@@ -2244,7 +2373,7 @@ export function ThreeGeometryViewport(props) {
       segmentBudget: props.discretizationSegmentBudget, pointBudget: props.discretizationPointBudget,
       primitiveCount: sceneModel?.primitives?.length ?? 0,
     };
-    sourcesDirty = vectorsDirty = scalarsDirty = true;
+    sourcesDirty = vectorsDirty = true;
     updateGeometryOpacity();
     publishRenderStats();
     if (!contextLost) {
@@ -2255,7 +2384,7 @@ export function ThreeGeometryViewport(props) {
   };
 
   const fitAll = () => {
-    if (!ready()) return;
+    if (movieSnapshot || !ready()) return;
     clearHoverTooltip();
     fitVisibleObjects(undefined, props.fitAllPadding);
     requestRender();
@@ -2263,7 +2392,7 @@ export function ThreeGeometryViewport(props) {
 
   const applyViewRequest = (request) => {
     const command = normalizeGeometryCameraCommand(request?.command);
-    if (!ready() || !command) return;
+    if (movieSnapshot || !ready() || !command) return;
     if (command === GEOMETRY_CAMERA_COMMANDS.FIT_ALL) {
       fitAll();
       return;
@@ -2280,6 +2409,7 @@ export function ThreeGeometryViewport(props) {
   };
 
   onMount(() => {
+    props.onCaptureReady?.(captureAdapter);
     void Promise.all([
       import("three"),
       import("three/addons/controls/OrbitControls.js"),
@@ -2426,23 +2556,16 @@ export function ThreeGeometryViewport(props) {
   });
 
   createEffect(() => {
-    currentResultScene = props.resultVectorScene ?? null;
-    currentVolumeFields = props.resultVolumeFields ?? null;
+    // Older preview callers can still supply one result scene.
+    resultLayers = props.resultLayers ?? [{ key: "result", scene: props.resultVectorScene,
+      scalarScene: props.resultScalarScene, volumeFields: props.resultVolumeFields,
+      color: props.resultVectorColor }];
     resultPalette = normalizeResultPalette(props.resultPalette);
-    resultVectorStyle = props.resultVectorColorMap === true ? (currentVolumeFields ? "volume" : "points")
-      : props.resultVectorStyle === "solid" ? "solid" : "thin";
+    resultVectorColorMap = props.resultVectorColorMap === true;
+    resultVectorStyle = props.resultVectorStyle === "solid" ? "solid" : "thin";
     resultVectorScale = props.resultVectorScale ?? 1;
-    resultVectorColor = props.resultVectorColor ?? 0x44ccff;
     if (!ready()) return;
     vectorsDirty = true;
-    requestRender();
-  });
-
-  createEffect(() => {
-    currentScalarScene = props.resultScalarScene ?? null;
-    resultPalette = normalizeResultPalette(props.resultPalette);
-    if (!ready()) return;
-    scalarsDirty = true;
     requestRender();
   });
 
@@ -2480,8 +2603,15 @@ export function ThreeGeometryViewport(props) {
     if (ready()) applyViewRequest(request);
   });
 
+  createEffect(() => {
+    captureFrameKey = props.captureFrameKey;
+    if (ready()) requestRender();
+  });
+
   onCleanup(() => {
     disposed = true;
+    captureGate.close();
+    props.onCaptureReady?.(null);
     setReady(false);
     resizeObserver?.disconnect();
     if (renderFrame) cancelAnimationFrame(renderFrame);
@@ -2542,17 +2672,20 @@ export function ThreeGeometryViewport(props) {
           3D-представление недоступно: {error()}
         </div>
       </Show>
-      <Show when={!error() && scalarLegend()} keyed>
-        {(legend) => (
-          <div class="geometry-scalar-legend" aria-label={`Цветовая шкала: ${legend.quantity}, ${legend.unit}`}>
-            <div>{legend.quantity}, {legend.unit}</div>
-            <div class="geometry-scalar-legend-gradient" style={{ background: resultScalarLegendBackground(legend.minimum, legend.maximum, legend.palette) }} />
-            <div class="geometry-scalar-legend-limits">
-              <span>{Number(legend.minimum.toPrecision(6)).toString()}</span>
-              <span>{Number(legend.maximum.toPrecision(6)).toString()}</span>
+      <Show when={!error() && scalarLegends().length}>
+        <div class="geometry-scalar-legends">
+          <For each={scalarLegends()}>{(legend) => (
+            <div class="geometry-scalar-legend" aria-label={`Цветовая шкала: ${legend.groupLabel ? `${legend.groupLabel} · ` : ""}${legend.quantity}, ${legend.unit}`}>
+              <Show when={legend.groupLabel}><strong>{legend.groupLabel}</strong></Show>
+              <div>{legend.quantity}, {legend.unit}</div>
+              <div class="geometry-scalar-legend-gradient" style={{ background: resultScalarLegendBackground(legend.minimum, legend.maximum, legend.palette) }} />
+              <div class="geometry-scalar-legend-limits">
+                <span>{Number(legend.minimum.toPrecision(6)).toString()}</span>
+                <span>{Number(legend.maximum.toPrecision(6)).toString()}</span>
+              </div>
             </div>
-          </div>
-        )}
+          )}</For>
+        </div>
       </Show>
       <Show when={hoverTooltip()} keyed>
         {(tooltip) => (

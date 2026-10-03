@@ -4,6 +4,9 @@ import { loadTask } from "./services/taskLoadService.js";
 import { ResultService } from "./services/resultService.js";
 import { mapResultObjects } from "./services/results/resultMappings.js";
 import { AboutDialog } from "./components/AboutDialog.jsx";
+import { ViewerToolsMenu } from "./components/movie/ViewerToolsMenu.jsx";
+import { createMovieExportController } from "./services/movie/movieExportController.js";
+import { createMovieGifEncoder } from "./services/movie/movieGifEncoder.js";
 
 const tabs = ["Выбор задания", "Источники/Поля 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Потоки", "Силы / Потери"];
 const SourcesFields3D = lazy(() => import("./tabs/SourcesFields3D.jsx").then(module => ({ default: module.SourcesFields3D })));
@@ -17,6 +20,9 @@ export default function App() {
   const [time, setTime] = createSignal(0), [elements, setElements] = createSignal([]), [regions, setRegions] = createSignal([]);
   const [coils, setCoils] = createSignal(null);
   const [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
+  const [movieBusy, setMovieBusy] = createSignal(false), [movieAdapter, setMovieAdapter] = createSignal(null);
+  const movieController = createMovieExportController({ createEncoder: createMovieGifEncoder,
+    onAdapterChange: adapter => setMovieAdapter(() => adapter) });
   let loadRevision = 0, activeReader;
   async function load(handle, newPath) {
     const revision = ++loadRevision;
@@ -48,12 +54,25 @@ export default function App() {
   function changeTime(index) {
     if (Number.isFinite(index)) setTime(Math.max(0, Math.min(task()?.general.countTimeSteps ?? 0, Math.trunc(index))));
   }
-  onCleanup(() => { loadRevision++; activeReader?.close(); });
+  onCleanup(() => { loadRevision++; movieController.dispose(); activeReader?.close(); });
+  const movieDisabledReason = () => {
+    if (movieBusy()) return "Создание GIF уже выполняется.";
+    if (busy()) return "Дождитесь загрузки задания.";
+    if (!task()) return "Загрузите задание.";
+    if (!Number.isSafeInteger(task().general?.countTimeSteps) || task().general.countTimeSteps <= 0
+      || !Number.isFinite(task().general.timeStep) || !(task().general.timeStep > 0)) return "Создание GIF доступно для динамических заданий с несколькими моментами времени.";
+    if (active() < 1 || active() > 6) return "Откройте вкладку с результатами.";
+    if (!movieAdapter()) return "Дождитесь готовности текущего графика.";
+    return "";
+  };
   const shared = {
-    get task() { return task(); }, get time() { return time(); }, setTime: changeTime,
-    get elements() { return elements(); }, setElements,
-    get regions() { return regions(); }, setRegions,
-    get coils() { return coils(); }, setCoils,
+    get task() { return task(); }, get time() { return time(); },
+    setTime: index => { if (!movieBusy()) changeTime(index); }, setMovieTime: changeTime,
+    registerMovieAdapter: movieController.register,
+    get movieBusy() { return movieBusy(); },
+    get elements() { return elements(); }, setElements: value => { if (!movieBusy()) setElements(value); },
+    get regions() { return regions(); }, setRegions: value => { if (!movieBusy()) setRegions(value); },
+    get coils() { return coils(); }, setCoils: value => { if (!movieBusy()) setCoils(value); },
   };
   return <div class="app-container">
     <header class="task-info-bar">
@@ -61,13 +80,16 @@ export default function App() {
       <div class="task-path" title={path()}>{path() || "Задание не загружено"}</div>
       <AboutDialog />
     </header>
-    <nav class="tabs-header" aria-label="Вкладки просмотра">
+    <nav class="tabs-header" aria-label="Вкладки просмотра" inert={movieBusy()}>
       <For each={tabs}>{(title, i) => <button classList={{ active: active() === i() }} aria-current={active() === i() ? "page" : undefined}
-        onClick={() => setActive(i())}>{title}</button>}</For>
+        disabled={movieBusy()} onClick={() => { if (!movieBusy()) setActive(i()); }}>{title}</button>}</For>
+      <ViewerToolsMenu task={task()} tabIndex={active()} frameCount={(task()?.general.countTimeSteps ?? 0) + 1}
+        eligible={!movieDisabledReason()} disabledReason={movieDisabledReason()}
+        onRun={options => movieController.run(options)} onBusyChange={setMovieBusy} />
     </nav>
-    <main class="tabs-body">
+    <main class="tabs-body" inert={movieBusy()} aria-busy={movieBusy()}>
       <div class="task-tab" style={{ display: active() === 0 ? "flex" : "none" }}>
-        <Tasks active={active() === 0} onLoad={load} loadedHandle={task()?.handle} busy={busy()} error={error()} />
+        <Tasks active={active() === 0} onLoad={(...args) => { if (!movieBusy()) return load(...args); }} loadedHandle={task()?.handle} busy={busy() || movieBusy()} error={error()} />
       </div>
       <Show when={active() !== 0}>
         <Show when={task()} fallback={<div class="empty-task"><p>Загрузите задание на первой вкладке</p><button onClick={() => setActive(0)}>Выбор задания</button></div>}>

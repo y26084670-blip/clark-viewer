@@ -6,6 +6,7 @@ import { workingPointSeries } from "../services/results/resultPlots.js";
 import { resultObjects, useAsyncResult } from "../services/results/resultRequests.js";
 import { characteristicCurve, isAnisotropic, isFmm, loadFmmCharacteristic } from "../services/results/fmmCharacteristics.js";
 import { buildGeometryTimeModel } from "../services/visualization/geometryTimeModel.js";
+import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 
 export function WorkingPoints(props) {
   const records = createMemo(() => (props.task?.elements ?? []).filter(isFmm));
@@ -52,10 +53,20 @@ export function WorkingPoints(props) {
     return { series, warnings: results.filter(r => r.error).map(r => r.error), count: series.reduce((n, s) => n + s.points.length, 0) };
   });
   const warnings = () => [curves.error(), points.error(), ...(curves.value()?.warnings ?? []), ...(points.value()?.warnings ?? [])].filter(Boolean).join(" · ");
+  const movieFrame = createMemo(() => ({ points: points.state().frame, curves: curves.state().frame }));
+  const movie = createMovieTabAdapter(props, { title: "Рабочие точки", readFrame: index => {
+    if (!selected().length) return { error: "Выберите элементы ФММ" };
+    const a = completedMovieFrame(points.state(), { task: props.task, index });
+    const b = completedMovieFrame(curves.state(), { task: props.task, index, timed: false });
+    if (a.error || b.error) return { error: a.error || b.error };
+    if (!a.ready || !b.ready) return { ready: false };
+    return warnings() ? { error: warnings() } : { ready: true, value: movieFrame() };
+  } });
   return <div class="results-layout">
     <ObjectList title="Элементы ФММ" records={records()} selected={props.elements} onSelect={props.setElements} />
     <section class="plot-panel">
       <LineChart series={[...(curves.value()?.series ?? []), ...(points.value()?.series ?? [])]} autoScaleToggle={true}
+        captureFrameKey={movieFrame()} onCaptureReady={movie.onCaptureReady} captureError={warnings()}
         toolbar={<><strong>M(H)</strong><span class="chart-toolbar-note"
           title="Изотропные ФММ: модули · Анизотропные: проекции на ось намагничивания">
           Изотропные ФММ: модули · Анизотропные: проекции на ось намагничивания

@@ -3,6 +3,7 @@ import { LineChart } from "../components/LineChart.jsx";
 import { useAsyncResult } from "../services/results/resultRequests.js";
 import { HISTORY_QUANTITIES, readForceMomentHistory, forceMomentHistorySeries,
   readLossHistory, lossHistorySeries } from "../services/results/resultHistories.js";
+import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 
 export function ForcesMoments(props) {
   const [quantity, setQuantity] = createSignal("force");
@@ -41,9 +42,20 @@ export function ForcesMoments(props) {
   });
   const error = () => result.error() || plot().error;
   const reading = () => quantity() === "loss" ? "Чтение потерь…" : "Чтение сил и моментов…";
+  const movieFrame = createMemo(() => ({ frame: result.state().frame, time: props.time, quantity: quantity(), plot: plot() }));
+  const movie = createMovieTabAdapter(props, { title: "Силы / Потери", readFrame: index => {
+    const current = completedMovieFrame(result.state(), { task: props.task, index, timed: false });
+    if (!current.ready) return current;
+    if (error()) return { error: error() };
+    if (!plot().series.length) return { error: "Нет зависимостей для записи" };
+    if (plot().series.some(item => !item.points.some(point => point.step === index))) return { error: `${family()}.h5: нет сохранённого шага ${index}` };
+    return movieFrame().time === index ? { ready: true, value: movieFrame() } : { ready: false };
+  } });
   return <div class="results-layout">
     <section class="plot-panel">
       <LineChart series={plot().series} xLabel="Время, с" legendMode="overlay"
+        captureFrameKey={movieFrame()} onCaptureReady={movie.onCaptureReady} captureError={error()}
+        movieCursor={{ time: props.time * props.task.general.timeStep, step: props.time }}
         yLabel={`${HISTORY_QUANTITIES[quantity()].label}, ${HISTORY_QUANTITIES[quantity()].unit}`}
         toolbar={<>
           <label><input type="radio" name="force-moment" checked={quantity() === "force"} onChange={() => setQuantity("force")} />Силы</label>

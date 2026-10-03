@@ -1,7 +1,7 @@
 {
   "name": "clark-viewer",
   "private": true,
-  "version": "4.11.0",
+  "version": "4.12.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "chart.js": "^4.5.1",
+    "gifenc": "1.0.3",
     "h5wasm": "^0.10.3",
     "solid-js": "^1.9.12",
     "tabulator-tables": "^6.5.0",

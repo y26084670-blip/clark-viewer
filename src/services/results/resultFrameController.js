@@ -2,12 +2,25 @@
 // owned by the task; an already executing HDF5 read is allowed to finish.
 export function sameFrameContext(a, b) {
   if (!a || !b || a.task !== b.task || a.quantityKey !== b.quantityKey || a.budget !== b.budget) return false;
+  if (Array.isArray(a.layers) || Array.isArray(b.layers)) {
+    if (!Array.isArray(a.layers) || !Array.isArray(b.layers) || a.layers.length !== b.layers.length) return false;
+    const right = new Map(b.layers.map(layer => [layer.key, layer]));
+    return a.layers.every(layer => {
+      const other = right.get(layer.key);
+      return other && ["quantityKey", "volumeMode", "budget"].every(key => layer[key] === other[key])
+        && sameSelection(layer.selected, other.selected);
+    });
+  }
   // Plot choices belong to the frame context; time alone may reuse the old frame.
   for (const key of ["component", "direction", "copy", "allCopies"]) {
     if (a[key] !== b[key]) return false;
   }
-  const left = [...a.selected].sort((x, y) => x - y);
-  const right = [...b.selected].sort((x, y) => x - y);
+  return sameSelection(a.selected, b.selected);
+}
+
+function sameSelection(a = [], b = []) {
+  const left = [...a].sort((x, y) => x - y);
+  const right = [...b].sort((x, y) => x - y);
   return left.length === right.length && left.every((id, i) => id === right[i]);
 }
 

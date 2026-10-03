@@ -6,6 +6,7 @@ export const GEOMETRY_SOURCE_CATEGORIES = Object.freeze({
 export const OBJECT_VISIBILITY_MODES = Object.freeze({
     ALL: "all",
     SELECTED: "selected",
+    EXCEPT_SELECTED: "exceptSelected",
     NONE: "none",
 });
 
@@ -47,12 +48,13 @@ export function primitiveVisible(
 
     if (mode === OBJECT_VISIBILITY_MODES.NONE) return false;
     if (mode === OBJECT_VISIBILITY_MODES.ALL) return true;
-    if (mode !== OBJECT_VISIBILITY_MODES.SELECTED) return false;
+    if (mode !== OBJECT_VISIBILITY_MODES.SELECTED
+        && mode !== OBJECT_VISIBILITY_MODES.EXCEPT_SELECTED) return false;
 
     const recordIndex = primitive?.source?.recordIndex;
-    return Number.isSafeInteger(recordIndex)
-        && recordIndex >= 0
-        && selectionContains(selections?.[category], recordIndex);
+    if (!Number.isSafeInteger(recordIndex) || recordIndex < 0) return false;
+    const selected = selectionContains(selections?.[category], recordIndex);
+    return mode === OBJECT_VISIBILITY_MODES.SELECTED ? selected : !selected;
 }
 
 export function instanceVisible(

@@ -16,12 +16,14 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
   let state = { frame: null, requested: null, error: "", loading: false };
   const run = new Function("props", "createGeometryViewSetting", "createMemo", "onCleanup",
     "QUANTITIES", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
+    "createMovieTabAdapter", "completedMovieFrame",
     `${setup} return { quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
       resultLayers, statusLayers, layerStatus, timeIndex, selections }; } return SourcesFields3D(props);`);
   const api = run(props, options.createGeometryViewSetting ?? ((name, initial) => [() => settings[name] ?? initial, value => { settings[name] = value; }]),
     options.createMemo ?? (compute => compute), callback => cleanup.push(callback), QUANTITIES, resultDisplaySelection,
     RESULT_LAYER_GROUPS, options.readerFactory ?? createResultLayerReader,
-    (source, reader) => { requestSource = source; load = reader; options.observeRequest?.(source); return () => state; });
+    (source, reader) => { requestSource = source; load = reader; options.observeRequest?.(source); return () => state; },
+    options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame);
   return { ...api, request: () => requestSource(), load: request => load(request),
     setResultState(next) { state = next; },
     close() { cleanup.splice(0).forEach(callback => callback()); } };

@@ -688,6 +688,8 @@ export function ResultsGeometryViewport(props) {
         <div class="geometry-viewer-canvas-region">
           <ThreeGeometryViewport
             scene={displayScene()}
+            captureFrameKey={props.captureFrameKey}
+            onCaptureReady={props.onCaptureReady}
             geometryRevision={props.model}
             resultLayers={props.resultLayers}
             resultVectorScene={props.resultVectorScene}

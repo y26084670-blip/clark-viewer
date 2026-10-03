@@ -51,6 +51,8 @@ import {
 } from "../../services/visualization/resultScalarColors.js";
 
 import { updateResultVolumeMeshes } from "../../services/visualization/resultVolumeRenderer.js";
+import { captureMovieCanvas } from "../../services/movie/movieCanvas.js";
+import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../../services/movie/renderedFrameGate.js";
 
 export const GEOMETRY_INSTANCE_BUDGET = 20_000;
 export const GEOMETRY_DISCRETIZATION_SEGMENT_BUDGET =
@@ -1525,6 +1527,9 @@ export function ThreeGeometryViewport(props) {
   let controlsInteracting = false;
   let contextLost = false;
   let disposed = false;
+  let movieSnapshot = null;
+  let captureFrameKey;
+  const captureGate = createRenderedFrameGate();
   let hasFramedGeometry = false;
   let activeProjection = DEFAULT_PROJECTION;
   let OrbitControlsClass;
@@ -1541,6 +1546,7 @@ export function ThreeGeometryViewport(props) {
     const message = value instanceof Error ? value.message : String(value);
     setError(message);
     props.onError?.(message);
+    captureGate.fail(new Error(message));
   };
 
   const publishRenderStats = () => {
@@ -1560,55 +1566,119 @@ export function ThreeGeometryViewport(props) {
     });
   };
 
-  const requestRender = () => {
-    if (!renderer || !threeScene || !camera || renderFrame || rendering || disposed) return;
-    renderFrame = requestAnimationFrame(() => {
-      renderFrame = 0;
-      rendering = true;
-      try {
-        if (pendingResize) applyRendererSize();
-        if (pendingGeometry) {
-          const {sceneModel, filters, mode, showEdges} = pendingGeometry;
-          pendingGeometry = null;
-          untrack(() => replaceGeometry(sceneModel, filters, mode, showEdges));
-        }
-        if (sourcesDirty) { sourcesDirty = false; replacePrescribedSources(); }
-        if (vectorsDirty) { vectorsDirty = false; replaceResultLayers(); }
-        if (!hasFramedGeometry || props.autoFit === true) hasFramedGeometry = fitVisibleObjects();
+  const renderNow = () => {
+    if (!renderer || !threeScene || !camera || disposed || contextLost || rendering) return;
+    if (renderFrame) { cancelAnimationFrame(renderFrame); renderFrame = 0; }
+    rendering = true;
+    try {
+      if (pendingResize && !movieSnapshot) applyRendererSize();
+      if (pendingGeometry) {
+        const {sceneModel, filters, mode, showEdges} = pendingGeometry;
+        pendingGeometry = null;
+        untrack(() => replaceGeometry(sceneModel, filters, mode, showEdges));
+      }
+      if (sourcesDirty) { sourcesDirty = false; replacePrescribedSources(); }
+      if (vectorsDirty) { vectorsDirty = false; replaceResultLayers(); }
+      if (!movieSnapshot && (!hasFramedGeometry || props.autoFit === true)) hasFramedGeometry = fitVisibleObjects();
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, viewportWidth, viewportHeight);
+      renderer.clear(true, true, true);
+      renderer.render(threeScene, camera);
+
+      if (axesScene && axesCamera && axesRoot && controls) {
+        const size = axesGizmoSize();
+        const direction = camera.position.clone().sub(controls.target);
+        if (direction.lengthSq() < 1e-12) direction.set(1, 1, 1);
+        axesCamera.position.copy(direction.normalize().multiplyScalar(5));
+        axesCamera.up.copy(camera.up);
+        axesCamera.lookAt(0, 0, 0);
+        axesCamera.updateMatrixWorld();
+
+        renderer.clearDepth();
+        renderer.setScissor(
+          AXES_GIZMO_MARGIN,
+          AXES_GIZMO_MARGIN,
+          size,
+          size,
+        );
+        renderer.setViewport(
+          AXES_GIZMO_MARGIN,
+          AXES_GIZMO_MARGIN,
+          size,
+          size,
+        );
+        renderer.setScissorTest(true);
+        renderer.render(axesScene, axesCamera);
         renderer.setScissorTest(false);
         renderer.setViewport(0, 0, viewportWidth, viewportHeight);
-        renderer.clear(true, true, true);
-        renderer.render(threeScene, camera);
+      }
+      captureGate.rendered(captureFrameKey);
+    } catch (error) { reportError(error); }
+    finally { rendering = false; }
+  };
+  const requestRender = () => {
+    if (!renderer || !threeScene || !camera || renderFrame || rendering || disposed) return;
+    renderFrame = requestAnimationFrame(() => { renderFrame = 0; renderNow(); });
+  };
 
-        if (axesScene && axesCamera && axesRoot && controls) {
-          const size = axesGizmoSize();
-          const direction = camera.position.clone().sub(controls.target);
-          if (direction.lengthSq() < 1e-12) direction.set(1, 1, 1);
-          axesCamera.position.copy(direction.normalize().multiplyScalar(5));
-          axesCamera.up.copy(camera.up);
-          axesCamera.lookAt(0, 0, 0);
-          axesCamera.updateMatrixWorld();
+  const captureAdapter = {
+    prepare({ signal } = {}) {
+      signal?.throwIfAborted();
+      if (!ready() || disposed || contextLost || error()) throw new Error(error() || "3D-окно ещё не готово");
+      if (movieSnapshot) return;
+      renderNow();
+      if (error()) throw new Error(error());
+      clearHoverTooltip();
+      movieSnapshot = { ...snapshotMovieCamera(camera, controls), hasFramedGeometry };
+    },
+    renderReady(expectedKey, { signal } = {}) {
+      if (disposed || contextLost || error()) return Promise.reject(new Error(error() || "3D-окно недоступно"));
+      const completion = captureGate.wait(expectedKey, { signal });
+      requestRender();
+      return completion;
+    },
+    capture(expectedKey, { caption } = {}) {
+      if (!movieSnapshot || disposed || contextLost || error()) throw new Error(error() || "Захват 3D-окна не подготовлен");
+      return captureRenderedMovieFrame(captureGate, expectedKey, renderNow, () =>
+        captureMovieCanvas(renderer.domElement, { caption, overlay: drawMovieLegends }));
+    },
+    restore() {
+      if (!movieSnapshot) return;
+      const snapshot = movieSnapshot; movieSnapshot = null;
+      if (disposed || !camera || !controls) return;
+      restoreMovieCamera(camera, controls, snapshot);
+      hasFramedGeometry = snapshot.hasFramedGeometry;
+      pendingResize = true;
+      requestRender();
+    },
+  };
 
-          renderer.clearDepth();
-          renderer.setScissor(
-            AXES_GIZMO_MARGIN,
-            AXES_GIZMO_MARGIN,
-            size,
-            size,
-          );
-          renderer.setViewport(
-            AXES_GIZMO_MARGIN,
-            AXES_GIZMO_MARGIN,
-            size,
-            size,
-          );
-          renderer.setScissorTest(true);
-          renderer.render(axesScene, axesCamera);
-          renderer.setScissorTest(false);
-          renderer.setViewport(0, 0, viewportWidth, viewportHeight);
-        }
-      } catch (error) { reportError(error); }
-      finally { rendering = false; }
+  const drawMovieLegends = (context, { width, height }) => {
+    const legends = scalarLegends();
+    if (!legends.length) return;
+    const boxWidth = Math.min(300, width - 16);
+    const boxHeight = Math.min(86, (height - 16) / legends.length);
+    context.font = "12px sans-serif";
+    context.textBaseline = "top";
+    legends.forEach((legend, index) => {
+      const x = width - boxWidth - 8, y = 8 + index * boxHeight;
+      context.fillStyle = "rgba(27, 34, 41, .95)";
+      context.fillRect(x, y, boxWidth, boxHeight - 4);
+      context.fillStyle = "#f1f5f8";
+      context.fillText(`${legend.groupLabel ? `${legend.groupLabel} · ` : ""}${legend.quantity}`, x + 7, y + 6, boxWidth - 14);
+      context.fillText(legend.unit, x + 7, y + 23, boxWidth - 14);
+      const gradient = context.createLinearGradient(x + 7, 0, x + boxWidth - 7, 0);
+      for (let stop = 0; stop <= 20; stop++) {
+        const rgb = resultScalarColor(legend.minimum === legend.maximum ? 10 : stop, 0, 20, legend.palette)
+          .map(value => Math.round(value * 255));
+        gradient.addColorStop(stop / 20, `rgb(${rgb.join(",")})`);
+      }
+      context.fillStyle = gradient; context.fillRect(x + 7, y + 41, boxWidth - 14, 10);
+      context.fillStyle = "#f1f5f8";
+      context.fillText(Number(legend.minimum.toPrecision(6)).toString(), x + 7, y + 57);
+      context.textAlign = "right";
+      context.fillText(Number(legend.maximum.toPrecision(6)).toString(), x + boxWidth - 7, y + 57);
+      context.textAlign = "left";
     });
   };
 
@@ -1635,6 +1705,7 @@ export function ThreeGeometryViewport(props) {
 
   const resizeRenderer = () => { pendingResize = true; requestRender(); };
   const applyRendererSize = () => {
+    if (movieSnapshot) return;
     pendingResize = false;
     if (!host || !renderer || !camera) return;
     const width = Math.max(1, Math.floor(host.clientWidth));
@@ -1863,6 +1934,7 @@ export function ThreeGeometryViewport(props) {
   };
 
   const queuePointerPick = (event) => {
+    if (movieSnapshot) return;
     if (controlsInteracting) return;
     pendingPointer = {
       clientX: event.clientX,
@@ -2102,7 +2174,7 @@ export function ThreeGeometryViewport(props) {
   const switchProjection = (value) => {
     const projection = normalizeProjection(value);
     if (
-      !ready() ||
+      movieSnapshot || !ready() ||
       !THREE ||
       !camera ||
       !controls ||
@@ -2199,7 +2271,7 @@ export function ThreeGeometryViewport(props) {
     for (const batch of vertexBatches) batch.instances = resolve(batch.primitive.source, batch.instances);
     for (const batch of discretizationBatches) batch.instances = resolve(batch.primitive.source, batch.instances);
     currentBounds = new THREE.Box3().setFromObject(geometryRoot);
-    if (props.autoFit === true && !currentBounds.isEmpty()) {
+    if (!movieSnapshot && props.autoFit === true && !currentBounds.isEmpty()) {
       fitVisibleObjects();
     }
     clearHoverTooltip();
@@ -2312,7 +2384,7 @@ export function ThreeGeometryViewport(props) {
   };
 
   const fitAll = () => {
-    if (!ready()) return;
+    if (movieSnapshot || !ready()) return;
     clearHoverTooltip();
     fitVisibleObjects(undefined, props.fitAllPadding);
     requestRender();
@@ -2320,7 +2392,7 @@ export function ThreeGeometryViewport(props) {
 
   const applyViewRequest = (request) => {
     const command = normalizeGeometryCameraCommand(request?.command);
-    if (!ready() || !command) return;
+    if (movieSnapshot || !ready() || !command) return;
     if (command === GEOMETRY_CAMERA_COMMANDS.FIT_ALL) {
       fitAll();
       return;
@@ -2337,6 +2409,7 @@ export function ThreeGeometryViewport(props) {
   };
 
   onMount(() => {
+    props.onCaptureReady?.(captureAdapter);
     void Promise.all([
       import("three"),
       import("three/addons/controls/OrbitControls.js"),
@@ -2530,8 +2603,15 @@ export function ThreeGeometryViewport(props) {
     if (ready()) applyViewRequest(request);
   });
 
+  createEffect(() => {
+    captureFrameKey = props.captureFrameKey;
+    if (ready()) requestRender();
+  });
+
   onCleanup(() => {
     disposed = true;
+    captureGate.close();
+    props.onCaptureReady?.(null);
     setReady(false);
     resizeObserver?.disconnect();
     if (renderFrame) cancelAnimationFrame(renderFrame);

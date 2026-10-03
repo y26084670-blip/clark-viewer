@@ -5,6 +5,7 @@ import { QuantitySelect } from "../components/QuantitySelect.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
 import { QUANTITIES } from "../services/results/resultMappings.js";
 import { readLineFrame, useResultFrame } from "../services/results/resultRequests.js";
+import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 
 export function FieldLines(props) {
   const [quantityKey, setQuantity] = createSignal("Bs");
@@ -31,10 +32,17 @@ export function FieldLines(props) {
       || (skipped.length ? `LS ${frame.request.copy + 1} отсутствует у площадок ${skipped.join(", ")}` : "Поле в сохранённых узлах");
     return frame ? `${message} · показан шаг ${frame.request.time}` : message;
   };
+  const movie = createMovieTabAdapter(props, { title: "Поле на линиях", readFrame: index => {
+    if (!selectedRecords().length) return { error: "Выберите площадки" };
+    const current = completedMovieFrame(result(), { task: props.task, index });
+    if (!current.ready) return current;
+    return current.value.value.series.some(series => series.points.length) ? current : { error: "Нет линий для записи" };
+  } });
   return <div class="results-layout">
     <ObjectList title="Площадки" records={records()} selected={props.regions} onSelect={props.setRegions} />
     <section class="plot-panel">
       <LineChart series={series()} autoScaleToggle={true}
+        captureFrameKey={displayed()} onCaptureReady={movie.onCaptureReady} captureError={result().error}
         toolbar={<><QuantitySelect options={["Bs", "As"]} value={quantityKey()} onChange={setQuantity} component={component()} onComponentChange={setComponent} />
         <label>По оси X <select value={direction()} onChange={event => setDirection(event.currentTarget.value)}><option value="i1">i1</option><option value="i2">i2</option></select></label>
         <label>Локальный образ <input type="number" min="1" max={copyCount()} step="1" value={localCopy() + 1}

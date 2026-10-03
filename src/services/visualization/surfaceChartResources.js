@@ -1,8 +1,14 @@
 import * as THREE from "three";
 
+/** A flat surface already uses this nonzero span internally. Expose the same
+ * span in the fixed movie labels so later values retain meaningful heights. */
+export function surfaceMovieLimits({ min, max }) {
+  return { min, max: max > min ? max : min + Math.max(Math.abs(min), 1) };
+}
+
 // Time steps share one topology. Keep the mesh, material and GPU buffers while
 // replacing only the saved values; picking needs refreshed bounds as well.
-export function updateSurfaceMesh(surface, grid) {
+export function updateSurfaceMesh(surface, grid, fixedLimits = null) {
   const { width, height, values } = grid;
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 2 || height < 2
     || values.length !== width * height) throw new Error("Некорректная сетка поверхности");
@@ -10,6 +16,12 @@ export function updateSurfaceMesh(surface, grid) {
   for (const value of values) {
     if (!Number.isFinite(value)) throw new Error("Поверхность содержит нечисловые значения");
     min = Math.min(min, value); max = Math.max(max, value);
+  }
+  if (fixedLimits) {
+    if (!Number.isFinite(fixedLimits.min) || !Number.isFinite(fixedLimits.max) || fixedLimits.max < fixedLimits.min) {
+      throw new Error("Некорректная фиксированная шкала поверхности");
+    }
+    min = fixedLimits.min; max = fixedLimits.max;
   }
   if (!surface) surface = new THREE.Mesh(new THREE.BufferGeometry(),
     new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
@@ -35,7 +47,7 @@ export function updateSurfaceMesh(surface, grid) {
   for (let i = 0; i < width; i++) for (let j = 0; j < height; j++) {
     const k = i * height + j, fraction = (values[k] - min) / span;
     positions.setXYZ(k, 2 * i / (width - 1) - 1, 2 * j / (height - 1) - 1, fraction * 1.5);
-    color.setHSL(.66 * (1 - fraction), .9, .48); color.toArray(colors.array, k * 3);
+    color.setHSL(.66 * (1 - Math.max(0, Math.min(1, fraction))), .9, .48); color.toArray(colors.array, k * 3);
   }
   positions.needsUpdate = true; colors.needsUpdate = true;
   surface.geometry.computeBoundingBox(); surface.geometry.computeBoundingSphere();

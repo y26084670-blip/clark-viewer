@@ -8,6 +8,7 @@ import { resultDisplaySelection, useResultFrame } from "../services/results/resu
 import { RESULT_LAYER_GROUPS, RESULT_LAYER_QUANTITY_LABELS } from "../services/results/resultLayerDefinitions.js";
 import { createResultLayerReader } from "../services/results/resultLayerRequests.js";
 import { RESULT_SCALAR_PALETTES } from "../services/visualization/resultScalarColors.js";
+import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import "./SourcesFields3D.css";
 
 export function SourcesFields3D(props) {
@@ -81,6 +82,12 @@ export function SourcesFields3D(props) {
   const selections = createMemo(() => ({
     elements: props.elements.map(id => id - 1), regions: props.regions.map(id => id - 1),
   }));
+  const movie = createMovieTabAdapter(props, { title: "Источники/Поля 3D", readFrame: index => {
+    const status = completedMovieFrame(result(), { task: props.task, index });
+    if (!status.ready) return status;
+    const errors = status.value.value.errors ?? [];
+    return errors.length ? { error: errors.map(item => item.message).join(" · ") } : status;
+  } });
   return <div class="results-layout">
     <aside class="split-list-column">
       <ObjectList title="Элементы" records={props.task?.elements} selected={props.elements} onSelect={props.setElements} />
@@ -112,6 +119,7 @@ export function SourcesFields3D(props) {
         <ResultsGeometryViewport open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={timeIndex()}
           selections={selections()} resultLayers={resultLayers()}
+          captureFrameKey={displayed()} onCaptureReady={movie.onCaptureReady}
           resultVectorScale={scale()} resultPickingOnly={true}
           resultVectorColorMap={colorMap()} resultPalette={palette()} />
       </div>

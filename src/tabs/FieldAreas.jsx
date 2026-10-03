@@ -5,6 +5,7 @@ import { QuantitySelect } from "../components/QuantitySelect.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
 import { QUANTITIES, regionLayout } from "../services/results/resultMappings.js";
 import { readSurfaceFrame, useResultFrame } from "../services/results/resultRequests.js";
+import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 
 export function FieldAreas(props) {
   const [quantityKey, setQuantity] = createSignal("Bs");
@@ -22,6 +23,8 @@ export function FieldAreas(props) {
     const message = result().loading ? "Чтение поля…" : result().error || frame?.value.title || "Выберите площадку";
     return frame ? `${message} · показан шаг ${frame.request.time}` : message;
   };
+  const movie = createMovieTabAdapter(props, { title: "Поле в областях", readFrame: index =>
+    record() ? completedMovieFrame(result(), { task: props.task, index }) : { error: "Выберите площадку" } });
   return <div class="results-layout">
     <ObjectList title="Площадки" records={records()} selected={record() ? [record().id] : []} onSelect={props.setRegions} multiple={false} />
     <section class="plot-panel">
@@ -30,7 +33,8 @@ export function FieldAreas(props) {
           onChange={event => setCopy(event.currentTarget.valueAsNumber - 1)} /></label></Show>
       </div>
       <div class="plot-status" role="status">{status()}</div>
-      <SurfaceChart grid={grid()} label={QUANTITIES[quantityKey()].label} unit={QUANTITIES[quantityKey()].unit} emptyText={result().error} />
+      <SurfaceChart grid={grid()} label={QUANTITIES[quantityKey()].label} unit={QUANTITIES[quantityKey()].unit} emptyText={result().error}
+        captureFrameKey={displayed()} onCaptureReady={movie.onCaptureReady} />
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
     </section>
   </div>;

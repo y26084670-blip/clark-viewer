@@ -115,6 +115,22 @@ test("Perspective fit contains different depths and fills at least one projected
   }
 });
 
+test("seed-only streamlines frame saved world coordinates and exclude hidden diamonds",()=>{
+  for(const projection of ["orthographic","perspective"]) {
+    const {camera,controls}=cameraSetup(projection),root=new THREE.Group();
+    const values=[[100,20,-30],[112,24,-30]];
+    const lines=[...values,[1e6,1e6,0]].map((start,id)=>({id,start,source:{schemaId:"elements",recordIndex:id},
+      instance:{ls:0,as:0,ps:0},paths:[]}));
+    updateStreamlineMeshes(THREE,root,lines,{filters:{objectModes:{elements:"selected"},selections:{elements:[0,1]}},resolution:[800,400]});
+    root.position.set(5,-8,10);root.updateMatrixWorld(true);
+    const world=values.map(p=>new THREE.Vector3().fromArray(p).applyMatrix4(root.matrixWorld).toArray());
+    assert.equal(fitCameraToVisibleObjects(THREE,camera,controls,[root]),true);
+    close(assertVisible(camera,world),1/1.08,1e-7);
+    assert.deepEqual(controls.target.toArray(),[111,14,-20]);
+    updateStreamlineMeshes(THREE,root,[]);
+  }
+});
+
 test("Invisible geometry is excluded while result-only nodes and vector tips are framed", () => {
   const { camera, controls } = cameraSetup();
   const hiddenGeometry = new THREE.Group();

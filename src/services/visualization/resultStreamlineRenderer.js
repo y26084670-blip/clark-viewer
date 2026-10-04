@@ -67,9 +67,57 @@ function selectionOutline(object) {
   }
 }
 
+export const STREAMLINE_START_SIZE = 12;
+
+function startMarkerTexture(THREE) {
+  const side=64, pixels=new Uint8Array(side*side*4);
+  for(let y=0;y<side;y++)for(let x=0;x<side;x++) {
+    const distance=(Math.abs(x+.5-side/2)+Math.abs(y+.5-side/2))/(side/2);
+    const offset=(y*side+x)*4, shade=distance<.72?255:20;
+    pixels[offset]=pixels[offset+1]=pixels[offset+2]=shade;
+    pixels[offset+3]=Math.round(255*Math.max(0,Math.min(1,(1-distance)*side/2+.5)));
+  }
+  const texture=new THREE.DataTexture(pixels,side,side,THREE.RGBAFormat);
+  texture.colorSpace=THREE.SRGBColorSpace;
+  texture.magFilter=texture.minFilter=THREE.LinearFilter;
+  texture.needsUpdate=true;
+  return texture;
+}
+
+function createStartMarker(THREE, texture) {
+  const geometry=new THREE.BufferGeometry().setAttribute("position",new THREE.Float32BufferAttribute([0,0,0],3));
+  const material=new THREE.PointsMaterial({map:texture,size:STREAMLINE_START_SIZE,sizeAttenuation:false,
+    transparent:true,alphaTest:.05,depthWrite:false,depthTest:true,toneMapped:false});
+  const marker=new THREE.Points(geometry,material);
+  marker.name="result-streamline-start";marker.renderOrder=26;
+  marker.userData.streamlineStart=true;
+  marker.userData.viewportSize=new THREE.Vector2(1,1);
+  // A world-space Points threshold grows/shrinks on screen with depth. Test the
+  // actual 2D diamond in CSS pixels in both camera projections instead.
+  const world=new THREE.Vector3(),projected=new THREE.Vector3(),rayPoint=new THREE.Vector3(),rayScreen=new THREE.Vector3();
+  marker.raycast=(raycaster,intersections)=>{
+    if(!marker.visible||!raycaster.camera)return;
+    world.setFromMatrixPosition(marker.matrixWorld);
+    projected.copy(world).applyMatrix4(raycaster.camera.matrixWorldInverse);
+    if(projected.z>=0)return;
+    projected.copy(world).project(raycaster.camera);
+    if(projected.z < -1 || projected.z > 1)return;
+    raycaster.ray.closestPointToPoint(world,rayPoint);
+    rayScreen.copy(rayPoint).project(raycaster.camera);
+    const size=marker.userData.viewportSize;
+    const pixels=(Math.abs(projected.x-rayScreen.x)*size.x+Math.abs(projected.y-rayScreen.y)*size.y)/2;
+    if(!Number.isFinite(pixels)||pixels>material.size/2+2)return;
+    const distance=raycaster.ray.origin.distanceTo(rayPoint);
+    if(distance<raycaster.near||distance>raycaster.far)return;
+    intersections.push({distance,distanceToRay:world.distanceTo(rayPoint),point:world.clone(),index:0,object:marker});
+  };
+  return marker;
+}
+
 export function resizeStreamlineMaterials(root, width, height) {
   root?.traverse(object => {
     if (object.isLine2) object.material.resolution.set(Math.max(1, width), Math.max(1, height));
+    if (object.userData.streamlineStart) object.userData.viewportSize.set(Math.max(1,width),Math.max(1,height));
   });
 }
 
@@ -135,9 +183,28 @@ export function updateStreamlineMeshes(THREE,root,lines=[],{
       border.visible=selected===line.id; border.material.linewidth=width+border.userData.widthExtra;
     }
   }
+  let hasMarkers=false;
+  for(const line of lines) {
+    if(line.error || line.start?.length!==3 || !line.start.every(Number.isFinite))continue;
+    const key=`start:${line.id}`;
+    let marker=old.get(key);old.delete(key);
+    if(!marker) {
+      root.userData.startMarkerTexture ??= startMarkerTexture(THREE);
+      marker=createStartMarker(THREE,root.userData.startMarkerTexture);
+      marker.userData.streamlinePart=key;root.add(marker);
+    }
+    hasMarkers=true;
+    marker.position.fromArray(line.start);
+    marker.userData.streamlineId=line.id;
+    marker.material.color.setHex(selected===line.id?0xffdd38:0xffffff);
+    marker.visible=pathVisible(line,filters);
+  }
   for(const object of old.values()) {
     root.remove(object);object.geometry.dispose();object.material.dispose();
     for(const border of object.children)border.material.dispose();
+  }
+  if(!hasMarkers && root.userData.startMarkerTexture) {
+    root.userData.startMarkerTexture.dispose();delete root.userData.startMarkerTexture;
   }
   resizeStreamlineMaterials(root,...resolution);
   root.userData.colorLegends=[...ranges.values()].map(range=>({...range,palette}));

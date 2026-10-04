@@ -45,6 +45,81 @@ test("actual viewport picker seeds exactly the saved node used by its tooltip, f
 
 const line=(id,offset=0)=>({id,quantityKey:"M",quantity:"M",unit:"кА/м",paths:[{source:{schemaId:"elements",recordIndex:id-1},instance:{ls:0,as:0,ps:0},
   positions:new Float64Array([offset,0,0,offset+1,0,0,offset+2,1,0]),magnitudes:new Float64Array([1,3,5])}]});
+const seededLine=(id,start=[0,0,0])=>{
+  const value=line(id,start[0]);
+  return {...value,start,source:value.paths[0].source,instance:value.paths[0].instance};
+};
+const startMarkers=root=>root.children.filter(object=>object.userData.streamlineStart);
+test("one flat seed diamond serves both branches, follows the saved node and uses the seed's visibility",()=>{
+  const root=new THREE.Group(),a=seededLine(1,[1e12+.25,3,4]);
+  a.paths.push({...line(2).paths[0],instance:{ls:1,as:0,ps:0}});
+  updateStreamlineMeshes(THREE,root,[a],{selected:1,resolution:[800,600]});
+  const [marker]=startMarkers(root),geometry=marker.geometry,material=marker.material;
+  assert.equal(startMarkers(root).length,1);assert.equal(marker.isPoints,true);
+  assert.deepEqual(marker.position.toArray(),a.start);
+  assert.deepEqual([...geometry.getAttribute("position").array],[0,0,0]);
+  assert.equal(material.size,12);assert.equal(material.sizeAttenuation,false);
+  assert.equal(material.color.getHex(),0xffdd38);assert.equal(material.depthTest,true);
+  const image=material.map.image,pixel=(x,y)=>Array.from(image.data.subarray((y*image.width+x)*4,(y*image.width+x+1)*4));
+  assert.deepEqual(pixel(32,32),[255,255,255,255]);assert.equal(pixel(0,0)[3],0);
+  assert.deepEqual(pixel(58,32),[20,20,20,255]);
+  const moved={...a,start:[1e12+.5,7,8]};
+  updateStreamlineMeshes(THREE,root,[moved],{width:10,colorMap:false,
+    filters:{objectModes:{elements:"exceptSelected"},selections:{elements:[0]}}});
+  assert.equal(startMarkers(root)[0],marker);assert.equal(marker.geometry,geometry);assert.equal(marker.material,material);
+  assert.deepEqual(marker.position.toArray(),moved.start);assert.equal(material.size,12);
+  assert.equal(material.color.getHex(),0xffffff);assert.equal(marker.visible,false);
+  assert.equal(root.children.find(object=>object.userData.streamlinePart==="1:1").visible,true);
+  updateStreamlineMeshes(THREE,root,[{...moved,instance:{ls:1,as:0,ps:0}}],{filters:{symmetry:{local:false}}});
+  assert.equal(marker.visible,false);
+  updateStreamlineMeshes(THREE,root,[{...moved,paths:[]}]);
+  assert.deepEqual(root.children,[marker]);assert.equal(marker.visible,true,"a zero field still has a saved seed");
+  updateStreamlineMeshes(THREE,root,[{...moved,error:"invalid field"},{...seededLine(2),start:[NaN,0,0]}]);
+  assert.equal(startMarkers(root).length,0,"errors must not invent a starting coordinate");
+  updateStreamlineMeshes(THREE,root,[]);
+});
+test("seed diamonds share one texture and release it only after the last line is removed",()=>{
+  const root=new THREE.Group(),a=seededLine(1),b=seededLine(2,[5,0,0]);
+  updateStreamlineMeshes(THREE,root,[a,b]);
+  const [first,second]=startMarkers(root),texture=first.material.map;
+  assert.equal(second.material.map,texture);
+  let firstReleased=0,secondReleased=0,textureReleased=0;
+  for(const resource of [first.geometry,first.material])resource.addEventListener("dispose",()=>firstReleased++);
+  for(const resource of [second.geometry,second.material])resource.addEventListener("dispose",()=>secondReleased++);
+  texture.addEventListener("dispose",()=>textureReleased++);
+  updateStreamlineMeshes(THREE,root,[b],{selected:2});
+  assert.deepEqual(startMarkers(root),[second]);assert.equal(firstReleased,2);assert.equal(secondReleased,0);assert.equal(textureReleased,0);
+  updateStreamlineMeshes(THREE,root,[]);updateStreamlineMeshes(THREE,root,[]);
+  assert.equal(secondReleased,2);assert.equal(textureReleased,1);assert.equal(root.userData.startMarkerTexture,undefined);
+});
+test("diamond picking retains its screen footprint through camera changes and takes priority over a crossing curve",()=>{
+  for(const perspective of [false,true]) {
+    const root=new THREE.Group(),a=line(1),b={...seededLine(2),paths:[]};
+    const camera=perspective?new THREE.PerspectiveCamera(40,1,.1,1000):new THREE.OrthographicCamera(-2,2,2,-2,.1,1000);
+    updateStreamlineMeshes(THREE,root,[a,b],{resolution:[400,400]});root.updateMatrixWorld(true);
+    const marker=startMarkers(root)[0],ray=new THREE.Raycaster();ray.params.Points.threshold=1e6;
+    for(const [position,zoom,width,height] of [[[0,0,10],1,400,400],[[20,30,40],2,800,600]]) {
+      camera.position.fromArray(position);camera.zoom=zoom;camera.lookAt(0,0,0);camera.updateProjectionMatrix();camera.updateMatrixWorld();
+      resizeStreamlineMaterials(root,width,height);
+      const hit=(x,y)=>{ray.setFromCamera(new THREE.Vector2(2*x/width,2*y/height),camera);return ray.intersectObject(marker,false);};
+      assert.equal(hit(5,0).length,1);assert.equal(hit(0,5).length,1);
+      assert.equal(hit(9,0).length,0);assert.equal(hit(6,6).length,0);
+    }
+    camera.position.set(0,0,10);camera.zoom=1;camera.lookAt(0,0,0);camera.updateProjectionMatrix();camera.updateMatrixWorld();
+    resizeStreamlineMaterials(root,400,400);
+    const selected=[];
+    const pick=makePick({renderer:{domElement:{getBoundingClientRect:()=>({left:0,top:0,width:400,height:400})}},
+      camera,controls:{target:new THREE.Vector3()},raycaster:ray,pointerNdc:new THREE.Vector2(),
+      props:{resultPickingOnly:true,onSelectStreamline:id=>selected.push(id)},resultLayerStates:new Map(),
+      resultHitScalar,resultHitVector,formatResultScalarTooltip,formatResultVectorTooltip,intersectResultLayers,
+      setHoverTooltip(){},showTooltip(){},streamlineRoot:root});
+    pick({clientX:200,clientY:200},"select");assert.equal(selected.at(-1),2);
+    marker.visible=false;pick({clientX:200,clientY:200},"select");assert.equal(selected.at(-1),1);
+    marker.visible=true;marker.position.z=20;root.updateMatrixWorld(true);
+    ray.setFromCamera(new THREE.Vector2(),camera);assert.equal(ray.intersectObject(marker,false).length,0);
+    updateStreamlineMeshes(THREE,root,[]);
+  }
+});
 test("double-click dispatches the same pick coordinates; orbit drags, right clicks and movie capture cannot seed lines",()=>{
   const actions=[];let blocked=false;
   const h=streamlinePointerHandlers((event,action)=>actions.push([event.clientX,event.clientY,action]),()=>blocked);

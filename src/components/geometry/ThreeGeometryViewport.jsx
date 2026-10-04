@@ -1895,8 +1895,10 @@ export function ThreeGeometryViewport(props) {
       }
       if (action === "select") {
         const lines = streamlineRoot?.children.filter(child => child.visible) ?? [];
-        const lineHit = raycaster.intersectObjects(lines, false).find(candidate =>
+        const lineHits = raycaster.intersectObjects(lines, false).filter(candidate =>
           !geometryHit || candidate.distance <= geometryHit.distance + unitsPerPixel * 5);
+        // A visible seed marker takes precedence over another curve crossing it.
+        const lineHit = lineHits.find(candidate => candidate.object.userData.streamlineStart) ?? lineHits[0];
         props.onSelectStreamline?.(lineHit?.object.userData.streamlineId ?? null);
         return;
       }

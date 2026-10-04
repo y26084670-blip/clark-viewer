@@ -693,6 +693,8 @@ export function ResultsGeometryViewport(props) {
             geometryRevision={props.model}
             resultLayers={props.resultLayers}
             resultStreamlines={props.resultStreamlines}
+            streamlineWidth={props.streamlineWidth}
+            streamlineColorMap={props.streamlineColorMap}
             selectedStreamline={props.selectedStreamline}
             onSelectStreamline={props.onSelectStreamline}
             onResultNodeDoubleClick={props.onResultNodeDoubleClick}

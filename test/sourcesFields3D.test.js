@@ -42,6 +42,24 @@ test("inverse visibility uses the independent physical and virtual complements",
   assert.deepEqual(props.elements, [1]); assert.deepEqual(props.regions, [2]);
   ui.close();
 });
+test("line style controls default to 2 px and colour, enable the palette for lines alone, and persist without changing the data request", () => {
+  const props=fixture(),settings={resultElementsQuantity:"none"};
+  let ui=sourcesFields3DSetup(props,settings);
+  ui.setResultState({frame:{request:{task:props.task,time:props.time},value:{layers:[]}}});
+  assert.equal(ui.streamlineControls().width,2);assert.equal(ui.streamlineControls().colorMap,true);
+  assert.equal(ui.streamlineControls().paletteDisabled,true);
+  ui.addStreamline({quantityKey:"H",source:{schemaId:"elements",recordIndex:0},instance:{ls:0,as:0,ps:0},node:0});
+  assert.equal(ui.streamlineControls().paletteDisabled,false);
+  const request=ui.request();
+  ui.streamlineControls().onWidthInput({currentTarget:{valueAsNumber:7}});
+  ui.streamlineControls().onColorChange({currentTarget:{checked:false}});
+  assert.equal(ui.streamlineControls().viewportWidth,7);assert.equal(ui.streamlineControls().viewportColorMap,false);
+  assert.equal(ui.streamlineControls().paletteDisabled,true);assert.deepEqual(ui.request(),request);
+  ui.close();ui=sourcesFields3DSetup(props,settings);
+  assert.equal(ui.streamlineControls().width,7);assert.equal(ui.streamlineControls().colorMap,false);
+  ui.streamlineControls().onColorChange({currentTarget:{checked:true}});
+  assert.equal(ui.streamlineControls().paletteDisabled,false);ui.close();
+});
 
 test("scalar maps expose size controls, force every active layer to color mode and preserve the vector preference", () => {
   const settings = { resultElementsQuantity: "MHdot", resultRegionsQuantity: "Bs", resultVirtualQuantity: "Av",
@@ -164,6 +182,8 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
     const set = (name, value) => signals.get(name)[1](value);
     assert.equal(requests.length, 1);
     set("resultPalette", "Turbo"); set("resultVectorScale", 2);
+    set("resultStreamlineWidth", 8); set("resultStreamlineColorMap", false);
+    set("resultStreamlineColorMap", true);
     set("resultVectorColorMap", true); set("resultVectorScale", 8);
     set("resultVectorColorMap", false); set("resultVectorColorMap", true);
     assert.equal(requests.length, 1);

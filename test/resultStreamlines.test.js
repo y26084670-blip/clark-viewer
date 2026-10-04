@@ -27,6 +27,27 @@ test("component interpolation preserves direction and extends nearest centres on
   s.vector.forEach((v,k)=>assert.ok(Math.abs(v-[0,-.7,.2][k])<1e-12));
   const edge=sampleStreamlineVector(d,[2,0,0]);assert.ok(Math.abs(edge.vector[0]-1.75)<1e-12);
 });
+test("each line point carries the magnitude of interpolated components, not a unit tangent or interpolated endpoint magnitudes",()=>{
+  const d=grid({dims:[2,1,1],lo:[0,0,0],hi:[2,2,2],field:x=>[1,2*(x-1),0]});
+  const line=trace([d]);let smallest=Infinity;
+  for(const path of line.paths) {
+    assert.ok(path.magnitudes instanceof Float64Array);assert.equal(path.magnitudes.length,path.positions.length/3);
+    for(let i=0;i<path.magnitudes.length;i++) {
+      const x=Math.max(.5,Math.min(1.5,path.positions[i*3]));
+      assert.ok(Math.abs(path.magnitudes[i]-Math.hypot(1,2*(x-1)))<1e-12);
+      smallest=Math.min(smallest,path.magnitudes[i]);
+    }
+  }
+  assert.ok(smallest<1.1,"equal endpoint magnitudes sqrt(2) must not produce a constant magnitude field");
+  assert.ok(line.paths.some(path=>path.magnitudes.some(value=>value>1.4)),"tracing direction normalization must not erase amplitude");
+});
+test("shared seam points keep the distinct magnitudes on each side of a material boundary",()=>{
+  const a=grid({dims:[1,1,1],lo:[0,0,0],hi:[1,1,1],field:()=>[2,0,0]});
+  const b=grid({key:"b",dims:[1,1,1],lo:[1,0,0],hi:[2,1,1],field:()=>[5,0,0]});
+  const line=trace([a,b]);
+  assert.ok(line.paths.some(path=>path.key==="b"));
+  for(const path of line.paths)assert.ok(path.magnitudes.every(value=>Math.abs(value-(path.key==="a"?2:5))<1e-12));
+});
 test("common-face neighbours continue the same line, while air gaps and opposing fields stop it",()=>{
   const a=grid({dims:[2,2,2],lo:[0,0,0],hi:[1,1,1]}),b=grid({key:"b",dims:[3,2,2],lo:[1,0,0],hi:[2,1,1]});
   const joined=trace([a,b]);assert.ok(xyz(joined).some(p=>p[0]>1.9));assert.ok(joined.paths.some(p=>p.key==="b"));

@@ -32,6 +32,13 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     checked: ${binding(checkbox[1], "checked")}, disabled: ${binding(checkbox[1], "disabled")},
     onChange: ${binding(checkbox[1], "onChange")},
     viewportColorMap: ${binding(source, "resultVectorColorMap")} })`;
+  const widthInput = source.match(/<input type="range"[^\n]+aria-label="Толщина линий, пиксели"[^\n]+/)[0];
+  const lineColorInput = source.match(/<input type="checkbox"[^\n]+aria-label="Цвет линий по модулю"[^\n]+/)[0];
+  const streamlineBindings = `() => ({ width: ${binding(widthInput, "value")},
+    onWidthInput: ${binding(widthInput, "onInput")}, colorMap: ${binding(lineColorInput, "checked")},
+    onColorChange: ${binding(lineColorInput, "onChange")},
+    viewportWidth: ${binding(source, "streamlineWidth")}, viewportColorMap: ${binding(source, "streamlineColorMap")},
+    paletteDisabled: paletteDisabled() })`;
   const cleanup = [];
   const effects = [];
   let requestSource, load;
@@ -44,6 +51,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
       colorMap, effectiveColorMap, palette, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
       addStreamline, deleteStreamline, changeStreamlineTolerance, streamlines, selectedLineStatus,
       controls: ${controlBindings},
+      streamlineControls: ${streamlineBindings},
       resultLayers, statusLayers, layerStatus, timeIndex, selections }; } return SourcesFields3D(props);`);
   const api = run(props, options.createGeometryViewSetting ?? ((name, initial) => [() => settings[name] ?? initial, value => { settings[name] = value; }]),
     options.createMemo ?? (compute => compute), callback => cleanup.push(callback),

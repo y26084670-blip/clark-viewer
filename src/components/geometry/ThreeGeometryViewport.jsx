@@ -52,7 +52,7 @@ import {
 
 import { updateResultVolumeMeshes } from "../../services/visualization/resultVolumeRenderer.js";
 import { updateResultSurfaceMeshes } from "../../services/visualization/resultSurfaceRenderer.js";
-import { streamlinePointerHandlers, updateStreamlineMeshes } from "../../services/visualization/resultStreamlineRenderer.js";
+import { loadStreamlineRenderer, resizeStreamlineMaterials, streamlinePointerHandlers, updateStreamlineMeshes } from "../../services/visualization/resultStreamlineRenderer.js";
 import { captureMovieCanvas } from "../../services/movie/movieCanvas.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../../services/movie/renderedFrameGate.js";
 
@@ -1504,6 +1504,7 @@ export function ThreeGeometryViewport(props) {
   let helperRoot;
   let resultLayers = [];
   let streamlines = [], selectedStreamline = null, streamlineRoot = null;
+  let streamlineWidth = 2, streamlineColorMap = true;
   let resultLayerStates = new Map();
   let resultVectorScale = 1;
   let resultVectorColorMap = false;
@@ -1763,6 +1764,7 @@ export function ThreeGeometryViewport(props) {
     if (width === viewportWidth && height === viewportHeight) return;
     viewportWidth = width; viewportHeight = height;
     renderer.setSize(viewportWidth, viewportHeight, false);
+    resizeStreamlineMaterials(streamlineRoot, viewportWidth, viewportHeight);
     resizeCameraProjection(camera, viewportWidth / viewportHeight);
     if (
       props.autoFit === true
@@ -1876,6 +1878,7 @@ export function ThreeGeometryViewport(props) {
       bounds.height,
     );
     raycaster.params.Line.threshold = unitsPerPixel * 5;
+    raycaster.params.Line2 = { threshold: 10 }; // Full width grows by 5 CSS px on either side.
     raycaster.params.Points.threshold = unitsPerPixel * 9;
 
     if (props.resultPickingOnly) {
@@ -1892,8 +1895,10 @@ export function ThreeGeometryViewport(props) {
       }
       if (action === "select") {
         const lines = streamlineRoot?.children.filter(child => child.visible) ?? [];
-        const lineHit = raycaster.intersectObjects(lines, false).find(candidate =>
+        const lineHits = raycaster.intersectObjects(lines, false).filter(candidate =>
           !geometryHit || candidate.distance <= geometryHit.distance + unitsPerPixel * 5);
+        // A visible seed marker takes precedence over another curve crossing it.
+        const lineHit = lineHits.find(candidate => candidate.object.userData.streamlineStart) ?? lineHits[0];
         props.onSelectStreamline?.(lineHit?.object.userData.streamlineId ?? null);
         return;
       }
@@ -2297,10 +2302,11 @@ export function ThreeGeometryViewport(props) {
     for (const root of resultLayerRoots(resultLayerStates)) {
       if (root.parent !== helperRoot) helperRoot.add(root);
     }
-    setScalarLegends([...resultLayerStates.values()].flatMap(state => state.legends));
     streamlineRoot ??= new THREE.Group();
     streamlineRoot.name = "result-streamlines";
-    updateStreamlineMeshes(THREE, streamlineRoot, streamlines, { filters: activeResultFilters, selected: selectedStreamline });
+    updateStreamlineMeshes(THREE, streamlineRoot, streamlines, { filters: activeResultFilters, selected: selectedStreamline,
+      width: streamlineWidth, colorMap: streamlineColorMap, palette: resultPalette, resolution: [viewportWidth, viewportHeight] });
+    setScalarLegends([...resultLayerStates.values()].flatMap(state => state.legends).concat(streamlineRoot.userData.colorLegends));
     if (streamlineRoot.parent !== helperRoot) helperRoot.add(streamlineRoot);
     requestRender();
   };
@@ -2478,6 +2484,7 @@ export function ThreeGeometryViewport(props) {
     void Promise.all([
       import("three"),
       import("three/addons/controls/OrbitControls.js"),
+      loadStreamlineRenderer(),
     ]).then(([threeModule, controlsModule]) => {
       if (disposed || !host) return;
       THREE = threeModule;
@@ -2637,6 +2644,8 @@ export function ThreeGeometryViewport(props) {
     resultVectorScale = props.resultVectorScale ?? 1;
     streamlines = props.resultStreamlines ?? [];
     selectedStreamline = props.selectedStreamline ?? null;
+    streamlineWidth = props.streamlineWidth ?? 2;
+    streamlineColorMap = props.streamlineColorMap !== false;
     if (!ready()) return;
     vectorsDirty = true;
     requestRender();
@@ -2694,6 +2703,9 @@ export function ThreeGeometryViewport(props) {
     controls?.removeEventListener("end", handleControlsEnd);
     controls?.dispose();
     disposeObject(geometryRoot);
+    // Streamline borders share their parent's geometry: release it once through
+    // the owning renderer before the generic helper traversal.
+    if (THREE && streamlineRoot) updateStreamlineMeshes(THREE, streamlineRoot, []);
     disposeObject(helperRoot);
     disposeObject(axesRoot);
     if (renderer?.domElement) {

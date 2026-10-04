@@ -211,7 +211,13 @@ export function calculateStreamlines({domains:inputs,seeds,tolerance=STREAMLINE_
     for(const branch of [backward,forward].filter(Boolean)) for(let i=0;i<branch.pieces.length;i++) {
       const piece=branch.pieces[i],end=branch.pieces[i+1]?.start??branch.points.length-1;
       const points=branch.points.slice(piece.start,end+1);
-      if(points.length>1)paths.push({...piece,positions:Float64Array.from(points.flat())});
+      if(points.length>1) {
+        // Sample the original interpolated components, never the normalized
+        // integration direction. Shared seam endpoints use each side's field.
+        const owner=domains.find(item=>item.key===piece.key);
+        const magnitudes=Float64Array.from(points,point=>sampleStreamlineVector(owner,point)?.magnitude??NaN);
+        paths.push({...piece,positions:Float64Array.from(points.flat()),magnitudes});
+      }
     }
     return {...base,paths,start,length:forward.length+(backward?.length??0),closed:forward.reason==="closed",
       reasons:[...new Set([backward?.reason,forward.reason].filter(Boolean))],tolerance};

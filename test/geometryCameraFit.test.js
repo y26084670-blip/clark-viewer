@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
 import { fitCameraToVisibleObjects } from "../src/services/visualization/geometryCameraFit.js";
+import { loadStreamlineRenderer, updateStreamlineMeshes } from "../src/services/visualization/resultStreamlineRenderer.js";
+
+await loadStreamlineRenderer();
 
 const close = (actual, expected, tolerance = 1e-8) =>
   assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} != ${expected}`);
@@ -83,6 +86,22 @@ test("Narrow viewport and explicit padding determine the tight orthographic fit"
   close(camera.top, 4.08);
   close(assertVisible(camera, values, 1.02), 1 / 1.02);
 });
+test("wide streamlines frame their transformed endpoints instead of the shader quad, with hidden pieces excluded", () => {
+  for(const projection of ["orthographic","perspective"]) {
+    const {camera,controls}=cameraSetup(projection),root=new THREE.Group();
+    const values=[[100,20,-30],[108,22,-30],[112,24,-30]];
+    const path={source:{schemaId:"elements",recordIndex:0},instance:{ls:0,as:0,ps:0},positions:Float64Array.from(values.flat()),magnitudes:new Float64Array([1,2,3])};
+    const hidden={...path,source:{schemaId:"elements",recordIndex:1},positions:new Float64Array([1e6,1e6,0,2e6,1e6,0])};
+    updateStreamlineMeshes(THREE,root,[{id:1,quantityKey:"M",paths:[path,hidden]}],{selected:1,width:10,
+      filters:{objectModes:{elements:"selected"},selections:{elements:[0]}},resolution:[800,400]});
+    root.rotation.z=Math.PI/6;root.position.set(5,-8,10);root.updateMatrixWorld(true);
+    const world=values.map(p=>new THREE.Vector3().fromArray(p).applyMatrix4(root.matrixWorld).toArray());
+    assert.equal(fitCameraToVisibleObjects(THREE,camera,controls,[root]),true);
+    close(assertVisible(camera,world),1/1.08,1e-7);
+    assert.ok(controls.target.length()<300,"hidden curves and unit shader quads cannot affect framing");
+    updateStreamlineMeshes(THREE,root,[]);
+  }
+});
 
 test("Perspective fit contains different depths and fills at least one projected axis", () => {
   for (const aspect of [0.5, 2]) {
@@ -93,6 +112,22 @@ test("Perspective fit contains different depths and fills at least one projected
     close(assertVisible(camera, values), 1 / 1.08);
     close(camera.quaternion.angleTo(orientation), 0, 1e-7);
     assert.ok(camera.near > 0 && camera.far > camera.near);
+  }
+});
+
+test("seed-only streamlines frame saved world coordinates and exclude hidden diamonds",()=>{
+  for(const projection of ["orthographic","perspective"]) {
+    const {camera,controls}=cameraSetup(projection),root=new THREE.Group();
+    const values=[[100,20,-30],[112,24,-30]];
+    const lines=[...values,[1e6,1e6,0]].map((start,id)=>({id,start,source:{schemaId:"elements",recordIndex:id},
+      instance:{ls:0,as:0,ps:0},paths:[]}));
+    updateStreamlineMeshes(THREE,root,lines,{filters:{objectModes:{elements:"selected"},selections:{elements:[0,1]}},resolution:[800,400]});
+    root.position.set(5,-8,10);root.updateMatrixWorld(true);
+    const world=values.map(p=>new THREE.Vector3().fromArray(p).applyMatrix4(root.matrixWorld).toArray());
+    assert.equal(fitCameraToVisibleObjects(THREE,camera,controls,[root]),true);
+    close(assertVisible(camera,world),1/1.08,1e-7);
+    assert.deepEqual(controls.target.toArray(),[111,14,-20]);
+    updateStreamlineMeshes(THREE,root,[]);
   }
 });
 

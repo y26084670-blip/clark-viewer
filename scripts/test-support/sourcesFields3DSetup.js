@@ -3,6 +3,9 @@ import { QUANTITIES } from "../../src/services/results/resultMappings.js";
 import { resultDisplaySelection } from "../../src/services/results/resultRequests.js";
 import { RESULT_LAYER_GROUPS } from "../../src/services/results/resultLayerDefinitions.js";
 import { createResultLayerReader } from "../../src/services/results/resultLayerRequests.js";
+import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_REASONS } from "../../src/services/visualization/resultStreamlineField.js";
+
+const streamlineSessions = new WeakMap();
 
 // Execute the actual component setup, excluding JSX. Memo reads are evaluated on
 // demand and only lifecycle/frame-hook adapters are replaced; this verifies the
@@ -30,21 +33,28 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     onChange: ${binding(checkbox[1], "onChange")},
     viewportColorMap: ${binding(source, "resultVectorColorMap")} })`;
   const cleanup = [];
+  const effects = [];
   let requestSource, load;
   let state = { frame: null, requested: null, error: "", loading: false };
-  const run = new Function("props", "createGeometryViewSetting", "createMemo", "onCleanup",
+  const run = new Function("props", "createGeometryViewSetting", "createMemo", "onCleanup", "createSignal", "createEffect",
+    "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_REASONS", "streamlineSessions",
     "QUANTITIES", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
     "createMovieTabAdapter", "completedMovieFrame",
     `${setup} return { quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
-      colorMap, effectiveColorMap, palette, scale,
+      colorMap, effectiveColorMap, palette, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
+      addStreamline, deleteStreamline, changeStreamlineTolerance, streamlines, selectedLineStatus,
       controls: ${controlBindings},
       resultLayers, statusLayers, layerStatus, timeIndex, selections }; } return SourcesFields3D(props);`);
   const api = run(props, options.createGeometryViewSetting ?? ((name, initial) => [() => settings[name] ?? initial, value => { settings[name] = value; }]),
-    options.createMemo ?? (compute => compute), callback => cleanup.push(callback), QUANTITIES, resultDisplaySelection,
+    options.createMemo ?? (compute => compute), callback => cleanup.push(callback),
+    options.createSignal ?? (initial => { let value = initial; return [() => value, next => { value = typeof next === "function" ? next(value) : next; }]; }),
+    options.createEffect ?? (callback => { effects.push(callback); callback(); }),
+    STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_REASONS, streamlineSessions, QUANTITIES, resultDisplaySelection,
     RESULT_LAYER_GROUPS, options.readerFactory ?? createResultLayerReader,
     (source, reader) => { requestSource = source; load = reader; options.observeRequest?.(source); return () => state; },
     options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame);
   return { ...api, request: () => requestSource(), load: request => load(request),
     setResultState(next) { state = next; },
+    flushEffects() { effects.forEach(callback => callback()); },
     close() { cleanup.splice(0).forEach(callback => callback()); } };
 }

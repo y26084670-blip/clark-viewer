@@ -692,6 +692,10 @@ export function ResultsGeometryViewport(props) {
             onCaptureReady={props.onCaptureReady}
             geometryRevision={props.model}
             resultLayers={props.resultLayers}
+            resultStreamlines={props.resultStreamlines}
+            selectedStreamline={props.selectedStreamline}
+            onSelectStreamline={props.onSelectStreamline}
+            onResultNodeDoubleClick={props.onResultNodeDoubleClick}
             resultVectorScene={props.resultVectorScene}
             resultVectorColorMap={props.resultVectorColorMap}
             resultPalette={props.resultPalette}
@@ -765,4 +769,3 @@ export function ResultsGeometryViewport(props) {
       </section>
   );
 }
-

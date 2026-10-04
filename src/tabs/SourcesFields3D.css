@@ -1,6 +1,9 @@
 .sources-fields-toolbar {
   gap: 6px 12px;
 }
+.source-streamline-toolbar { gap: 6px 12px; }
+.source-streamline-toolbar select { max-width: min(360px, 35vw); }
+.source-streamline-status { font-size: .8rem; color: #526273; }
 .sources-fields-toolbar .source-quantity-selector {
   flex-wrap: wrap;
   gap: 4px;

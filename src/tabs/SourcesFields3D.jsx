@@ -1,5 +1,5 @@
 import { createGeometryViewSetting } from "../services/visualization/geometryViewSettings.js";
-import { createMemo, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { ObjectList } from "../components/ObjectList.jsx";
 import { ResultsGeometryViewport } from "../components/geometry/ResultsGeometryViewport.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
@@ -9,9 +9,48 @@ import { RESULT_LAYER_GROUPS, RESULT_LAYER_QUANTITY_LABELS } from "../services/r
 import { createResultLayerReader } from "../services/results/resultLayerRequests.js";
 import { RESULT_SCALAR_PALETTES } from "../services/visualization/resultScalarColors.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
+import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_REASONS } from "../services/visualization/resultStreamlineField.js";
 import "./SourcesFields3D.css";
 
+// Switching tabs unmounts this component. Retain only small seed descriptors,
+// not HDF5 buffers or worker/GPU resources, for the lifetime of the loaded task.
+const streamlineSessions = new WeakMap();
+
 export function SourcesFields3D(props) {
+  const savedStreamlines = props.task && streamlineSessions.get(props.task);
+  const [streamlineSeeds, setStreamlineSeeds] = createSignal(savedStreamlines?.seeds ?? []);
+  const [selectedStreamline, setSelectedStreamline] = createSignal(savedStreamlines?.selected ?? null);
+  const [streamlineTolerance, setStreamlineTolerance] = createSignal(savedStreamlines?.tolerance ?? STREAMLINE_DEFAULT_TOLERANCE);
+  const [streamlineNotice, setStreamlineNotice] = createSignal("");
+  let nextStreamlineId = savedStreamlines?.nextId ?? 1, streamlineTask = props.task;
+  createEffect(() => {
+    if (props.task === streamlineTask) return;
+    streamlineSessions.delete(streamlineTask);
+    streamlineTask = props.task; setStreamlineSeeds([]); setSelectedStreamline(null); setStreamlineNotice("");
+    setStreamlineTolerance(STREAMLINE_DEFAULT_TOLERANCE); nextStreamlineId = 1;
+  });
+  onCleanup(() => {
+    if (streamlineTask && streamlineTask === props.task) streamlineSessions.set(streamlineTask, {
+      seeds: streamlineSeeds(), selected: selectedStreamline(), tolerance: streamlineTolerance(), nextId: nextStreamlineId,
+    });
+  });
+  function addStreamline(vector) {
+    if (vector?.source?.schemaId !== "elements" || QUANTITIES[vector.quantityKey]?.components !== 3
+      || !Number.isSafeInteger(vector.node) || displayed()?.request.task !== props.task) return;
+    if (streamlineSeeds().length >= STREAMLINE_LIMITS.lines) { setStreamlineNotice("Доступно 64 линии; удалите ненужную линию."); return; }
+    const seed = { id: nextStreamlineId++, source: vector.source, instance: vector.instance,
+      node: vector.node, quantityKey: vector.quantityKey };
+    setStreamlineSeeds(previous => [...previous, seed]); setSelectedStreamline(seed.id); setStreamlineNotice("");
+  }
+  function deleteStreamline() {
+    const remaining = streamlineSeeds().filter(seed => seed.id !== selectedStreamline());
+    setStreamlineSeeds(remaining); setSelectedStreamline(remaining.at(-1)?.id ?? null); setStreamlineNotice("");
+  }
+  function changeStreamlineTolerance(event) {
+    const value = event.currentTarget.valueAsNumber / 100;
+    if (Number.isFinite(value) && value >= 1e-7 && value <= 1e-2) setStreamlineTolerance(value);
+    else event.currentTarget.value = streamlineTolerance() * 100;
+  }
   const [elementsQuantity, setElementsQuantity] = createGeometryViewSetting("resultElementsQuantity", "M");
   const [regionsQuantity, setRegionsQuantity] = createGeometryViewSetting("resultRegionsQuantity", "none");
   const [virtualQuantity, setVirtualQuantity] = createGeometryViewSetting("resultVirtualQuantity", "none");
@@ -48,10 +87,16 @@ export function SourcesFields3D(props) {
   onCleanup(() => layerReader.close());
   // Even a completely disabled frame reaches the reader so it can release its
   // workers; no HDF5 is read, and geometry follows the requested time immediately.
-  const result = useResultFrame(() => props.task && ({ task: props.task, time: props.time, layers: requestedLayers() }),
+  const result = useResultFrame(() => props.task && ({ task: props.task, time: props.time, layers: requestedLayers(),
+    streamlineSeeds: streamlineSeeds(), streamlineTolerance: streamlineTolerance() }),
     request => layerReader.read(request));
   const displayed = () => result().frame;
   const value = () => displayed()?.value;
+  const streamlines = createMemo(() => (value()?.streamlines ?? []).filter(line => streamlineSeeds().some(seed => seed.id === line.id)));
+  const selectedLineStatus = () => {
+    const line = streamlines().find(item => item.id === selectedStreamline());
+    return line?.error || line?.reasons?.map(reason => STREAMLINE_REASONS[reason] ?? reason).join(" · ") || "";
+  };
   const layerMetadata = layer => ({ ...layer,
     groupLabel: RESULT_LAYER_GROUPS.find(group => group.key === layer.key)?.label ?? layer.key,
     color: layer.quantityKey === "J" ? 0xff5454 : layer.quantityKey === "M" ? 0x44dd66 : 0x44bbff,
@@ -82,7 +127,7 @@ export function SourcesFields3D(props) {
       + volume + (layer.volumeNotice ? ` · ${layer.volumeNotice}` : "")
       + (layer.sampled ? " · показана выборка узлов" : "");
   };
-  const timeIndex = () => hasRequestedResults() ? displayed()?.request.time ?? props.time : props.time;
+  const timeIndex = () => hasRequestedResults() || streamlineSeeds().length ? displayed()?.request.time ?? props.time : props.time;
   const selections = createMemo(() => ({
     elements: props.elements.map(id => id - 1), regions: props.regions.map(id => id - 1),
   }));
@@ -118,15 +163,34 @@ export function SourcesFields3D(props) {
           <For each={RESULT_SCALAR_PALETTES}>{name => <option value={name}>{name}</option>}</For>
         </select></label>
       </div>
+      <Show when={streamlineSeeds().length}>
+        <div class="plot-toolbar source-streamline-toolbar">
+          <label>Линия <select aria-label="Выбранная линия поля" value={selectedStreamline() ?? ""}
+            onChange={event => setSelectedStreamline(Number(event.currentTarget.value) || null)}>
+            <option value="">не выбрана</option>
+            <For each={streamlineSeeds()}>{seed => <option value={seed.id}>
+              №{seed.id} · {QUANTITIES[seed.quantityKey]?.label} · Элемент №{seed.source.recordIndex + 1}
+            </option>}</For>
+          </select></label>
+          <button type="button" disabled={selectedStreamline() === null} onClick={deleteStreamline}>Стереть линию</button>
+          <label>Допуск, % шага сетки <input type="number" min="0.00001" max="1" step="0.01"
+            aria-label="Допуск линии, процент шага сетки" value={streamlineTolerance() * 100} onChange={changeStreamlineTolerance} /></label>
+          <span class="source-streamline-status">{selectedLineStatus()}</span>
+        </div>
+      </Show>
       <div class="plot-status sources-fields-status" role="status">
         <For each={statusLayers()}>{layer => <span classList={{ "source-layer-error": layer.state === "error" }}><b>{layer.groupLabel}:</b> {layerStatus(layer)}</span>}</For>
         <Show when={hasRequestedResults() && result().loading && displayed()}><span>Чтение результатов…</span></Show>
         <Show when={hasRequestedResults() && displayed()}><span>Показан шаг {displayed().request.time}</span></Show>
+        <Show when={streamlineNotice()}><span class="source-layer-error">{streamlineNotice()}</span></Show>
+        <Show when={streamlineSeeds().length && result().loading}><span>Расчёт линий…</span></Show>
       </div>
       <div class="embedded-geometry">
         <ResultsGeometryViewport open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={timeIndex()}
           selections={selections()} resultLayers={resultLayers()}
+          resultStreamlines={streamlines()} selectedStreamline={selectedStreamline()}
+          onSelectStreamline={setSelectedStreamline} onResultNodeDoubleClick={addStreamline}
           captureFrameKey={displayed()} onCaptureReady={movie.onCaptureReady}
           resultVectorScale={scale()} resultPickingOnly={true}
           resultVectorColorMap={effectiveColorMap()} resultPalette={palette()} />

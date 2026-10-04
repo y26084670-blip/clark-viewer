@@ -1,4 +1,4 @@
-import { elementLayout, regionLayout, virtualLayout } from "./resultMappings.js";
+import { elementLayout, regionLayout, virtualLayout, QUANTITIES } from "./resultMappings.js";
 import { fmmAxis, isAnisotropic } from "./fmmCharacteristics.js";
 
 const number = value => Number.isFinite(value) ? String(Number(value.toPrecision(8))) : "—";
@@ -46,10 +46,13 @@ export function scalarScene(frames, quantity) {
 
 export function vectorScene(frames, quantity) {
   const vectors = [];
+  const quantityKey = Object.keys(QUANTITIES).find(key => QUANTITIES[key] === quantity);
   let maximum = 0;
   let extent = 0;
   for (const { frame, record } of frames) {
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+    const copyCount = quantity.group === "elements" ? elementLayout(record,
+      quantity.file === "HV" || quantity.file === "AV").copies.reduce((a,b)=>a*b,1) : 1;
     for (let row = 0; row < frame.count; row++) {
       const origin = pointAt(frame, row);
       const offset = row * frame.stride + quantity.offset;
@@ -72,7 +75,8 @@ export function vectorScene(frames, quantity) {
       }
       vectors.push({ origin, vector, magnitude, kind: "magnetization", characteristicSize: 1,
         source: { schemaId: quantity.group, recordIndex: record.recordIndex, name: record.name }, instance: { ls, as: az, ps },
-        quantity: quantity.label, unit: quantity.unit });
+        quantity: quantity.label, unit: quantity.unit, quantityKey, savedRow,
+        node: quantity.group === "elements" ? Math.floor(savedRow / copyCount) : null });
     }
     extent = Math.max(extent, Math.hypot(...max.map((v, i) => v - min[i])) || 0);
   }

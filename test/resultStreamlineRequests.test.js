@@ -51,9 +51,12 @@ test("one saved image is read in full by stride; all six fields preserve factors
     assert.equal(f.reads[0].start,1);assert.equal(f.reads[0].every,2);assert.equal(f.reads[0].count,47);
     assert.ok(received.domains[0].vectors[0]=== (QUANTITIES[quantityKey].factor??1));
     assert.ok(first.paths.every(path=>path.instance.ps===1));
+    const factor=QUANTITIES[quantityKey].factor??1;
+    assert.ok(first.paths.every(path=>path.magnitudes.every(value=>Math.abs(value-factor)<factor*1e-12)));
     const later=(await readResultStreamlines({task:f.task,time:1,streamlineSeeds:[f.seed]},p))[0];
     assert.equal(later.error,undefined);assert.notDeepEqual(later.paths[0].positions,first.paths[0].positions);
     assert.deepEqual(later.start,first.start);
+    assert.ok(later.paths.every(path=>path.magnitudes.every(value=>Math.abs(value-2*factor)<factor*1e-12)));
   }
 });
 test("all virtual coil directions respect solver axis reversals, unequal dimensions and centre coordinates",async()=>{
@@ -122,6 +125,9 @@ test("real worker transfers independent input buffers and returns full curves wi
   try {
     const lines=await readResultStreamlines({task:f.task,time:0,streamlineSeeds:[f.seed]},p);
     assert.equal(lines[0].error,undefined);assert.ok(lines[0].paths[0].positions instanceof Float64Array);
+    assert.ok(lines[0].paths[0].magnitudes instanceof Float64Array);
+    assert.equal(lines[0].paths[0].magnitudes.length,lines[0].paths[0].positions.length/3);
+    assert.ok(lines[0].paths.every(path=>path.magnitudes.every(Number.isFinite)));
     assert.equal(f.frames[0].values.byteLength,48*6*8);
   } finally {p.close();}
 });

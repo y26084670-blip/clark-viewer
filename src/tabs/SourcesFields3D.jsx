@@ -57,6 +57,8 @@ export function SourcesFields3D(props) {
   const [scale, setScale] = createGeometryViewSetting("resultVectorScale", 1);
   const [colorMap, setColorMap] = createGeometryViewSetting("resultVectorColorMap", false);
   const [palette, setPalette] = createGeometryViewSetting("resultPalette", "Rainbow");
+  const [streamlineWidth, setStreamlineWidth] = createGeometryViewSetting("resultStreamlineWidth", 2);
+  const [streamlineColorMap, setStreamlineColorMap] = createGeometryViewSetting("resultStreamlineColorMap", true);
   const [elementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode] = createGeometryViewSetting("regionsMode", "all");
   const quantities = {
@@ -71,6 +73,8 @@ export function SourcesFields3D(props) {
   // Scalars require a color map, but must not replace the user's vector-mode
   // preference when a later quantity selection contains only vectors again.
   const effectiveColorMap = createMemo(() => hasScalars() || colorMap());
+  const paletteDisabled = createMemo(() => !hasScalars() && !(hasVectors() && colorMap())
+    && !(streamlineSeeds().length && streamlineColorMap()));
   const volumeMode = createMemo(() => effectiveColorMap() && scale() >= 10 - 1e-9);
   const requestedLayers = createMemo(() => RESULT_LAYER_GROUPS.map(group => {
     const records = group.key === "regions" ? props.task?.regions ?? []
@@ -92,7 +96,10 @@ export function SourcesFields3D(props) {
     request => layerReader.read(request));
   const displayed = () => result().frame;
   const value = () => displayed()?.value;
-  const streamlines = createMemo(() => (value()?.streamlines ?? []).filter(line => streamlineSeeds().some(seed => seed.id === line.id)));
+  const streamlines = createMemo(() => (value()?.streamlines ?? [])
+    .filter(line => streamlineSeeds().some(seed => seed.id === line.id))
+    .map(line => ({ ...line, quantity: QUANTITIES[line.quantityKey]?.label ?? line.quantityKey,
+      unit: QUANTITIES[line.quantityKey]?.unit ?? "" })));
   const selectedLineStatus = () => {
     const line = streamlines().find(item => item.id === selectedStreamline());
     return line?.error || line?.reasons?.map(reason => STREAMLINE_REASONS[reason] ?? reason).join(" · ") || "";
@@ -159,7 +166,7 @@ export function SourcesFields3D(props) {
           </label>
           <label><input type="checkbox" checked={effectiveColorMap()} disabled={hasScalars()} onChange={event => !hasScalars() && setColorMap(event.currentTarget.checked)} /> Цветовая карта</label>
         </Show>
-        <label>Палитра <select aria-label="Палитра" value={palette()} disabled={!hasScalars() && !(hasVectors() && colorMap())} onChange={event => setPalette(event.currentTarget.value)}>
+        <label>Палитра <select aria-label="Палитра" value={palette()} disabled={paletteDisabled()} onChange={event => setPalette(event.currentTarget.value)}>
           <For each={RESULT_SCALAR_PALETTES}>{name => <option value={name}>{name}</option>}</For>
         </select></label>
       </div>
@@ -175,6 +182,11 @@ export function SourcesFields3D(props) {
           <button type="button" disabled={selectedStreamline() === null} onClick={deleteStreamline}>Стереть линию</button>
           <label>Допуск, % шага сетки <input type="number" min="0.00001" max="1" step="0.01"
             aria-label="Допуск линии, процент шага сетки" value={streamlineTolerance() * 100} onChange={changeStreamlineTolerance} /></label>
+          <label class="source-streamline-width">Толщина
+            <input type="range" min="1" max="10" step="1" aria-label="Толщина линий, пиксели" value={streamlineWidth()} onInput={event => setStreamlineWidth(event.currentTarget.valueAsNumber)} />
+            <span>{streamlineWidth()} px</span>
+          </label>
+          <label><input type="checkbox" aria-label="Цвет линий по модулю" checked={streamlineColorMap()} onChange={event => setStreamlineColorMap(event.currentTarget.checked)} /> Цвет по модулю</label>
           <span class="source-streamline-status">{selectedLineStatus()}</span>
         </div>
       </Show>
@@ -190,6 +202,7 @@ export function SourcesFields3D(props) {
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={timeIndex()}
           selections={selections()} resultLayers={resultLayers()}
           resultStreamlines={streamlines()} selectedStreamline={selectedStreamline()}
+          streamlineWidth={streamlineWidth()} streamlineColorMap={streamlineColorMap()}
           onSelectStreamline={setSelectedStreamline} onResultNodeDoubleClick={addStreamline}
           captureFrameKey={displayed()} onCaptureReady={movie.onCaptureReady}
           resultVectorScale={scale()} resultPickingOnly={true}

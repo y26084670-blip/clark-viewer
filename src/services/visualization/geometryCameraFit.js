@@ -22,6 +22,20 @@ function visitVisibleVertices(THREE, roots, camera, viewBasis, visit) {
       if (!position || !object.layers.test(camera.layers)) return;
       const materials = Array.isArray(object.material) ? object.material : [object.material];
       if (!materials.some(materialVisible)) return;
+      if (object.isLineSegments2) {
+        // Wide lines render a unit quad instanced between these endpoints.
+        // Framing the quad's "position" attribute loses the actual curve.
+        const start=geometry.getAttribute("instanceStart"),end=geometry.getAttribute("instanceEnd");
+        if (!start || !end || geometry.drawRange.count<=0
+          || geometry.drawRange.start >= (geometry.index?.count ?? position.count)) return;
+        transform.multiplyMatrices(viewBasis,object.matrixWorld);
+        const count=Math.min(start.count,end.count,geometry.instanceCount);
+        for(let i=0;i<count;i++)for(const attribute of [start,end]) {
+          vertex.fromBufferAttribute(attribute,i).applyMatrix4(transform);
+          if(Number.isFinite(vertex.x)&&Number.isFinite(vertex.y)&&Number.isFinite(vertex.z))visit(vertex);
+        }
+        return;
+      }
       const index = geometry.index;
       const count = index?.count ?? position.count;
       const drawStart = Math.max(0, geometry.drawRange.start);

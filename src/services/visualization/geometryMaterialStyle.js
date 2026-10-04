@@ -95,8 +95,9 @@ export function classifyGeometryMaterial(record = {}, general = {}) {
     }
 
     if (Number(record?.model) === 2) {
-        const magnetic = enabled(general?.htcMu);
-        const current = enabled(general?.htcRo);
+        // Canonical keys take precedence by presence, including explicit false.
+        const magnetic = enabled(Object.hasOwn(general ?? {}, "htsMu") ? general.htsMu : general?.htcMu);
+        const current = enabled(Object.hasOwn(general ?? {}, "htsRo") ? general.htsRo : general?.htcRo);
 
         if (magnetic && current) return GEOMETRY_MATERIAL_KINDS.HTSC_BOTH;
         if (magnetic) return GEOMETRY_MATERIAL_KINDS.HTSC_MAGNETIC;

@@ -56,7 +56,7 @@ function metadata(counts) {
   steps: [{ key: "000000", index: 0 }] };
 }
 
-test("FMM filtering keeps original MH ranges around magnets and HTC materials", () => {
+test("FMM filtering keeps original MH ranges around magnets and HTS materials", () => {
   const elements = [
     { ...material, id: 1, targ: 1, dp: [[2], [1], [1]] },
     { ...material, id: 2 },

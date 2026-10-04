@@ -4,6 +4,8 @@ import { readObjectFrames, resultObjects } from "./resultRequests.js";
 import { scalarScene, vectorScene } from "./resultPlots.js";
 import { readResultVolumeFrame, VOLUME_MAX_NODES } from "./resultVolumeRequests.js";
 import { createResultVolumeProcessor } from "./resultVolumeProcessor.js";
+import { createResultStreamlineProcessor } from "./resultStreamlineProcessor.js";
+import { readResultStreamlines } from "./resultStreamlineRequests.js";
 
 export const RESULT_LAYER_POINT_BUDGET = 5000;
 
@@ -72,8 +74,11 @@ export function allocateResultLayerPointBudgets(layers, budget = RESULT_LAYER_PO
  * serializes reads and coalesces time changes. Each active volume group owns
  * its own lazy processor, preserving its spatial plan across time frames.
  */
-export function createResultLayerReader({ processorFactory = createResultVolumeProcessor } = {}) {
+export function createResultLayerReader({ processorFactory = createResultVolumeProcessor,
+  streamlineProcessorFactory = createResultStreamlineProcessor } = {}) {
   const processors = new Map();
+  let streamlineProcessor = null;
+  let streamlineFrame = null;
   let closed = false, active = false;
   function release(key) {
     processors.get(key)?.processor.close(); processors.delete(key);
@@ -137,12 +142,39 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
           if (item.status === "rejected") release(layer.key);
         });
         const layers = prepared.map(layer => layer.result);
-        return { layers, errors: layers.filter(layer => layer.error).map(layer => ({ key: layer.key, message: layer.error })) };
+        let streamlines = [];
+        if (request.streamlineSeeds?.length) {
+          streamlineProcessor ??= streamlineProcessorFactory();
+          const compatible = streamlineFrame?.task === request.task && streamlineFrame.time === request.time
+            && streamlineFrame.tolerance === request.streamlineTolerance;
+          const cached = compatible ? streamlineFrame.lines : new Map();
+          const key = seed => JSON.stringify([seed.id, seed.quantityKey, seed.source.recordIndex,
+            seed.instance.ls, seed.instance.as, seed.instance.ps, seed.node]);
+          const missing = request.streamlineSeeds.filter(seed => !cached.has(key(seed)));
+          const calculated = missing.length ? await readResultStreamlines({ ...request, streamlineSeeds: missing }, streamlineProcessor) : [];
+          missing.forEach(seed => {
+            const line = calculated.find(item => item.id === seed.id);
+            if (line && !line.error) cached.set(key(seed), line);
+          });
+          streamlines = request.streamlineSeeds.map(seed => cached.get(key(seed)) ?? calculated.find(item => item.id === seed.id)).filter(Boolean);
+          streamlineFrame = { task: request.task, time: request.time, tolerance: request.streamlineTolerance,
+            lines: new Map(request.streamlineSeeds.filter(seed => cached.has(key(seed))).map(seed => [key(seed), cached.get(key(seed))])) };
+        } else {
+          if (streamlineProcessor) { streamlineProcessor.close(); streamlineProcessor = null; }
+          streamlineFrame = null;
+        }
+        if (closed) throw cancelled();
+        return { layers, streamlines, errors: [
+          ...layers.filter(layer => layer.error).map(layer => ({ key: layer.key, message: layer.error })),
+          ...streamlines.filter(line => line.error).map(line => ({ key: `line-${line.id}`, message: line.error })),
+        ] };
       } finally { active = false; }
     },
     close() {
       closed = true;
       for (const key of processors.keys()) release(key);
+      streamlineProcessor?.close(); streamlineProcessor = null;
+      streamlineFrame = null;
     },
   };
 }

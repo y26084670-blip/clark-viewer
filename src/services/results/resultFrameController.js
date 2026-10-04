@@ -2,6 +2,8 @@
 // owned by the task; an already executing HDF5 read is allowed to finish.
 export function sameFrameContext(a, b) {
   if (!a || !b || a.task !== b.task || a.quantityKey !== b.quantityKey || a.budget !== b.budget) return false;
+  // Adding seeds/changing tracing tolerance may retain the previous displayed
+  // frame while recalculating. Request identity still gates movie capture.
   if (Array.isArray(a.layers) || Array.isArray(b.layers)) {
     if (!Array.isArray(a.layers) || !Array.isArray(b.layers) || a.layers.length !== b.layers.length) return false;
     const right = new Map(b.layers.map(layer => [layer.key, layer]));

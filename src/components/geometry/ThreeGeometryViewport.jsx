@@ -52,6 +52,7 @@ import {
 
 import { updateResultVolumeMeshes } from "../../services/visualization/resultVolumeRenderer.js";
 import { updateResultSurfaceMeshes } from "../../services/visualization/resultSurfaceRenderer.js";
+import { streamlinePointerHandlers, updateStreamlineMeshes } from "../../services/visualization/resultStreamlineRenderer.js";
 import { captureMovieCanvas } from "../../services/movie/movieCanvas.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../../services/movie/renderedFrameGate.js";
 
@@ -1502,6 +1503,7 @@ export function ThreeGeometryViewport(props) {
   let geometryRoot;
   let helperRoot;
   let resultLayers = [];
+  let streamlines = [], selectedStreamline = null, streamlineRoot = null;
   let resultLayerStates = new Map();
   let resultVectorScale = 1;
   let resultVectorColorMap = false;
@@ -1535,6 +1537,7 @@ export function ThreeGeometryViewport(props) {
   let pendingPointer;
   let handlePointerMove;
   let handlePointerLeave;
+  let handlePointerDown, handleClick, handleDoubleClick;
   let handleControlsStart;
   let handleControlsEnd;
   let renderFrame = 0;
@@ -1832,7 +1835,7 @@ export function ThreeGeometryViewport(props) {
     setHoverTooltip({ left, text, top });
   };
 
-  const pickAtPointer = (pointer) => {
+  const pickAtPointer = (pointer, action = "hover") => {
     if (
       !pointer ||
       !renderer ||
@@ -1883,6 +1886,17 @@ export function ThreeGeometryViewport(props) {
       const hit = hits.find(candidate => !geometryHit || candidate.distance <= geometryHit.distance + unitsPerPixel * 5);
       const scalar = resultHitScalar(hit);
       const vector = resultHitVector(hit);
+      if (action === "seed") {
+        if (vector?.source?.schemaId === "elements") props.onResultNodeDoubleClick?.(vector);
+        return;
+      }
+      if (action === "select") {
+        const lines = streamlineRoot?.children.filter(child => child.visible) ?? [];
+        const lineHit = raycaster.intersectObjects(lines, false).find(candidate =>
+          !geometryHit || candidate.distance <= geometryHit.distance + unitsPerPixel * 5);
+        props.onSelectStreamline?.(lineHit?.object.userData.streamlineId ?? null);
+        return;
+      }
       if (scalar) showTooltip(formatResultScalarTooltip(scalar), x, y);
       else if (vector) showTooltip(formatResultVectorTooltip(vector, { showMagnitude: resultVectorColorMap }), x, y);
       else setHoverTooltip(null);
@@ -2284,6 +2298,10 @@ export function ThreeGeometryViewport(props) {
       if (root.parent !== helperRoot) helperRoot.add(root);
     }
     setScalarLegends([...resultLayerStates.values()].flatMap(state => state.legends));
+    streamlineRoot ??= new THREE.Group();
+    streamlineRoot.name = "result-streamlines";
+    updateStreamlineMeshes(THREE, streamlineRoot, streamlines, { filters: activeResultFilters, selected: selectedStreamline });
+    if (streamlineRoot.parent !== helperRoot) helperRoot.add(streamlineRoot);
     requestRender();
   };
 
@@ -2339,7 +2357,7 @@ export function ThreeGeometryViewport(props) {
       disposeObject(geometryRoot);
     }
     if (helperRoot) {
-      for (const layer of [prescribedSourceRoot, ...resultLayerRoots(resultLayerStates)]) {
+      for (const layer of [prescribedSourceRoot, streamlineRoot, ...resultLayerRoots(resultLayerStates)]) {
         if (layer) helperRoot.remove(layer);
       }
       threeScene.remove(helperRoot);
@@ -2353,7 +2371,7 @@ export function ThreeGeometryViewport(props) {
     helperRoot = new THREE.Group();
     helperRoot.name = "geometry-helpers";
     threeScene.add(geometryRoot, helperRoot);
-    for (const layer of [prescribedSourceRoot, ...resultLayerRoots(resultLayerStates)]) {
+    for (const layer of [prescribedSourceRoot, streamlineRoot, ...resultLayerRoots(resultLayerStates)]) {
       if (layer) helperRoot.add(layer);
     }
     geometryPickTargets = [];
@@ -2504,6 +2522,12 @@ export function ThreeGeometryViewport(props) {
       handlePointerLeave = clearHoverTooltip;
       renderer.domElement.addEventListener("pointermove", handlePointerMove);
       renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
+      const lineHandlers = streamlinePointerHandlers(pickAtPointer, () => movieSnapshot || !props.resultPickingOnly);
+      handlePointerDown = lineHandlers.pointerdown;
+      handleClick = lineHandlers.click; handleDoubleClick = lineHandlers.dblclick;
+      renderer.domElement.addEventListener("pointerdown", handlePointerDown);
+      renderer.domElement.addEventListener("click", handleClick);
+      renderer.domElement.addEventListener("dblclick", handleDoubleClick);
 
       threeScene.add(new THREE.AmbientLight(0xffffff, 1.25));
       const light = new THREE.DirectionalLight(0xffffff, 0.55);
@@ -2611,6 +2635,8 @@ export function ThreeGeometryViewport(props) {
     resultVectorColorMap = props.resultVectorColorMap === true;
     resultVectorStyle = props.resultVectorStyle === "solid" ? "solid" : "thin";
     resultVectorScale = props.resultVectorScale ?? 1;
+    streamlines = props.resultStreamlines ?? [];
+    selectedStreamline = props.selectedStreamline ?? null;
     if (!ready()) return;
     vectorsDirty = true;
     requestRender();
@@ -2673,6 +2699,9 @@ export function ThreeGeometryViewport(props) {
     if (renderer?.domElement) {
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
       renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
+      renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
+      renderer.domElement.removeEventListener("click", handleClick);
+      renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       const handlers = renderer.domElement.__geometryContextHandlers;
       if (handlers) {
         renderer.domElement.removeEventListener(

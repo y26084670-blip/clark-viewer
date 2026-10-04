@@ -30,6 +30,9 @@
 .task-gif-error { flex: none; padding: 7px 9px; background: #4b2828; color: #ffcdca; overflow-wrap: anywhere; }
 .task-gif-dialog { position: fixed; inset: 0; margin: auto; padding: 0; width: min(900px, 94vw); max-width: 94vw; max-height: 92dvh; overflow: hidden; border: 1px solid #71818e; border-radius: 6px; background: #20262d; color: #f0f4f7; box-shadow: 0 10px 32px #0007; font: 14px Arial, sans-serif; }
 .task-gif-dialog[open] { display: flex; flex-direction: column; }
+.task-gif-dialog { resize: both; height: min(640px, 80dvh); min-width: min(320px, 94vw); min-height: min(180px, 92dvh); color-scheme: dark; }
+.task-gif-dialog.is-maximized { resize: none; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+.task-gif-dialog.is-maximized .task-gif-dialog-header { cursor: default; }
 .task-gif-dialog::backdrop { background: #0007; }
 .task-gif-dialog-header { display: flex; flex: none; align-items: center; gap: 12px; padding: 7px 9px; border-bottom: 1px solid #596773; background: #29343e; cursor: move; user-select: none; touch-action: none; }
 .task-gif-dialog-header h2 { flex: 1; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-weight: bold; }
@@ -37,6 +40,17 @@
 .task-gif-preview-body { display: flex; align-items: center; justify-content: center; min-height: 90px; min-width: 0; overflow: hidden; }
 .task-gif-preview-body > img { display: block; max-width: 100%; max-height: calc(92dvh - 45px); object-fit: contain; }
 .task-gif-preview-body > p { padding: 20px; overflow-wrap: anywhere; }
+.task-gif-preview-body { flex: 1 1 0; min-height: 0; }
+.task-gif-player { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }
+.task-gif-playback-controls { display: flex; flex: none; align-items: center; gap: 14px; padding: 6px 10px; border-bottom: 1px solid #596773; }
+.task-gif-playback-controls button { background: #303b45; color: #f0f4f7; border: 1px solid #71818e; border-radius: 3px; padding: 4px 12px; cursor: pointer; }
+.task-gif-playback-controls button:disabled { opacity: .45; cursor: default; }
+.task-gif-playback-controls label { display: flex; align-items: center; gap: 5px; }
+.task-gif-playback-controls input { accent-color: #74c5ff; }
+.task-gif-frame { flex: 1 1 0; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.task-gif-frame canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
+.task-gif-frame canvas[hidden] { display: none; }
+.task-gif-frame p { padding: 15px; overflow-wrap: anywhere; }
 .task-gif-confirm { width: 420px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow: auto; margin: auto; padding: 18px; border: 1px solid #71818e; border-radius: 6px; background: #20262d; color: #f0f4f7; font: 14px/1.4 Arial, sans-serif; }
 .task-gif-confirm::backdrop { background: #0007; }
 .task-gif-confirm h2 { margin: 0 0 14px; font-size: 18px; }

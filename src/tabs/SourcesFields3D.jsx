@@ -1,5 +1,6 @@
 import { createGeometryViewSetting } from "../services/visualization/geometryViewSettings.js";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { installSourcesFieldsKeyboard } from "../services/sourcesFieldsKeyboard.js";
 import { ObjectList } from "../components/ObjectList.jsx";
 import { ResultsGeometryViewport } from "../components/geometry/ResultsGeometryViewport.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
@@ -17,6 +18,13 @@ import "./SourcesFields3D.css";
 const streamlineSessions = new WeakMap();
 
 export function SourcesFields3D(props) {
+  const [cameraRequest,setCameraRequest]=createSignal(null);
+  onMount(()=>{
+    const remove=installSourcesFieldsKeyboard(window,{blocked:()=>props.movieBusy,
+      time:()=>props.time,maxTime:()=>props.task?.general.countTimeSteps??0,setTime:props.setTime,
+      view:command=>setCameraRequest(previous=>({command,sequence:(previous?.sequence??0)+1}))});
+    onCleanup(remove);
+  });
   const savedStreamlines = props.task && streamlineSessions.get(props.task);
   const [streamlineSeeds, setStreamlineSeeds] = createSignal(savedStreamlines?.seeds ?? []);
   const [selectedStreamline, setSelectedStreamline] = createSignal(savedStreamlines?.selected ?? null);
@@ -138,7 +146,7 @@ export function SourcesFields3D(props) {
   const selections = createMemo(() => ({
     elements: props.elements.map(id => id - 1), regions: props.regions.map(id => id - 1),
   }));
-  const movie = createMovieTabAdapter(props, { title: "Источники/Поля 3D", filenamePrefix: "3d", readFrame: index => {
+  const movie = createMovieTabAdapter(props, { title: "Источники / Поле 3D", filenamePrefix: "3d", readFrame: index => {
     const status = completedMovieFrame(result(), { task: props.task, index });
     if (!status.ready) return status;
     const errors = status.value.value.errors ?? [];
@@ -199,6 +207,7 @@ export function SourcesFields3D(props) {
       </div>
       <div class="embedded-geometry">
         <ResultsGeometryViewport open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
+          cameraRequest={cameraRequest()}
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={timeIndex()}
           selections={selections()} resultLayers={resultLayers()}
           resultStreamlines={streamlines()} selectedStreamline={selectedStreamline()}

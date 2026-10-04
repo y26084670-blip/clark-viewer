@@ -171,7 +171,7 @@ const makeGallery = new Function("props", "createSignal", "createUniqueId", "cre
   ${setup}
     return { requestDelete, confirmDelete, showPreview, watchCell, updateFallbackVisibility,
       startDrag, moveDrag, stopDrag, clampPreview, view, setView, deleteRequest,
-      position: dialogPosition,
+      position: dialogPosition, maximized, toggleMaximized, dialogSize,
       attach(refs) { grid=refs.grid; dialog=refs.dialog; dialogHeader=refs.dialogHeader; closeButton=refs.closeButton;
         confirmDialog=refs.confirmDialog; confirmCancelButton=refs.confirmCancelButton; } };
   } return TaskGifGallery(props);
@@ -285,4 +285,15 @@ test("fallback checks visible cell rectangles and preview dragging stays inside 
   ui.moveDrag({ ...event, clientX: -2000, clientY: -2000 });
   assert.deepEqual(ui.position(), { left: 0, top: 0 });
   assert.equal(ui.capture.has(1), true); ui.stopDrag(); assert.equal(ui.capture.has(1), false); ui.dispose();
+});
+
+
+test("preview maximize restores its measured size and blocks dragging only while maximized",()=>{
+  const ui=componentRuntime();ui.showPreview(ui.entry,{currentTarget:ui.refs.opener});
+  ui.toggleMaximized();assert.equal(ui.maximized(),true);
+  ui.startDrag({button:0,pointerId:1,target:{closest:()=>null},preventDefault(){}});
+  assert.equal(ui.capture.size,0);
+  ui.toggleMaximized();assert.equal(ui.maximized(),false);
+  assert.deepEqual(ui.dialogSize(),{width:300,height:200});assert.deepEqual(ui.position(),{left:50,top:60});
+  ui.toggleMaximized();ui.showPreview(ui.entry,{currentTarget:ui.refs.opener});assert.equal(ui.maximized(),false);ui.dispose();
 });

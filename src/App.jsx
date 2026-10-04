@@ -8,7 +8,7 @@ import { ViewerToolsMenu } from "./components/movie/ViewerToolsMenu.jsx";
 import { createMovieExportController } from "./services/movie/movieExportController.js";
 import { createMovieGifEncoder } from "./services/movie/movieGifEncoder.js";
 
-const tabs = ["Выбор задания", "Источники/Поля 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Потоки", "Силы / Потери"];
+const tabs = ["Выбор задания", "Источники / Поле 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Потоки", "Силы / Потери"];
 const SourcesFields3D = lazy(() => import("./tabs/SourcesFields3D.jsx").then(module => ({ default: module.SourcesFields3D })));
 const WorkingPoints = lazy(() => import("./tabs/WorkingPoints.jsx").then(module => ({ default: module.WorkingPoints })));
 const FieldLines = lazy(() => import("./tabs/FieldLines.jsx").then(module => ({ default: module.FieldLines })));

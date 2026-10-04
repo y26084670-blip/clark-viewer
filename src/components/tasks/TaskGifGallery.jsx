@@ -2,12 +2,16 @@ import { createEffect, createSignal, createUniqueId, For, onCleanup, onMount, Sh
 import { Portal } from "solid-js/web";
 import { createTaskGifGalleryController } from "../../services/taskGifGalleryController.js";
 import { subscribeTaskGifs } from "../../services/taskGifService.js";
+import { TaskGifPlayer } from "./TaskGifPlayer.jsx";
 import "./TaskGifGallery.css";
 
 export function TaskGifGallery(props) {
   const titleId = createUniqueId();
   const [view, setView] = createSignal({ entries: [], thumbnails: {}, loading: false, error: "", deleting: null, preview: null });
   const [dialogPosition, setDialogPosition] = createSignal(null);
+  const [maximized,setMaximized]=createSignal(false);
+  const [dialogSize,setDialogSize]=createSignal(null);
+  let restoreBounds=null;
   const [deleteRequest, setDeleteRequest] = createSignal(null);
   const controller = createTaskGifGalleryController({ publish: setView });
   let grid, dialog, dialogHeader, closeButton, opener, observer, drag;
@@ -35,7 +39,8 @@ export function TaskGifGallery(props) {
   }
   function showPreview(entry, event) {
     if (actionsDisabled()) return;
-    opener = event.currentTarget; setDialogPosition(null); controller.openPreview(entry);
+    opener = event.currentTarget; setDialogPosition(null); setMaximized(false); setDialogSize(null);
+    restoreBounds=null; controller.openPreview(entry);
   }
   function requestDelete(entry, event) {
     if (actionsDisabled() || deleteBusy) return;
@@ -69,7 +74,7 @@ export function TaskGifGallery(props) {
       top: Math.max(0, Math.min(top, Math.max(0, window.innerHeight - bounds.height))) });
   }
   function startDrag(event) {
-    if (event.button !== 0 || event.isPrimary === false || event.target.closest?.("button")) return;
+    if (maximized() || event.button !== 0 || event.isPrimary === false || event.target.closest?.("button")) return;
     const bounds = dialog?.getBoundingClientRect();
     if (!bounds) return;
     event.preventDefault();
@@ -84,6 +89,19 @@ export function TaskGifGallery(props) {
   function clampPreview() {
     if (dialogPosition()) clampPosition(dialogPosition().left, dialogPosition().top);
     updateFallbackVisibility();
+  }
+  function toggleMaximized() {
+    stopDrag();
+    if(maximized()) {
+      setMaximized(false);
+      const r=restoreBounds;
+      if(r) {
+        const width=Math.min(r.width,window.innerWidth-16),height=Math.min(r.height,window.innerHeight-16);
+        setDialogSize({width,height});
+        setDialogPosition({left:Math.max(8,Math.min(r.left,window.innerWidth-width-8)),
+          top:Math.max(8,Math.min(r.top,window.innerHeight-height-8))});
+      }
+    } else { restoreBounds=dialog?.getBoundingClientRect();setMaximized(true); }
   }
   function GifCell(cellProps) {
     const thumbnail = () => view().thumbnails[cellProps.entry.name] ?? {};
@@ -197,20 +215,24 @@ export function TaskGifGallery(props) {
         </div>
       </dialog>
       <dialog ref={dialog} class="task-gif-dialog" aria-labelledby={titleId}
-        style={dialogPosition() ? { left: `${dialogPosition().left}px`, top: `${dialogPosition().top}px`, right: "auto", bottom: "auto", margin: "0" } : {}}
+        classList={{"is-maximized":maximized()}}
+        style={maximized() ? {left:"8px",top:"8px",right:"auto",bottom:"auto",margin:"0",width:"calc(100vw - 16px)",height:"calc(100dvh - 16px)"} : {
+          ...(dialogPosition() ? { left: `${dialogPosition().left}px`, top: `${dialogPosition().top}px`, right: "auto", bottom: "auto", margin: "0" } : {}),
+          ...(dialogSize() ? {width:`${dialogSize().width}px`,height:`${dialogSize().height}px`} : {})}}
         onCancel={event => { event.preventDefault(); controller.closePreview(); }}
         onClose={() => { if (view().preview) controller.closePreview(); }}>
         <header ref={dialogHeader} class="task-gif-dialog-header" onPointerDown={startDrag} onPointerMove={moveDrag}
           onPointerUp={stopDrag} onPointerCancel={stopDrag} onLostPointerCapture={stopDrag}>
           <h2 id={titleId} title={view().preview?.entry.name}>{view().preview?.entry.name}</h2>
+          <button type="button" title={maximized()?"Восстановить размер":"Максимальный размер окна"}
+            aria-label={maximized()?"Восстановить размер":"Максимальный размер окна"} onClick={toggleMaximized}>{maximized()?"❐":"□"}</button>
           <button ref={closeButton} type="button" title="Закрыть" aria-label="Закрыть просмотр GIF" onClick={() => controller.closePreview()}>×</button>
         </header>
         <div class="task-gif-preview-body">
           <Show when={view().preview?.url} fallback={<p role={view().preview?.error ? "alert" : "status"}>
             {view().preview?.error || "Загрузка…"}
           </p>}>
-            <img src={view().preview?.url} alt={view().preview?.entry.name} onLoad={clampPreview}
-              onError={event => controller.previewFailed(event.currentTarget.getAttribute("src"))} />
+            <TaskGifPlayer url={view().preview?.url} name={view().preview?.entry.name} />
           </Show>
         </div>
       </dialog>

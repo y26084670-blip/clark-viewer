@@ -273,6 +273,11 @@ export function ResultsGeometryViewport(props) {
     requestView(command);
   };
 
+  createEffect(()=>{
+    const request=props.cameraRequest;
+    if(request)requestView(request.command);
+  });
+
   onCleanup(() => {
     viewerResizeObserver?.disconnect();
     cancelTimeSelection();

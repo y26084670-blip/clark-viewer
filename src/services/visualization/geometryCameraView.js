@@ -69,10 +69,10 @@ export function geometryCameraFrame(value) {
     };
 }
 
-export function geometryCameraCommandFromKeyboardEvent(event) {
+export function geometryCameraCommandFromKeyboardEvent(event, options) {
     if (!event || event.defaultPrevented || event.isComposing
         || event.altKey || event.metaKey || event.shiftKey
-        || !isGeometryCameraShortcutTarget(event.target)) return null;
+        || !isGeometryCameraShortcutTarget(event.target, options)) return null;
 
     if (event.code === "KeyA") {
         return event.ctrlKey ? null : GEOMETRY_CAMERA_COMMANDS.FIT_ALL;
@@ -83,8 +83,10 @@ export function geometryCameraCommandFromKeyboardEvent(event) {
     return event.ctrlKey ? commands.negative : commands.positive;
 }
 
-export function isGeometryCameraShortcutTarget(target) {
+export function isGeometryCameraShortcutTarget(target, {allowControls=false}={}) {
     if (target?.isContentEditable) return false;
     const tagName = String(target?.tagName ?? "").toLowerCase();
+    if(allowControls && tagName==="select")return true;
+    if(allowControls && tagName==="input")return ["range","checkbox","radio","button","submit","reset"].includes(target.type);
     return !["input", "select", "textarea"].includes(tagName);
 }

@@ -46,7 +46,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
   const run = new Function("props", "createGeometryViewSetting", "createMemo", "onCleanup", "createSignal", "createEffect",
     "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_REASONS", "streamlineSessions",
     "QUANTITIES", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
-    "createMovieTabAdapter", "completedMovieFrame",
+    "createMovieTabAdapter", "completedMovieFrame", "onMount",
     `${setup} return { quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
       colorMap, effectiveColorMap, palette, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
       addStreamline, deleteStreamline, changeStreamlineTolerance, streamlines, selectedLineStatus,
@@ -60,7 +60,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_REASONS, streamlineSessions, QUANTITIES, resultDisplaySelection,
     RESULT_LAYER_GROUPS, options.readerFactory ?? createResultLayerReader,
     (source, reader) => { requestSource = source; load = reader; options.observeRequest?.(source); return () => state; },
-    options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame);
+    options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame, () => {});
   return { ...api, request: () => requestSource(), load: request => load(request),
     setResultState(next) { state = next; },
     flushEffects() { effects.forEach(callback => callback()); },

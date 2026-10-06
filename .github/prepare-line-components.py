@@ -9,12 +9,18 @@ def replace(path, before, after):
         raise RuntimeError(f'{path}: expected one exact anchor, found {source.count(before)}')
     p.write_text(source.replace(before, after), encoding='utf-8')
 
+# Complete the staged JSX function before compilation.
+p = Path('src/tabs/FieldLines.jsx')
+s = p.read_text(encoding='utf-8')
+assert s.endswith('  </div>;\n'), 'Unexpected FieldLines module ending'
+p.write_text(s + '}\n', encoding='utf-8')
+
 replace('src/services/results/resultRequests.js',
     'import { lineSeries, regionSurfaceGrid } from "./resultPlots.js";',
     'import { regionSurfaceGrid } from "./resultPlots.js";\nimport { lineComponentSeries, normalizeFieldLineComponents } from "./fieldLineComponents.js";')
 replace('src/services/results/resultRequests.js',
     'export async function readLineFrame(request) {\n  const quantity = QUANTITIES[request.quantityKey];',
-    'export async function readLineFrame(request) {\n  const components = normalizeFieldLineComponents(request.components ?? [request.component ?? "norm"]);\n  if (!components.length) return { series: [], skipped: [] };')
+    'export async function readLineFrame(request) {\n  const components = normalizeFieldLineComponents(request.components ?? [request.component ?? "norm"]);\n  if (!components.length) return { series: [], skipped: [] };\n  const quantity = QUANTITIES[request.quantityKey];')
 replace('src/services/results/resultRequests.js',
     'frames.flatMap(({ frame, record }) => lineSeries(frame, record, quantity,\n      request.component, request.direction, { unfold: true }))',
     'frames.flatMap(({ frame, record }) => lineComponentSeries(frame, record, request.quantityKey,\n      components, request.direction, { unfold: true }))')

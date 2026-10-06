@@ -180,7 +180,7 @@ try {
   assert.equal(singleBytes.includes(Buffer.from("NETSCAPE2.0")), false);
   await writeFile(path.join(output, "components-static.gif"), singleBytes);
   passed("Zero-interval task exports a genuine one-frame non-looping GIF with all selected curves");
-  await page.getByLabel("Величина", { exact: true }).selectOption("As");
+  await page.locator('select:has(option[value="As"])').selectOption("As");
   await page.waitForFunction(() => window.__acceptance.snapshot().labels.some(label => label.endsWith("Ax")));
   const a = await snapshot();
   const mu0 = 4 * Math.PI * 1e-7;
@@ -197,10 +197,10 @@ try {
   passed("Dropdown stays within a narrower viewport after toolbar wrapping");
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.evaluate(() => window.__acceptance.area(true));
-  await page.getByLabel("Компонента", { exact: true }).waitFor();
-  assert.equal(await page.getByLabel("Компонента", { exact: true }).locator("option").count(), 4);
+  await page.locator('select:has(option[value="norm"])').waitFor();
+  assert.equal(await page.locator('select:has(option[value="norm"])').locator("option").count(), 4);
   assert.equal(await page.getByRole("button", { name: "Компоненты", exact: true }).count(), 0);
-  await page.getByLabel("Компонента", { exact: true }).selectOption("2");
+  await page.locator('select:has(option[value="norm"])').selectOption("2");
   passed("FieldAreas still has the unmodified single-component selector");
   assert.deepEqual(errors, []);
   await writeFile(path.join(output, "browser.json"), JSON.stringify({ passed: checks.length, checks, errors }, null, 2));

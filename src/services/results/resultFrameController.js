@@ -13,6 +13,13 @@ export function sameFrameContext(a, b) {
         && sameSelection(layer.selected, other.selected);
     });
   }
+  // Component arrays are sets; an empty set is distinct from the legacy default.
+  if (a.components !== undefined || b.components !== undefined) {
+    if (!Array.isArray(a.components) || !Array.isArray(b.components)) return false;
+    const left = [...new Set(a.components.map(String))].sort();
+    const right = [...new Set(b.components.map(String))].sort();
+    if (left.length !== right.length || left.some((value, i) => value !== right[i])) return false;
+  }
   // Plot choices belong to the frame context; time alone may reuse the old frame.
   for (const key of ["component", "direction", "copy", "allCopies"]) {
     if (a[key] !== b[key]) return false;

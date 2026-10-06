@@ -79,3 +79,4 @@ export function FieldLines(props) {
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
     </section>
   </div>;
+}

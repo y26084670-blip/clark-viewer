@@ -1,0 +1,31 @@
+name: Viewer stage A verification
+on:
+  push:
+    branches: [work/viewer-stage-a-20261006]
+    paths: [.github/workflows/viewer-stage-a.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Baseline and portable verification input
+        shell: bash
+        run: |
+          mkdir -p /tmp/viewer-stage-a
+          node --test --test-reporter=tap > /tmp/viewer-stage-a/baseline.tap 2>&1
+          git rev-parse HEAD > /tmp/viewer-stage-a/input-commit.txt
+          tar --exclude=.git -czf /tmp/viewer-stage-a/workspace.tar.gz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: viewer-stage-a-workspace
+          path: /tmp/viewer-stage-a
+          retention-days: 2

@@ -2,7 +2,8 @@ import { createEffect, createSignal, onCleanup } from "solid-js";
 import { mapResultObjects, QUANTITIES, regionLayout } from "./resultMappings.js";
 import { planResultSampling } from "./resultSampling.js";
 import { createResultFrameController } from "./resultFrameController.js";
-import { lineSeries, regionSurfaceGrid } from "./resultPlots.js";
+import { regionSurfaceGrid } from "./resultPlots.js";
+import { lineComponentSeries, normalizeFieldLineComponents } from "./fieldLineComponents.js";
 import { isFmm } from "./fmmCharacteristics.js";
 import { OBJECT_VISIBILITY_MODES } from "../visualization/geometryRenderFilters.js";
 
@@ -94,11 +95,13 @@ export async function readObjectFrames({ task, quantityKey, selected, time, budg
 
 // Keep all slices inside one controller operation, including a failed slice.
 export async function readLineFrame(request) {
+  const components = normalizeFieldLineComponents(request.components ?? [request.component ?? "norm"]);
+  if (!components.length) return { series: [], skipped: [] };
   const quantity = QUANTITIES[request.quantityKey];
   if (request.allCopies) {
     const frames = await readObjectFrames(request);
-    return { series: frames.flatMap(({ frame, record }) => lineSeries(frame, record, quantity,
-      request.component, request.direction, { unfold: true })), skipped: [] };
+    return { series: frames.flatMap(({ frame, record }) => lineComponentSeries(frame, record, request.quantityKey,
+      components, request.direction, { unfold: true })), skipped: [] };
   }
   const objects = resultObjects(request.task, request.quantityKey).filter(item => request.selected.includes(item.record.id));
   if (!objects.length) throw new Error("Для выбранных объектов нет этой величины");
@@ -107,7 +110,7 @@ export async function readLineFrame(request) {
     const layout = regionLayout(object.record);
     const frame = await request.task.reader.read({ name: quantity.file, step: request.time,
       start: object.start + request.copy * layout.planeCount, count: layout.planeCount });
-    return lineSeries(frame, object.record, quantity, request.component, request.direction, { copy: request.copy });
+    return lineComponentSeries(frame, object.record, request.quantityKey, components, request.direction, { copy: request.copy });
   }));
   return { series: series.flat(), skipped: objects.filter(item => !available.includes(item)).map(item => `№${item.record.id}`) };
 }

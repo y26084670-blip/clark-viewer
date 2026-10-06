@@ -69,9 +69,17 @@ export function LineChart(props) {
   const [selection, setSelection] = createSignal(null);
   const [panning, setPanning] = createSignal(false);
   const [legendHover, setLegendHover] = createSignal(false);
+  // Optional full-cycle bounds are supplied only by FieldLines. Manual scales
+  // win; during GIF recording the exact automatic policy is captured once.
+  function automaticYRange() {
+    const bounds = props.autoYRange;
+    return bounds && Number.isFinite(bounds.minimum) && Number.isFinite(bounds.maximum)
+      && bounds.minimum < bounds.maximum ? { yMin: bounds.minimum, yMax: bounds.maximum } : {};
+  }
   function applyChartLimits(range) {
     if (!chart) return;
-    range = movieState?.range ?? range;
+    range = movieState?.range ?? (props.autoScaleToggle && untrack(autoScale)
+      ? { ...range, ...automaticYRange() } : range);
     Object.assign(chart.options.scales.x, { min: range.xMin, max: range.xMax });
     Object.assign(chart.options.scales.y, { min: range.yMin, max: range.yMax });
     try {
@@ -300,7 +308,7 @@ export function LineChart(props) {
       // Keep the user's scale mode throughout the movie. Empty limits let
       // Chart.js fit every frame just as it does during ordinary Auto viewing;
       // manual limits and Auto-off retain the exact displayed axes.
-      movieState = { range: automatic ? {} : range, width: canvas.width, height: canvas.height,
+      movieState = { range: automatic ? automaticYRange() : range, width: canvas.width, height: canvas.height,
         logicalWidth: chart.width, logicalHeight: chart.height,
         responsive: chart.options.responsive,
         devicePixelRatio: (chart.config?.options ?? chart.options).devicePixelRatio,

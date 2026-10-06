@@ -1,0 +1,42 @@
+{
+  "passed": 17,
+  "checks": [
+    "Initial view contains only the modulus curves",
+    "Components button opens four native checkboxes with the expected default",
+    "Four independent quantities render together; signed Z and full norm are correct",
+    "Dropdown is not clipped by the chart toolbar",
+    "Escape closes the panel and returns focus to its button",
+    "Keyboard navigation and Space toggle work; outside click closes the panel",
+    "One HDF5 read serves all checked curves at a new time; global axes remain unchanged",
+    "All local images retain all four quantities",
+    "Real GIF worker encodes three chart frames with the selected curves and restores time and global axes",
+    "Manual zoom survives time and global-mode changes while Auto is off",
+    "Auto restores the same global full-cycle union",
+    "No checkbox selected means no curves, no HDF5 reads and an explicit GIF error rather than a hang",
+    "Old HDF5 files remain viewable and cannot claim a full-cycle scale",
+    "Zero-interval task exports a genuine one-frame non-looping GIF with all selected curves",
+    "Switching B to A keeps the component mask; saved values and global bounds use one unit conversion",
+    "Dropdown stays within a narrower viewport after toolbar wrapping",
+    "FieldAreas still has the unmodified single-component selector"
+  ],
+  "errors": [],
+  "version": "4.19.0",
+  "base": "1f1ed39f93801b366c6c2e6de038a38293294c51",
+  "tests": {
+    "tests": 385,
+    "pass": 385,
+    "fail": 0,
+    "skipped": 0
+  },
+  "workflow": "https://github.com/y26084670-blip/clark-viewer/actions/runs/37541114400",
+  "inputCommit": "65eb8a4a7afa94653f7830ec1f11b21a786f98d5",
+  "builds": {
+    "release": "passed",
+    "pages": "passed"
+  },
+  "limits": [
+    "Browser task/reader fixtures, not a user Solver calculation",
+    "Native Windows directory picker not exercised",
+    "Global ranges connected to FieldLines only"
+  ]
+}

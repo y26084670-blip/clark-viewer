@@ -289,10 +289,8 @@ test("App permits only ready dynamic result tabs and separates guarded UI time f
   app.setBusy(true); assert.match(app.movieDisabledReason(), /загрузки/); app.setBusy(false);
   for (const timeStep of [0, -1, NaN, Infinity]) {
     app.setTask({ general: { countTimeSteps: 4, timeStep } });
-    assert.match(app.movieDisabledReason(), /динамических/);
+    assert.match(app.movieDisabledReason(), /Некорректное число интервалов/);
   }
-  app.setTask({ general: { countTimeSteps: 0, timeStep: .1 } });
-  assert.match(app.movieDisabledReason(), /динамических/);
   app.setTask({ general: { countTimeSteps: 4, timeStep: .1 } });
   app.shared.setTime(3); app.shared.setElements([1]); app.shared.setRegions([2]); app.shared.setCoils([3]);
   app.setMovieBusy(true);

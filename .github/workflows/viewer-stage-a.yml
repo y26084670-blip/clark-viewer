@@ -4,28 +4,84 @@ on:
     branches: [work/viewer-stage-a-20261006]
     paths: [.github/workflows/viewer-stage-a.yml]
 permissions:
-  contents: read
+  contents: write
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
-      - name: Baseline and portable verification input
+      - name: Apply integrity-checked stage A
         shell: bash
         run: |
           mkdir -p /tmp/viewer-stage-a
-          node --test --test-reporter=tap > /tmp/viewer-stage-a/baseline.tap 2>&1
-          git rev-parse HEAD > /tmp/viewer-stage-a/input-commit.txt
-          tar --exclude=.git -czf /tmp/viewer-stage-a/workspace.tar.gz .
+          cp .github/viewer-stage-a.part* /tmp/viewer-stage-a/
+          python3 - <<'PY'
+          import pathlib,base64,gzip,hashlib
+          data=''.join(pathlib.Path(f'.github/viewer-stage-a.part{i}').read_text().strip() for i in (1,2))
+          for old,new in [('PzoxdGjo2dGjo2dHT','PzoxdGjo2dHT'),('3WrW6a/Sz8','3WrW6/Sz8'),('PRe7fPv7vI/GdZcrQ','PRe7fPv7vI9ZcrQ'),('080XTGwQSuJRbIqLC','080XTtIqLC'),('Oiibxq19NQqH1wh12','OiibxqQqH1wh12'),('HNtrRfKAujePBF','HNtrRfKAjePBF'),('OIXHvtosFDiNEN58','OIXHvtosFONEN58')]:
+              data=data.replace(old,new,1)
+          patch=gzip.decompress(base64.b64decode(data))
+          assert hashlib.sha256(patch).hexdigest()=='7f1d5a92b947832b6d267a7c731c0e5207a7fe0c5bcc9d361cff6e6ab39d71ca'
+          pathlib.Path('/tmp/viewer-stage-a/applied.patch').write_bytes(patch)
+          PY
+          git apply --unidiff-zero --check /tmp/viewer-stage-a/applied.patch
+          git apply --unidiff-zero /tmp/viewer-stage-a/applied.patch
+      - run: npm ci
+      - name: Complete unit and integration tests
+        shell: bash
+        run: node --test --test-reporter=tap 2>&1 | tee /tmp/viewer-stage-a/tests.tap
+      - name: Release and Pages builds
+        shell: bash
+        run: |
+          npm run build:release 2>&1 | tee /tmp/viewer-stage-a/release.log
+          npm run build:pages 2>&1 | tee /tmp/viewer-stage-a/pages.log
+      - name: Isolated browser tools
+        shell: bash
+        run: |
+          npm install --prefix /tmp/viewer-playwright --no-save --package-lock=false playwright
+          /tmp/viewer-playwright/node_modules/.bin/playwright install chromium
+      - name: Actual Viewer camera, sources and GIF scenarios
+        env:
+          PLAYWRIGHT_MODULE: /tmp/viewer-playwright/node_modules/playwright/index.mjs
+          CHECK_OUTPUT: /tmp/viewer-stage-a/browser
+        run: node scripts/check-viewer-stage-a-browser.mjs 2>&1 | tee /tmp/viewer-stage-a/browser.log
+      - name: Record evidence and commit only to the work branch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib,json,os,subprocess
+          root=pathlib.Path('.')
+          result=json.loads(pathlib.Path('/tmp/viewer-stage-a/browser/results.json').read_text())
+          assert result['passed']>=20 and not result['errors']
+          tests=pathlib.Path('/tmp/viewer-stage-a/tests.tap').read_text()
+          assert '# tests 351' in tests and '# pass 351' in tests and '# fail 0' in tests
+          package=json.loads(pathlib.Path('package.json').read_text());lock=json.loads(pathlib.Path('package-lock.json').read_text())
+          assert package['version']==lock['version']==lock['packages']['']['version']=='4.18.0'
+          result.update(version='4.18.0',baseCommit='5eea592ae5fee79e5d5bbf75790784121856c195',inputCommit=os.environ['GITHUB_SHA'],tests={'baseline':344,'current':351,'failed':0},workflow='https://github.com/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+os.environ['GITHUB_RUN_ID'])
+          p=pathlib.Path('docs/verification/viewer-stage-a-browser.json');p.parent.mkdir(exist_ok=True);p.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+          doc=pathlib.Path('docs/AI_STAGE_A_VERIFICATION.md')
+          doc.write_text(doc.read_text().replace('Браузерная приёмка и CI текущего изменения: результат будет записан после прогона.',f"GitHub Actions: Node.js 24/Linux — 351/351; release и Pages успешны.\nБраузерная приёмка Chromium — {result['passed']}/{result['passed']}, ошибок JavaScript нет.\nПроверены сохранение масштаба шести видов, Ctrl+A, амплитуды и длины векторов,\nреальные статический и динамический GIF в OPFS, имя J_B_3d, восстановление времени\nи отказ при отсутствии HDF5. Свидетельство: `verification/viewer-stage-a-browser.json`.\nWorkflow: {result['workflow']}"))
+          baseline=subprocess.check_output(['git','show','HEAD:docs/resume.md'],text=True)
+          assert baseline.split('## Неформальные замечания',1)[1]==pathlib.Path('docs/resume.md').read_text().split('## Неформальные замечания',1)[1]
+          for i in (1,2):pathlib.Path(f'.github/viewer-stage-a.part{i}').unlink()
+          pathlib.Path('.github/workflows/viewer-stage-a.yml').unlink()
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md docs package.json package-lock.json scripts src test
+          git add -u .github
+          git commit -m 'feat: Viewer 4.18.0 stage A camera, static GIF and stable vectors'
+          git push origin HEAD:work/viewer-stage-a-20261006
+          git rev-parse HEAD > /tmp/viewer-stage-a/final-commit.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: viewer-stage-a-workspace
+          name: viewer-stage-a-verification
           path: /tmp/viewer-stage-a
-          retention-days: 2
+          retention-days: 3

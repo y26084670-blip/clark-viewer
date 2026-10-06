@@ -31,6 +31,13 @@ jobs:
           PY
           git apply --unidiff-zero --check /tmp/viewer-stage-a/applied.patch
           git apply --unidiff-zero /tmp/viewer-stage-a/applied.patch
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/check-viewer-stage-a-browser.mjs')
+          text=p.read_text();old="page.getByLabel('Элементы',{exact:true})"
+          assert text.count(old)==2
+          p.write_text(text.replace(old,"page.getByRole('combobox',{name:'Элементы',exact:true})"))
+          PY
       - run: npm ci
       - name: Complete unit and integration tests
         shell: bash
@@ -46,6 +53,7 @@ jobs:
           npm install --prefix /tmp/viewer-playwright --no-save --package-lock=false playwright
           /tmp/viewer-playwright/node_modules/.bin/playwright install chromium
       - name: Actual Viewer camera, sources and GIF scenarios
+        shell: bash
         env:
           PLAYWRIGHT_MODULE: /tmp/viewer-playwright/node_modules/playwright/index.mjs
           CHECK_OUTPUT: /tmp/viewer-stage-a/browser
@@ -55,7 +63,6 @@ jobs:
         run: |
           python3 - <<'PY'
           import pathlib,json,os,subprocess
-          root=pathlib.Path('.')
           result=json.loads(pathlib.Path('/tmp/viewer-stage-a/browser/results.json').read_text())
           assert result['passed']>=20 and not result['errors']
           tests=pathlib.Path('/tmp/viewer-stage-a/tests.tap').read_text()

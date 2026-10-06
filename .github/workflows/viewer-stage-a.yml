@@ -36,7 +36,11 @@ jobs:
           p=Path('scripts/check-viewer-stage-a-browser.mjs')
           text=p.read_text();old="page.getByLabel('Элементы',{exact:true})"
           assert text.count(old)==2
-          p.write_text(text.replace(old,"page.getByRole('combobox',{name:'Элементы',exact:true})"))
+          text=text.replace(old,"page.getByRole('combobox',{name:'Элементы',exact:true})")
+          text=text.replace("page.getByRole('button',{name:'Инструменты',exact:true})","page.locator('.viewer-tools-trigger')")
+          p.write_text(text)
+          fixture=Path('test/browser/viewerStageA.fixture.jsx')
+          fixture.write_text("import 'tabulator-tables/dist/css/tabulator_simple.min.css';\n"+fixture.read_text())
           PY
       - run: npm ci
       - name: Complete unit and integration tests

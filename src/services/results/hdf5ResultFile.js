@@ -1,4 +1,5 @@
 import { checkReadRange, decodeHeader, timeDatasets, validateShape } from "./resultLayout.js";
+import { readResultRanges } from "./resultRanges.js";
 
 const families = {
   MH: [3, 2, true], JE: [3, 2, true], HS: [3, 1, true], AS: [3, 1, true],
@@ -32,8 +33,9 @@ export class Hdf5ResultFile {
       this.pointCount = points;
       this.byStep.set(step.index, step.key);
     }
+    this.ranges = readResultRanges(handle, { name, header: this.header, steps: this.steps });
   }
-  get metadata() { return { header: this.header, steps: this.steps, pointCount: this.pointCount }; }
+  get metadata() { return { header: this.header, steps: this.steps, pointCount: this.pointCount, ranges: this.ranges }; }
   read({ step, start, count, every = 1 }) {
     const key = this.byStep.get(step);
     if (!key) throw new Error(`${this.name}.h5: нет данных для момента ${step}`);

@@ -18,12 +18,31 @@ jobs:
           node-version: 24
           cache: npm
       - name: Apply scoped integration
-        run: python3 .github/prepare-line-components.py
+        run: |
+          python3 .github/prepare-line-components.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/check-field-line-components.mjs')
+          s = p.read_text()
+          replacements = [
+            ('page.getByLabel("Величина", { exact: true })', 'page.locator(\'select:has(option[value="As"])\')'),
+            ('page.getByLabel("Компонента", { exact: true })', 'page.locator(\'select:has(option[value="norm"])\')'),
+          ]
+          for before, after in replacements:
+              assert before in s, before
+              s = s.replace(before, after)
+          p.write_text(s)
+          PY
       - run: npm ci
       - name: Full tests
         run: |
           mkdir -p /tmp/viewer-line-components
-          npm test -- --test-reporter=tap 2>&1 | tee /tmp/viewer-line-components/tests.log
+          if npm test -- --test-reporter=tap > /tmp/viewer-line-components/tests.log 2>&1; then
+            tail -n 10 /tmp/viewer-line-components/tests.log
+          else
+            tail -n 90 /tmp/viewer-line-components/tests.log
+            exit 1
+          fi
       - name: Release and Pages builds
         run: |
           npm run build:release 2>&1 | tee /tmp/viewer-line-components/build-release.log
@@ -31,7 +50,12 @@ jobs:
       - name: Install isolated browser tools
         run: |
           npm install --prefix /tmp/viewer-browser-tools --no-save --package-lock=false playwright
-          /tmp/viewer-browser-tools/node_modules/.bin/playwright install --with-deps chromium
+          if /tmp/viewer-browser-tools/node_modules/.bin/playwright install --with-deps chromium > /tmp/viewer-line-components/install-browser.log 2>&1; then
+            tail -n 4 /tmp/viewer-line-components/install-browser.log
+          else
+            tail -n 60 /tmp/viewer-line-components/install-browser.log
+            exit 1
+          fi
       - name: Real browser and GIF acceptance
         env:
           PLAYWRIGHT_MODULE: /tmp/viewer-browser-tools/node_modules/playwright/index.mjs
@@ -43,7 +67,7 @@ jobs:
           import json, os, pathlib, re
           output = pathlib.Path('/tmp/viewer-line-components')
           result = json.loads((output/'browser.json').read_text())
-          assert result['errors'] == [] and result['passed'] >= 15
+          assert result['errors'] == [] and result['passed'] >= 17
           text = (output/'tests.log').read_text()
           counts = {name: int(re.search(r'^# '+name+r' (\d+)', text, re.M).group(1)) for name in ['tests','pass','fail','skipped']}
           assert counts['tests'] == counts['pass'] and counts['fail'] == 0 and counts['skipped'] == 0

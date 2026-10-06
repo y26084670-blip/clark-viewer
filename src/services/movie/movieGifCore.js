@@ -12,7 +12,7 @@ export function createMovieGifSession({ maxBytes = MOVIE_LIMITS.bytes } = {}) {
     throw new Error("Недопустимый предел размера GIF");
   }
   const gif = GIFEncoder({ initialCapacity: Math.min(4096, maxBytes) });
-  let count = 0, width = 0, height = 0, ended = false, writtenBytes = 0;
+  let count = 0, width = 0, height = 0, ended = false, writtenBytes = 0, sessionRepeat;
   const guard = count => {
     if (writtenBytes + count > maxBytes) {
       throw new Error("Размер GIF превышает допустимые 128 МиБ; уменьшите число или размер кадров");
@@ -30,10 +30,15 @@ export function createMovieGifSession({ maxBytes = MOVIE_LIMITS.bytes } = {}) {
     gif.stream[method] = (...args) => { guard(length(...args)); return write(...args); };
   }
   return {
-    addFrame(frame, { delayMs } = {}) {
+    addFrame(frame, { delayMs, repeat = 0 } = {}) {
       if (ended) throw new Error("Запись GIF уже завершена");
       try {
         validateMovieFrame(frame, delayMs);
+        if (repeat !== 0 && repeat !== -1) throw new Error("Некорректный режим повторения GIF");
+        if (count && (sessionRepeat !== repeat || repeat === -1)) {
+          throw new Error("Статический GIF содержит только один кадр; режим записи не меняется");
+        }
+        sessionRepeat = repeat;
         if (count >= MOVIE_LIMITS.frames) throw new Error("В фильме допускается не более 2000 кадров");
         if (count && (frame.width !== width || frame.height !== height)) {
           throw new Error("Размер вида изменился во время записи фильма");
@@ -44,7 +49,7 @@ export function createMovieGifSession({ maxBytes = MOVIE_LIMITS.bytes } = {}) {
           ? frame.data : frame.data.slice();
         const palette = quantize(rgba, 256, { format: "rgb565" });
         const indexed = applyPalette(rgba, palette, "rgb565");
-        gif.writeFrame(indexed, width, height, { palette, delay: delayMs, repeat: 0, dispose: 1 });
+        gif.writeFrame(indexed, width, height, { palette, delay: repeat === -1 ? 0 : delayMs, repeat, dispose: 1 });
         count++;
         return { frames: count, bytes: gif.bytesView().byteLength };
       } catch (error) {

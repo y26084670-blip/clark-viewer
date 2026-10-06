@@ -16,12 +16,14 @@ export function ViewerToolsMenu(props) {
   const [saveInTask, setSaveInTask] = createSignal(true);
   const [saving, setSaving] = createSignal(false);
   const [savedNotice, setSavedNotice] = createSignal("");
-  let trigger, menu, menuItem, dialog, intervalInput, cancelButton, saveButton;
+  let trigger, menu, menuItem, dialog, intervalInput, cancelButton, saveButton, startButton;
   let runAbort, saveAbort, revision = 0, disposed = false;
   let openedTask, openedTab, closeAfterRun = false, closeAfterSave = false;
   const running = () => phase() === "running" || phase() === "cancelling";
-  const validInterval = () => Number.isInteger(intervalMs()) && intervalMs() >= 20
-    && intervalMs() <= 60000 && intervalMs() % 10 === 0;
+  const staticImage = () => props.frameCount === 1;
+  const validInterval = () => staticImage() || (Number.isInteger(intervalMs()) && intervalMs() >= 20
+    && intervalMs() <= 60000 && intervalMs() % 10 === 0);
+  const focusSetup = () => (staticImage() ? startButton : intervalInput)?.focus();
   const duration = () => (props.frameCount * intervalMs() / 1000).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 
   function discardResult() {
@@ -51,7 +53,7 @@ export function ViewerToolsMenu(props) {
     setSaveInTask(true); setSavedNotice("");
     openedTask = props.task; openedTab = props.tabIndex; closeAfterRun = false;
     setDialogOpen(true);
-    queueMicrotask(() => intervalInput?.focus());
+    queueMicrotask(focusSetup);
   }
   function cancelCapture(close = false) {
     if (!running()) return;
@@ -78,7 +80,7 @@ export function ViewerToolsMenu(props) {
     props.onBusyChange?.(true);
     queueMicrotask(() => cancelButton?.focus());
     try {
-      const movie = await props.onRun({ intervalMs: intervalMs(), signal: abort.signal,
+      const movie = await props.onRun({ intervalMs: staticImage() ? 100 : intervalMs(), signal: abort.signal,
         onProgress: value => { if (!disposed && current === revision) setProgress(value); } });
       if (disposed || current !== revision || abort.signal.aborted) return;
       if (!(movie?.blob instanceof Blob) || movie.blob.size === 0) throw new Error("Не удалось сформировать GIF.");
@@ -97,7 +99,7 @@ export function ViewerToolsMenu(props) {
         if (!disposed && phase() !== "error" && (abort.signal.aborted || phase() === "cancelling")) {
           setPhase("setup"); setError("");
           if (closeAfterRun) { setDialogOpen(false); discardResult(); trigger?.focus(); }
-          else queueMicrotask(() => intervalInput?.focus());
+          else queueMicrotask(focusSetup);
         }
       }
     }
@@ -213,13 +215,17 @@ export function ViewerToolsMenu(props) {
         onClose={() => { if (dialogOpen()) closeDialog(); }}>
         <h2 id={titleId}>Создать moview</h2>
         <Show when={!running() && phase() !== "ready"}>
-          <p>Текущий вид · шаги 0–{Math.max(0, props.frameCount - 1)} · {props.frameCount} кадров.</p>
-          <label class="viewer-movie-interval">Интервал между кадрами, мс
-            <input ref={intervalInput} type="number" min="20" max="60000" step="10" value={intervalMs()}
-              onInput={event => setIntervalMs(event.currentTarget.valueAsNumber)} />
-          </label>
-          <p>Длительность GIF: {validInterval() ? duration() : "—"} с.</p>
-          <p class="viewer-movie-note">Сохраняются камера и режим масштаба; «Авто» действует на каждом кадре. Размер кадра ограничен для GIF, подпись показывает время расчёта.</p>
+          <Show when={staticImage()} fallback={<p>Текущий вид · шаги 0–{Math.max(0, props.frameCount - 1)} · {props.frameCount} кадров.</p>}>
+            <p>Статический GIF — 1 кадр текущего вида.</p>
+          </Show>
+          <Show when={!staticImage()}>
+            <label class="viewer-movie-interval">Интервал между кадрами, мс
+              <input ref={intervalInput} type="number" min="20" max="60000" step="10" value={intervalMs()}
+                onInput={event => setIntervalMs(event.currentTarget.valueAsNumber)} />
+            </label>
+            <p>Длительность GIF: {validInterval() ? duration() : "—"} с.</p>
+          </Show>
+          <p class="viewer-movie-note">Сохраняются камера и режим масштаба. Нормировка длин векторов 3D фиксирована; «Авто» графиков сохраняет выбранный режим. Подпись показывает время расчёта.</p>
         </Show>
         <Show when={running()}>
           <p role="status" aria-live="polite">{progressText()}</p>
@@ -227,15 +233,15 @@ export function ViewerToolsMenu(props) {
           <p class="viewer-movie-note">По завершении будет восстановлен исходный момент времени.</p>
         </Show>
         <Show when={result()}>{movie => <>
-          <img class="viewer-movie-preview" src={movie().url} alt="Предпросмотр созданной анимации GIF" />
-          <p>{movie().frameCount} кадров · {movie().width} × {movie().height}</p>
+          <img class="viewer-movie-preview" src={movie().url} alt="Предпросмотр созданного GIF" />
+          <p>{movie().frameCount === 1 ? "Статический GIF — 1 кадр" : `${movie().frameCount} кадров`} · {movie().width} × {movie().height}</p>
         </>}</Show>
         <Show when={error()}><p class="viewer-movie-error" role="alert">{error()}</p></Show>
         <Show when={saving()}><p class="viewer-movie-note" role="status">Сохранение GIF в задании…</p></Show>
         <Show when={savedNotice()}><p class="viewer-movie-saved" role="status">{savedNotice()}</p></Show>
         <div class="viewer-movie-actions">
           <Show when={running()} fallback={<>
-            <Show when={result()} fallback={<button type="button" disabled={!props.eligible || !validInterval()} onClick={startCapture}>Начать</button>}>
+            <Show when={result()} fallback={<button ref={startButton} type="button" disabled={!props.eligible || !validInterval()} onClick={startCapture}>Начать</button>}>
               <Show when={saveInTask()} fallback={<a ref={saveButton} class="viewer-movie-save" href={result()?.url} download={result()?.filename}>Сохранить GIF</a>}>
                 <button ref={saveButton} type="button" class="viewer-movie-save" disabled={saving()} onClick={saveToTask}>Сохранить GIF</button>
               </Show>

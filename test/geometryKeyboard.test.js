@@ -7,7 +7,7 @@ import {
 } from "../src/services/visualization/geometryCameraView.js";
 
 const shortcuts = [
-  ["KeyA", ["a", "A", "ф", "q"], commands.FIT_ALL, null],
+  ["KeyA", ["a", "A", "ф", "q"], commands.FIT_ALL, commands.RESET_OBLIQUE],
   ["KeyX", ["x", "X", "ч", "c"], commands.VIEW_POSITIVE_X, commands.VIEW_NEGATIVE_X],
   ["KeyY", ["y", "Y", "н", "z"], commands.VIEW_POSITIVE_Y, commands.VIEW_NEGATIVE_Y],
   ["KeyZ", ["z", "Z", "я", "y"], commands.VIEW_POSITIVE_Z, commands.VIEW_NEGATIVE_Z],
@@ -22,7 +22,7 @@ test("Camera shortcuts use the same physical key in Latin, Russian and other lay
   }
 });
 
-test("Ctrl reverses axis views in every layout and leaves Ctrl+A to the active list", () => {
+test("Ctrl reverses axis views and Ctrl+A restores the initial oblique frame in every layout", () => {
   for (const [code, characters, , reversed] of shortcuts) {
     for (const key of characters) {
       assert.equal(cameraCommand({ code, key, ctrlKey: true }), reversed, `Ctrl+${code}: ${key}`);
@@ -81,8 +81,8 @@ test("active 3D tab handles views and one time step from lists, selects, buttons
   for(const target of [{tagName:"INPUT",type:"text"},{tagName:"INPUT",type:"number"},{tagName:"TEXTAREA"},{isContentEditable:true}]) {
     assert.equal(press("ArrowRight",target).defaultPrevented,undefined);assert.equal(time,2);
   }
+  press("KeyA",{tagName:"DIV"},{ctrlKey:true});assert.equal(views.at(-1),commands.RESET_OBLIQUE);
   const count=views.length;
-  press("KeyA",{tagName:"DIV"},{ctrlKey:true});assert.equal(views.length,count);
   blocked=true;press("KeyZ",{});assert.equal(views.length,count);blocked=false;
   modal=true;press("ArrowLeft",{});assert.equal(time,2);remove();assert.equal(handler,null);
 });

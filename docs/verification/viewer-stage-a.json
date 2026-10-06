@@ -1,0 +1,56 @@
+{
+  "status": "prepared-not-applied-to-repository",
+  "repository": "y26084670-blip/clark-viewer",
+  "baseCommit": "5eea592ae5fee79e5d5bbf75790784121856c195",
+  "preparedVersion": "4.18.0",
+  "preparedAt": "2026-10-06T18:47:59+03:00",
+  "stage": "a",
+  "deferred": "Physical and mirror image reconstruction (point 5 of the agreed five-part plan)",
+  "checks": {
+    "pureFunctions": {
+      "tests": 36,
+      "pass": 36,
+      "fail": 0,
+      "runtime": "Node.js 22.16.0 / Linux",
+      "scope": "Actual modified camera, keyboard, filename and vector-length functions. Camera/vector objects are test doubles, not Three.js or WebGL."
+    },
+    "applicationSafety": {
+      "tests": 8,
+      "pass": 8,
+      "fail": 0,
+      "scope": "Synthetic git fixture: check-only, apply, wrong anchor/base, dirty tree, existing new file, unsafe path and symlink; informal remarks preserved."
+    },
+    "syntax": {
+      "modules": 5,
+      "jsxFragments": 1,
+      "pass": true
+    },
+    "baseSourceHashes": {
+      "geometryCameraView.js": "8843c33472eaffd1ef96377e789d8c2187c5df82",
+      "movieFilename.js": "5a505d29f5b019b9eb655f280cb0f5c17fb82043",
+      "sourcesFieldsKeyboard.js": "6eeef9ea18d49a7651c54baff81a50438dd72d84"
+    }
+  },
+  "notRun": [
+    "Full patch preflight against a complete repository checkout",
+    "New repository integration test viewerStageA.test.js",
+    "Actual gifenc encoding and GIF decoding",
+    "Chromium/WebGL UI acceptance",
+    "Full npm test",
+    "Release and Pages builds",
+    "Windows execution",
+    "Physical J(t) comparison against a user calculation"
+  ],
+  "remoteActions": {
+    "filesWritten": false,
+    "branchCreated": false,
+    "commitCreated": false,
+    "pullRequestCreated": false,
+    "mainUpdated": false
+  },
+  "limits": [
+    "Length reference uses the first successful nonzero frame, not the maximum over the entire time history.",
+    "HDF5 components are not multiplied again by the input amplitude; variants storing basis sources rather than physical J(t) are not guessed or repaired.",
+    "Colour scales and symmetry reconstruction are unchanged."
+  ]
+}

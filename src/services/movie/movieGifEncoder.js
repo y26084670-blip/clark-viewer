@@ -44,12 +44,12 @@ export function createMovieGifEncoder({ workerFactory = () => new Worker(
     });
   }
   return {
-    addFrame(frame, { delayMs } = {}) {
+    addFrame(frame, { delayMs, repeat = 0 } = {}) {
       try {
         validateMovieFrame(frame, delayMs);
         const data = frame.data.byteOffset === 0 && frame.data.byteLength === frame.data.buffer.byteLength
           ? frame.data : frame.data.slice();
-        return send("frame", { frame: { width: frame.width, height: frame.height, data }, delayMs }, [data.buffer]);
+        return send("frame", { frame: { width: frame.width, height: frame.height, data }, delayMs, ...(repeat === -1 ? { repeat } : {}) }, [data.buffer]);
       } catch (error) { return Promise.reject(error); }
     },
     finish() { return send("finish"); },

@@ -20,10 +20,13 @@ function checkedContext(adapter, intervalMs, limits) {
   }
   if (!Number.isFinite(context.timeStep) || context.timeStep < 0
       || !Number.isFinite((context.frameCount - 1) * context.timeStep)) throw new Error("Некорректная шкала времени для moview");
+  // A static image has no playback interval. Do not reject it because a
+  // previously edited dynamic interval is empty or invalid.
+  if (context.frameCount === 1) intervalMs = 100;
   if (!Number.isSafeInteger(intervalMs) || intervalMs < limits.minIntervalMs || intervalMs > limits.maxIntervalMs || intervalMs % limits.intervalStepMs !== 0) {
     throw new Error(`Интервал GIF должен быть от ${limits.minIntervalMs} до ${limits.maxIntervalMs} мс с шагом ${limits.intervalStepMs} мс`);
   }
-  return { ...context };
+  return { ...context, intervalMs };
 }
 
 function checkedPixels(image, size, limits) {
@@ -102,7 +105,7 @@ export function createMovieExportController({ createEncoder, limits: overrides =
             caption: movieFrameCaption(context, index) }), abort.signal);
           size = checkedPixels(image, size, limits);
           encoder ??= createEncoder();
-          await abortable(encoder.addFrame(image, { delayMs: intervalMs }), abort.signal);
+          await abortable(encoder.addFrame(image, { delayMs: context.intervalMs, ...(context.frameCount === 1 ? { repeat: -1 } : {}) }), abort.signal);
           completed++;
           progress("capturing", index);
         }

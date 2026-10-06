@@ -5,7 +5,7 @@ self.onmessage = ({ data }) => {
   try {
     if (!session) session = createMovieGifSession();
     if (data.type === "frame") {
-      const result = session.addFrame(data.frame, { delayMs: data.delayMs });
+      const result = session.addFrame(data.frame, { delayMs: data.delayMs, repeat: data.repeat });
       self.postMessage({ id: data.id, result });
     } else if (data.type === "finish") {
       const bytes = session.finish(); session = null;

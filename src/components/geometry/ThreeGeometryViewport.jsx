@@ -21,10 +21,12 @@ import {
 } from "../../services/visualization/geometryDiscretization.js";
 import {
   GEOMETRY_CAMERA_COMMANDS,
-  geometryCameraFrame,
+  INITIAL_GEOMETRY_CAMERA_FRAME,
+  orientGeometryCamera,
   normalizeGeometryCameraCommand,
 } from "../../services/visualization/geometryCameraView.js";
 import { fitCameraToVisibleObjects } from "../../services/visualization/geometryCameraFit.js";
+import { resultVectorLength } from "../../services/visualization/resultVectorScale.js";
 import {
   findPointMetadataRange,
   findVertexMetadataRange,
@@ -173,6 +175,7 @@ function createPrescribedSourceVectors(
   colorOverride,
   previousRoot = null,
   palette = "Viridis",
+  lengthReference = null,
 ) {
   const root = sourceVectorRoot(THREE, previousRoot, style);
   if (style === "points") {
@@ -209,15 +212,14 @@ function createPrescribedSourceVectors(
   const direction = new THREE.Vector3();
   const origin = new THREE.Vector3();
   const tip = new THREE.Vector3();
-  const sceneLimit = sceneDiagonal > 0 ? 0.06 * sceneDiagonal : Infinity;
+
 
   for (const item of vectors) {
     if (acceptedInstances && !acceptedInstances.has(sourceInstanceKey(item.source, item.instance))) {
       continue;
     }
     // Apply the user scale after the base limit so it can enlarge the arrows.
-    const length = Math.min(0.7 * item.characteristicSize, sceneLimit) *
-      (item.magnitude / maximum[item.kind]) * scales[item.kind];
+    const length = resultVectorLength(item, scales[item.kind], maximum, sceneDiagonal, lengthReference);
     if (!(length > 0) || !Number.isFinite(length)) continue;
 
     if (style === "solid") {
@@ -493,7 +495,7 @@ export function updateResultLayers(THREE, previous, definitions, {
     const volumeFields = layer.volumeFields ?? null;
     const vectorStyle = colorMap ? (volumeFields ? "volume" : "points") : style;
     const signature = [scene, scalarScene, volumeFields, layer.color, layer.quantityKey,
-      layer.groupLabel, filters, colorMap, vectorStyle, scale, palette, opacity];
+      layer.groupLabel, filters, colorMap, vectorStyle, scale, palette, opacity, layer.vectorLengthReference];
     if (old && signature.every((value, index) => Object.is(value, old.signature[index]))) {
       next.set(key, old);
       continue;
@@ -537,7 +539,7 @@ export function updateResultLayers(THREE, previous, definitions, {
         state.vectorRoot = createPrescribedSourceVectors(THREE, vectors, null,
           scene.sceneDiagonal, vectorStyle,
           { current: scale, magnetization: scale },
-          scene.maximumMagnitude, color, state.vectorRoot, palette);
+          scene.maximumMagnitude, color, state.vectorRoot, palette, layer.vectorLengthReference);
         if (vectorStyle === "points") legend = state.vectorRoot.userData.colorLegend;
         else {
           const nodes = updateResultPoints(THREE,
@@ -1475,8 +1477,8 @@ function createCamera(THREE, projection, aspect) {
       1_000_000,
     );
 
-  camera.position.set(1, 1, 1);
-  camera.up.set(0, 0, 1);
+  camera.position.fromArray(INITIAL_GEOMETRY_CAMERA_FRAME.offset);
+  camera.up.fromArray(INITIAL_GEOMETRY_CAMERA_FRAME.up);
   return camera;
 }
 
@@ -2469,12 +2471,11 @@ export function ThreeGeometryViewport(props) {
       return;
     }
 
-    const frame = geometryCameraFrame(command);
-    if (!frame) return;
-    camera.up.fromArray(frame.up);
-    camera.position.fromArray(frame.offset).add(controls.target);
+    if (!orientGeometryCamera(camera, controls, command)) return;
     rebuildOrbitControls();
-    fitVisibleObjects();
+    if (command === GEOMETRY_CAMERA_COMMANDS.RESET_OBLIQUE) {
+      fitVisibleObjects(undefined, props.fitAllPadding);
+    }
     clearHoverTooltip();
     requestRender();
   };

@@ -10,6 +10,7 @@ import { RESULT_LAYER_GROUPS, RESULT_LAYER_QUANTITY_LABELS } from "../services/r
 import { createResultLayerReader } from "../services/results/resultLayerRequests.js";
 import { RESULT_SCALAR_PALETTES } from "../services/visualization/resultScalarColors.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
+import { movie3DFilenamePrefix } from "../services/movie/movieFilename.js";
 import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_REASONS } from "../services/visualization/resultStreamlineField.js";
 import "./SourcesFields3D.css";
 
@@ -146,7 +147,8 @@ export function SourcesFields3D(props) {
   const selections = createMemo(() => ({
     elements: props.elements.map(id => id - 1), regions: props.regions.map(id => id - 1),
   }));
-  const movie = createMovieTabAdapter(props, { title: "Источники / Поле 3D", filenamePrefix: "3d", readFrame: index => {
+  const movie = createMovieTabAdapter(props, { title: "Источники / Поле 3D",
+    filenamePrefix: () => movie3DFilenamePrefix(requestedLayers(), streamlines()), readFrame: index => {
     const status = completedMovieFrame(result(), { task: props.task, index });
     if (!status.ready) return status;
     const errors = status.value.value.errors ?? [];

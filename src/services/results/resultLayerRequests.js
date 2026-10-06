@@ -1,4 +1,5 @@
 import { RESULT_LAYER_GROUPS } from "./resultLayerDefinitions.js";
+import { referenceResultVectorLayers } from "../visualization/resultVectorScale.js";
 import { QUANTITIES, elementLayout, regionLayout } from "./resultMappings.js";
 import { readObjectFrames, resultObjects } from "./resultRequests.js";
 import { scalarScene, vectorScene } from "./resultPlots.js";
@@ -141,7 +142,7 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
             : { ...layer.result, state: "error", error: message(item.reason) };
           if (item.status === "rejected") release(layer.key);
         });
-        const layers = prepared.map(layer => layer.result);
+        const layers = referenceResultVectorLayers(request.task, prepared.map(layer => layer.result));
         let streamlines = [];
         if (request.streamlineSeeds?.length) {
           streamlineProcessor ??= streamlineProcessorFactory();

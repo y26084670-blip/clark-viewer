@@ -59,8 +59,9 @@ export default function App() {
     if (movieBusy()) return "Создание GIF уже выполняется.";
     if (busy()) return "Дождитесь загрузки задания.";
     if (!task()) return "Загрузите задание.";
-    if (!Number.isSafeInteger(task().general?.countTimeSteps) || task().general.countTimeSteps <= 0
-      || !Number.isFinite(task().general.timeStep) || !(task().general.timeStep > 0)) return "Создание GIF доступно для динамических заданий с несколькими моментами времени.";
+    if (!Number.isSafeInteger(task().general?.countTimeSteps) || task().general.countTimeSteps < 0
+      || !Number.isFinite(task().general.timeStep) || task().general.timeStep < 0
+      || (task().general.countTimeSteps > 0 && task().general.timeStep === 0)) return "Некорректное число интервалов или шаг времени задания.";
     if (active() < 1 || active() > 6) return "Откройте вкладку с результатами.";
     if (!movieAdapter()) return "Дождитесь готовности текущего графика.";
     return "";

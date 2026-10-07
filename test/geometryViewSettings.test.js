@@ -6,7 +6,7 @@ import { createRoot } from "solid-js";
 import { createGeometryViewSetting } from "../src/services/visualization/geometryViewSettings.js";
 
 test("опции компонентов сохраняются после уничтожения владельца и смены задания", () => {
-  const components = ["../src/components/geometry/ResultsGeometryViewport.jsx","../src/tabs/SourcesFields3D.jsx"];
+  const components = ["../src/components/geometry/ResultsGeometryViewport.jsx","../src/tabs/SourcesFields3D.jsx","../src/tabs/FieldLines.jsx","../src/tabs/WorkingPoints.jsx"];
   const entries = [...new Map(components.flatMap(path => {
     const source = readFileSync(new URL(path, import.meta.url), "utf8");
     return [...source.matchAll(/createGeometryViewSetting\("([^"]+)",\s*([^)]*)\)/g)]
@@ -16,6 +16,7 @@ test("опции компонентов сохраняются после уни
   assert.equal(new Map(entries).get("vectorStyle"), "thin");
   assert.equal(new Map(entries).get("resultVectorColorMap"), false);
   assert.equal(new Map(entries).get("resultPalette"), "Rainbow");
+  assert.equal(new Map(entries).get("resultGlobalMinMax"), true);
   assert.equal(new Map(entries).get("resultElementsQuantity"), "M");
   assert.equal(new Map(entries).get("resultRegionsQuantity"), "none");
   assert.equal(new Map(entries).get("resultVirtualQuantity"), "none");

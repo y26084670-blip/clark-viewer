@@ -90,3 +90,15 @@ export function applyResultGlobalRange(layer, range) {
   }) : layer.vectorLengthReference;
   return { ...layer, displayRange: range, vectorLengthReference: reference };
 }
+
+
+export function workingPointGlobalMRange(task, selected) {
+  const range = globalResultRange(task, "M", selected);
+  if (!range.available) return range;
+  const minimum = Math.min(0, range.minimum);
+  const maximum = range.maximum;
+  if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || !(minimum < maximum)) {
+    return unavailable("Некорректные глобальные пределы M", "invalid");
+  }
+  return Object.freeze({ ...range, minimum, maximum });
+}

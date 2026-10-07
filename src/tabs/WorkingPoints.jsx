@@ -1,4 +1,5 @@
 import { createMemo } from "solid-js";
+import { createGeometryViewSetting } from "../services/visualization/geometryViewSettings.js";
 import { ObjectList } from "../components/ObjectList.jsx";
 import { LineChart } from "../components/LineChart.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
@@ -7,10 +8,19 @@ import { resultObjects, useAsyncResult } from "../services/results/resultRequest
 import { characteristicCurve, isAnisotropic, isFmm, loadFmmCharacteristic } from "../services/results/fmmCharacteristics.js";
 import { buildGeometryTimeModel } from "../services/visualization/geometryTimeModel.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
+import { workingPointGlobalMRange } from "../services/results/resultGlobalScale.js";
 
 export function WorkingPoints(props) {
   const records = createMemo(() => (props.task?.elements ?? []).filter(isFmm));
   const selected = createMemo(() => records().filter(row => props.elements.includes(row.id)));
+  const [globalMinMax, setGlobalMinMax] = createGeometryViewSetting("resultGlobalMinMax", true);
+  const globalMRange = createMemo(() => workingPointGlobalMRange(
+    props.task,
+    selected().map(record => record.id),
+  ));
+  const globalYRange = createMemo(() => globalMinMax() && globalMRange().available
+    ? { minimum: globalMRange().minimum, maximum: globalMRange().maximum }
+    : null);
   const curves = useAsyncResult(() => props.task && ({ task: props.task, records: selected() }), async request => {
     const materials = await Promise.all(request.records.map(async record => {
       try {
@@ -65,12 +75,21 @@ export function WorkingPoints(props) {
   return <div class="results-layout">
     <ObjectList title="Элементы ФММ" records={records()} selected={props.elements} onSelect={props.setElements} />
     <section class="plot-panel">
-      <LineChart series={[...(curves.value()?.series ?? []), ...(points.value()?.series ?? [])]} autoScaleToggle={true}
+      <LineChart series={[...(curves.value()?.series ?? []), ...(points.value()?.series ?? [])]} autoScaleToggle={true} autoYRange={globalYRange()}
         captureFrameKey={movieFrame()} onCaptureReady={movie.onCaptureReady} captureError={warnings()}
         toolbar={<><strong>M(H)</strong><span class="chart-toolbar-note"
           title="Изотропные ФММ: модули · Анизотропные: проекции на ось намагничивания">
           Изотропные ФММ: модули · Анизотропные: проекции на ось намагничивания
-        </span></>}
+        </span>
+        <label title={globalMRange().available
+          ? "Общие пределы M по выбранным ФММ за весь расчёт. Нижняя граница: min(0, Mmin)."
+          : globalMRange().reason}>
+          <input type="checkbox" aria-label="Общий минмакс рабочих точек"
+            checked={globalMinMax() && globalMRange().available}
+            disabled={props.movieBusy || !globalMRange().available}
+            onChange={event => !props.movieBusy && globalMRange().available
+              && setGlobalMinMax(event.currentTarget.checked)} />Общий минмакс
+        </label></>}
         toolbarEnd={<span class="chart-toolbar-status" role="status">{points.loading() || curves.loading()
           ? "Чтение…" : `Рабочих точек: ${points.value()?.count ?? 0}`}</span>}
         status={warnings()}

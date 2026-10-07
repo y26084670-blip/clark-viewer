@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import h5wasm from 'h5wasm/node';
 import { globalRangesTask } from '../scripts/test-support/globalRangesFixture.js';
-import { globalResultRange, resultGlobalScale, applyResultGlobalRange } from '../src/services/results/resultGlobalScale.js';
+import { globalResultRange, resultGlobalScale, applyResultGlobalRange, workingPointGlobalMRange } from '../src/services/results/resultGlobalScale.js';
 import { resultDisplaySelection } from '../src/services/results/resultRequests.js';
 import { Hdf5ResultFile } from '../src/services/results/hdf5ResultFile.js';
 import { sourcesFields3DSetup } from '../scripts/test-support/sourcesFields3DSetup.js';
@@ -38,6 +38,18 @@ test('global vector ranges use selected source IDs, saved norms and display unit
     assert.equal(range.minimum,min,key);assert.equal(range.maximum,max,key);
   }
   assert.equal(globalResultRange(task,'E',[2]).state,'empty');
+});
+
+test('working points use min(0, Mmin) and Mmax for the selected FMM set', () => {
+  const task=globalRangesTask();
+  const range=workingPointGlobalMRange(task,[1]);
+  assert.equal(range.available,true);
+  assert.equal(range.minimum,0);
+  assert.equal(range.maximum,50);
+  const combined=workingPointGlobalMRange(task,[1,4]);
+  assert.equal(combined.minimum,0);
+  assert.equal(combined.maximum,100);
+  assert.equal(workingPointGlobalMRange(task,[]).available,false);
 });
 
 test('derived global maps deliberately multiply modulus bounds and ignore stored exact dot extrema', () => {

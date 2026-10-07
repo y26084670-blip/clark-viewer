@@ -1920,7 +1920,7 @@ export function ThreeGeometryViewport(props) {
       y >= bounds.height - AXES_GIZMO_MARGIN - gizmoSize
     ) {
       showTooltip(
-        "Alt+X/Y/Z + движение мыши — вокруг центра вида\nShift+X/Y/Z + движение мыши — вокруг начала координат",
+        "Alt+X/Y/Z + движение мыши — вокруг оси из центра вида\nShift+X/Y/Z + движение мыши — вокруг оси из начала координат",
         AXES_GIZMO_MARGIN,
         Math.max(0, bounds.height - AXES_GIZMO_MARGIN - gizmoSize - 54),
       );

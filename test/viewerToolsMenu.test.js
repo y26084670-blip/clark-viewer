@@ -67,7 +67,7 @@ test("menu is keyboard accessible, closes outside and stays within the viewport"
   const down = key("ArrowDown"); ui.onTriggerKeyDown(down); ui.flushEffects();
   assert.equal(down.prevented, true); assert.equal(ui.state().menuOpen, true);
   assert.equal(ui.refs.menuItem.focused, 1);
-  assert.deepEqual(ui.state().menuPosition, { left: 630, top: 502 });
+  assert.deepEqual(ui.state().menuPosition, { left: 630, top: 472 });
   assert.equal(ui.document.count("pointerdown"), 1);
   ui.document.emit("pointerdown", { composedPath: () => [ui.refs.menuItem, ui.refs.menu] });
   assert.equal(ui.state().menuOpen, true);

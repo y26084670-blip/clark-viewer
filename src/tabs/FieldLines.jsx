@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, on } from "solid-js";
+import { createGeometryViewSetting } from "../services/visualization/geometryViewSettings.js";
 import { ObjectList } from "../components/ObjectList.jsx";
 import { LineChart } from "../components/LineChart.jsx";
 import { QuantitySelect } from "../components/QuantitySelect.jsx";
@@ -12,7 +13,7 @@ import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/mo
 export function FieldLines(props) {
   const [quantityKey, setQuantity] = createSignal("Bs");
   const [components, setComponents] = createSignal(["norm"]);
-  const [globalScale, setGlobalScale] = createSignal(true);
+  const [globalScale, setGlobalScale] = createGeometryViewSetting("resultGlobalMinMax", true);
   const [direction, setDirection] = createSignal("i2");
   const [copy, setCopy] = createSignal(0);
   const [allCopies, setAllCopies] = createSignal(false);

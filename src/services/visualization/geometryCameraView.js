@@ -1,3 +1,9 @@
+export const GEOMETRY_AXIS_ROTATION = Object.freeze({
+    X: "x",
+    Y: "y",
+    Z: "z",
+});
+
 export const GEOMETRY_CAMERA_COMMANDS = Object.freeze({
     FIT_ALL: "fit-all",
     RESET_OBLIQUE: "reset-oblique",
@@ -111,4 +117,38 @@ export function isGeometryCameraShortcutTarget(target, {allowControls=false}={})
     if(allowControls && tagName==="select")return true;
     if(allowControls && tagName==="input")return ["range","checkbox","radio","button","submit","reset"].includes(target.type);
     return !["input", "select", "textarea"].includes(tagName);
+}
+
+
+export function geometryAxisRotationFromKeyboardEvent(event, options) {
+    if (!event || event.defaultPrevented || event.isComposing
+        || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
+        || !isGeometryCameraShortcutTarget(event.target, options)) return null;
+    if (event.code === "KeyX") return GEOMETRY_AXIS_ROTATION.X;
+    if (event.code === "KeyY") return GEOMETRY_AXIS_ROTATION.Y;
+    if (event.code === "KeyZ") return GEOMETRY_AXIS_ROTATION.Z;
+    return null;
+}
+
+export function rotateGeometryCameraAroundAxis(camera, controls, axis, angle) {
+    if (!camera?.position || !camera?.up || !controls?.target
+        || !Number.isFinite(angle) || angle === 0
+        || !Object.values(GEOMETRY_AXIS_ROTATION).includes(axis)) return false;
+    const offset = camera.position.clone().sub(controls.target);
+    if (!(offset.lengthSq() > 0)) return false;
+    const basis = axis === GEOMETRY_AXIS_ROTATION.X ? [1,0,0]
+        : axis === GEOMETRY_AXIS_ROTATION.Y ? [0,1,0] : [0,0,1];
+    const quaternion = camera.quaternion?.constructor
+        ? new camera.quaternion.constructor().setFromAxisAngle(
+            new camera.position.constructor(...basis),
+            angle,
+          )
+        : null;
+    if (!quaternion) return false;
+    offset.applyQuaternion(quaternion);
+    camera.up.applyQuaternion(quaternion).normalize();
+    camera.position.copy(controls.target).add(offset);
+    camera.lookAt(controls.target);
+    controls.update?.();
+    return true;
 }

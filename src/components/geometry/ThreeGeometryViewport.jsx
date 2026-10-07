@@ -22,8 +22,10 @@ import {
 import {
   GEOMETRY_CAMERA_COMMANDS,
   INITIAL_GEOMETRY_CAMERA_FRAME,
+  geometryAxisRotationFromKeyboardEvent,
   orientGeometryCamera,
   normalizeGeometryCameraCommand,
+  rotateGeometryCameraAroundAxis,
 } from "../../services/visualization/geometryCameraView.js";
 import { fitCameraToVisibleObjects } from "../../services/visualization/geometryCameraFit.js";
 import { resultVectorLength } from "../../services/visualization/resultVectorScale.js";
@@ -1399,8 +1401,8 @@ function createAxisArrow(THREE, direction, color, label, cssColor) {
   const root = new THREE.Group();
   const material = new THREE.MeshBasicMaterial({
     color,
-    depthTest: false,
-    depthWrite: false,
+    depthTest: true,
+    depthWrite: true,
   });
   const shaft = new THREE.Mesh(
     new THREE.CylinderGeometry(0.035, 0.035, 0.72, 12),
@@ -1412,7 +1414,19 @@ function createAxisArrow(THREE, direction, color, label, cssColor) {
     material.clone(),
   );
   head.position.y = 0.86;
-  root.add(shaft, head);
+  const rearCap = new THREE.Mesh(
+    new THREE.CircleGeometry(0.115, 20),
+    new THREE.MeshBasicMaterial({
+      color: 0x11161b,
+      depthTest: true,
+      depthWrite: true,
+      side: THREE.DoubleSide,
+    }),
+  );
+  rearCap.position.y = 0.718;
+  rearCap.rotation.x = Math.PI / 2;
+  rearCap.name = `axis-${label.toLowerCase()}-rear-cap`;
+  root.add(shaft, head, rearCap);
   root.quaternion.setFromUnitVectors(
     new THREE.Vector3(0, 1, 0),
     direction,
@@ -1545,7 +1559,11 @@ export function ThreeGeometryViewport(props) {
   let pendingPointer;
   let handlePointerMove;
   let handlePointerLeave;
+  let handlePointerEnter;
   let handlePointerDown, handleClick, handleDoubleClick;
+  let handleAxisKeyDown, handleAxisKeyUp, handleAxisBlur;
+  let fixedAxisRotation = null;
+  let pointerInsideViewport = false;
   let handleControlsStart;
   let handleControlsEnd;
   let renderFrame = 0;
@@ -1738,6 +1756,29 @@ export function ThreeGeometryViewport(props) {
       context.fillText(Number(legend.maximum.toPrecision(6)).toString(), x + boxWidth - 7, y + 57);
       context.textAlign = "left";
     });
+  };
+
+  const setFixedAxisRotation = (axis) => {
+    fixedAxisRotation = axis;
+    if (controls) controls.enabled = !axis;
+    if (axis) {
+      controlsInteracting = true;
+      clearHoverTooltip();
+    } else {
+      controlsInteracting = false;
+    }
+  };
+
+  const rotateFixedAxisFromPointer = (event) => {
+    if (!fixedAxisRotation || movieSnapshot || !camera || !controls) return false;
+    const movement = Number(event.movementX ?? 0) - Number(event.movementY ?? 0);
+    if (!Number.isFinite(movement) || movement === 0) return true;
+    if (rotateGeometryCameraAroundAxis(camera, controls, fixedAxisRotation, movement * 0.006)) {
+      hasFramedGeometry = true;
+      clearHoverTooltip();
+      requestRender();
+    }
+    return true;
   };
 
   const createOrbitControls = (target) => {
@@ -2531,10 +2572,40 @@ export function ThreeGeometryViewport(props) {
       };
       controls = createOrbitControls();
 
-      handlePointerMove = queuePointerPick;
-      handlePointerLeave = clearHoverTooltip;
+      handlePointerEnter = () => { pointerInsideViewport = true; };
+      handlePointerMove = event => {
+        if (rotateFixedAxisFromPointer(event)) {
+          event.preventDefault();
+          return;
+        }
+        queuePointerPick(event);
+      };
+      handlePointerLeave = () => {
+        pointerInsideViewport = false;
+        clearHoverTooltip();
+      };
+      renderer.domElement.addEventListener("pointerenter", handlePointerEnter);
       renderer.domElement.addEventListener("pointermove", handlePointerMove);
       renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
+
+      handleAxisKeyDown = event => {
+        if (!pointerInsideViewport || movieSnapshot || event.repeat) return;
+        const axis = geometryAxisRotationFromKeyboardEvent(event);
+        if (!axis) return;
+        event.preventDefault();
+        setFixedAxisRotation(axis);
+      };
+      handleAxisKeyUp = event => {
+        if (!fixedAxisRotation) return;
+        const axisKey = `Key${fixedAxisRotation.toUpperCase()}`;
+        if (event.code === "AltLeft" || event.code === "AltRight" || event.code === axisKey) {
+          setFixedAxisRotation(null);
+        }
+      };
+      handleAxisBlur = () => setFixedAxisRotation(null);
+      document.addEventListener("keydown", handleAxisKeyDown, true);
+      document.addEventListener("keyup", handleAxisKeyUp, true);
+      window.addEventListener("blur", handleAxisBlur);
       const lineHandlers = streamlinePointerHandlers(pickAtPointer, () => movieSnapshot || !props.resultPickingOnly);
       handlePointerDown = lineHandlers.pointerdown;
       handleClick = lineHandlers.click; handleDoubleClick = lineHandlers.dblclick;
@@ -2715,8 +2786,12 @@ export function ThreeGeometryViewport(props) {
     disposeObject(helperRoot);
     disposeObject(axesRoot);
     if (renderer?.domElement) {
+      renderer.domElement.removeEventListener("pointerenter", handlePointerEnter);
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
       renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
+      document.removeEventListener("keydown", handleAxisKeyDown, true);
+      document.removeEventListener("keyup", handleAxisKeyUp, true);
+      window.removeEventListener("blur", handleAxisBlur);
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       renderer.domElement.removeEventListener("click", handleClick);
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);

@@ -103,3 +103,12 @@ const range = resultCycleRange(task.metadata.JE.ranges, "J", selectedElementIds)
   заменён через createWritable и повторно открыт Reader-ом;
 - сценарий браузерной проверки: `scripts/check-range-backfill.mjs`;
 - протокол: `docs/verification/viewer-range-backfill.json`.
+
+
+## Рабочие точки и общий минмакс — 4.25.0
+
+«Рабочие точки» используют готовый глобальный диапазон M выбранных ФММ из
+HEADER/RANGES. Для оси M применяется диапазон min(0, Mmin) … Mmax.
+Переключатель resultGlobalMinMax общий для вкладок 3D, «Рабочие точки» и
+«Поле на линиях», начальное значение true. Настройка принадлежит открытой
+странице и не сбрасывается при смене задания/базового каталога.

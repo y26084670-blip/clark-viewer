@@ -46,7 +46,7 @@ test('working points use min(0, Mmin) and Mmax for the selected FMM set', () => 
   assert.equal(range.available,true);
   assert.equal(range.minimum,0);
   assert.equal(range.maximum,50);
-  const combined=workingPointGlobalMRange(task,[1,2]);
+  const combined=workingPointGlobalMRange(task,[1,4]);
   assert.equal(combined.minimum,0);
   assert.equal(combined.maximum,100);
   assert.equal(workingPointGlobalMRange(task,[]).available,false);

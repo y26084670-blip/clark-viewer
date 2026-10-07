@@ -128,7 +128,8 @@ export function resultVolumeDomains(frames, quantity, scene, task = null) {
       const domain = { key, source, instance, dimensions, positions, values,
         coordinateBytes: frame.values.BYTES_PER_ELEMENT, points: pointsByImage.get(key) ?? [] };
       const quantityKey = Object.keys(QUANTITIES).find(key => QUANTITIES[key] === quantity);
-      domains.push(...(task ? expandResultDomain(task, record, quantityKey, domain) : [domain]));
+      const expandedDomains = task ? expandResultDomain(task, record, quantityKey, domain) : [domain];
+      domains.push(...expandedDomains.map(item => ({ ...item, points: pointsByImage.get(item.key) ?? [] })));
     }
   }
   return domains;

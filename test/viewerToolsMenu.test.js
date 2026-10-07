@@ -290,7 +290,7 @@ test("range backfill tool locks Viewer, reports progress and keeps a per-file su
 const appSource = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const appSetup = appSource.slice(appSource.indexOf("export default function App"), appSource.indexOf('  return <div class="app-container"'))
   .replace("export default function", "function");
-const createApp = new Function("createSignal", "onCleanup", "createMovieExportController", "createMovieGifEncoder", `
+const createApp = new Function("createSignal", "onCleanup", "onMount", "preloadViewerTabs", "createMovieExportController", "createMovieGifEncoder", `
   ${appSetup}
     return { shared, movieDisabledReason, setTask, setActive, setBusy, setMovieBusy };
   } return App();
@@ -303,7 +303,7 @@ test("App permits only ready dynamic result tabs and separates guarded UI time f
   const app = createApp(initial => {
     let value = initial;
     return [() => value, next => { value = typeof next === "function" ? next(value) : next; }];
-  }, callback => cleanup.push(callback), options => { controllerOptions = options; return controller; }, () => {});
+  }, callback => cleanup.push(callback), callback => callback(), () => Promise.resolve([]), options => { controllerOptions = options; return controller; }, () => {});
   assert.match(app.movieDisabledReason(), /Загрузите/);
   app.setTask({ general: { countTimeSteps: 4, timeStep: .1 } });
   assert.match(app.movieDisabledReason(), /вкладку/);

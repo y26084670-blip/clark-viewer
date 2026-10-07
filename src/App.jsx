@@ -1,4 +1,4 @@
-import { createSignal, For, lazy, onCleanup, Show, Switch, Match, Suspense } from "solid-js";
+import { createSignal, ErrorBoundary, For, lazy, onCleanup, onMount, Show, Switch, Match, Suspense } from "solid-js";
 import { Tasks } from "./tabs/Tasks.jsx";
 import { loadTask } from "./services/taskLoadService.js";
 import { ResultService } from "./services/resultService.js";
@@ -10,13 +10,40 @@ import { createMovieGifEncoder } from "./services/movie/movieGifEncoder.js";
 import { backfillTaskResultRanges } from "./services/results/resultRangeBackfill.js";
 
 const tabs = ["Выбор задания", "Источники / Поле 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Потоки", "Силы / Потери"];
-const SourcesFields3D = lazy(() => import("./tabs/SourcesFields3D.jsx").then(module => ({ default: module.SourcesFields3D })));
-const WorkingPoints = lazy(() => import("./tabs/WorkingPoints.jsx").then(module => ({ default: module.WorkingPoints })));
-const FieldLines = lazy(() => import("./tabs/FieldLines.jsx").then(module => ({ default: module.FieldLines })));
-const FieldAreas = lazy(() => import("./tabs/FieldAreas.jsx").then(module => ({ default: module.FieldAreas })));
-const Fluxes = lazy(() => import("./tabs/Fluxes.jsx").then(module => ({ default: module.Fluxes })));
-const ForcesMoments = lazy(() => import("./tabs/ForcesMoments.jsx").then(module => ({ default: module.ForcesMoments })));
+
+const TAB_MODULE_LOADERS = Object.freeze({
+  SourcesFields3D: () => import("./tabs/SourcesFields3D.jsx"),
+  WorkingPoints: () => import("./tabs/WorkingPoints.jsx"),
+  FieldLines: () => import("./tabs/FieldLines.jsx"),
+  FieldAreas: () => import("./tabs/FieldAreas.jsx"),
+  Fluxes: () => import("./tabs/Fluxes.jsx"),
+  ForcesMoments: () => import("./tabs/ForcesMoments.jsx"),
+});
+const tabModulePromises = new Map();
+export function loadViewerTabModule(name) {
+  const loader = TAB_MODULE_LOADERS[name];
+  if (!loader) return Promise.reject(new Error(`Неизвестная вкладка: ${name}`));
+  if (!tabModulePromises.has(name)) tabModulePromises.set(name, loader());
+  return tabModulePromises.get(name);
+}
+export function preloadViewerTabs() {
+  return Promise.allSettled(Object.keys(TAB_MODULE_LOADERS).map(loadViewerTabModule));
+}
+const tabComponent = (name, exportName = name) => lazy(() =>
+  loadViewerTabModule(name).then(module => ({ default: module[exportName] })));
+const SourcesFields3D = tabComponent("SourcesFields3D");
+const WorkingPoints = tabComponent("WorkingPoints");
+const FieldLines = tabComponent("FieldLines");
+const FieldAreas = tabComponent("FieldAreas");
+const Fluxes = tabComponent("Fluxes");
+const ForcesMoments = tabComponent("ForcesMoments");
 export default function App() {
+  onMount(() => {
+    // Load all lazy tab chunks while this HTML version is current. This keeps
+    // an already-open Viewer usable after a later GitHub Pages deployment
+    // replaces hashed asset names.
+    void preloadViewerTabs();
+  });
   const [active, setActive] = createSignal(0), [task, setTask] = createSignal(null), [path, setPath] = createSignal("");
   const [time, setTime] = createSignal(0), [elements, setElements] = createSignal([]), [regions, setRegions] = createSignal([]);
   const [coils, setCoils] = createSignal(null);
@@ -131,14 +158,20 @@ export default function App() {
       </div>
       <Show when={active() !== 0}>
         <Show when={task()} fallback={<div class="empty-task"><p>Загрузите задание на первой вкладке</p><button onClick={() => setActive(0)}>Выбор задания</button></div>}>
-          <Suspense fallback={<div class="empty-task">Загрузка вкладки…</div>}><Switch>
-            <Match when={active() === 1}><SourcesFields3D {...shared} /></Match>
-            <Match when={active() === 2}><WorkingPoints {...shared} /></Match>
-            <Match when={active() === 3}><FieldLines {...shared} /></Match>
-            <Match when={active() === 4}><FieldAreas {...shared} /></Match>
-            <Match when={active() === 5}><Fluxes {...shared} /></Match>
-            <Match when={active() === 6}><ForcesMoments {...shared} /></Match>
-          </Switch></Suspense>
+          <ErrorBoundary fallback={(failure, reset) => <div class="empty-task">
+            <p>Версия Viewer обновлена. Перезагрузите страницу.</p>
+            <p class="tab-load-error">{failure?.message ?? String(failure)}</p>
+            <button type="button" onClick={() => window.location.reload()}>Перезагрузить</button>
+          </div>}>
+            <Suspense fallback={<div class="empty-task">Загрузка вкладки…</div>}><Switch>
+              <Match when={active() === 1}><SourcesFields3D {...shared} /></Match>
+              <Match when={active() === 2}><WorkingPoints {...shared} /></Match>
+              <Match when={active() === 3}><FieldLines {...shared} /></Match>
+              <Match when={active() === 4}><FieldAreas {...shared} /></Match>
+              <Match when={active() === 5}><Fluxes {...shared} /></Match>
+              <Match when={active() === 6}><ForcesMoments {...shared} /></Match>
+            </Switch></Suspense>
+          </ErrorBoundary>
         </Show>
       </Show>
     </main>

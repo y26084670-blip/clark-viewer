@@ -170,8 +170,12 @@ function elementInstanceCount(record, general) {
     ]);
 }
 
-function regionInstanceCount(record) {
-    return symmetryCount([record.symLs]);
+function regionInstanceCount(record, general) {
+    return symmetryCount([
+        record.symLs,
+        mirrorFactor(general?.mirrorSymmetryY),
+        mirrorFactor(general?.mirrorSymmetryX),
+    ]);
 }
 
 function instanceLimitDiagnostic(schemaId, recordIndex, count, limit) {
@@ -473,7 +477,7 @@ function elementPrimitive(record, recordIndex, general, remainingInstances) {
     };
 }
 
-function regionPrimitive(record, recordIndex, remainingInstances) {
+function regionPrimitive(record, recordIndex, general, remainingInstances) {
     const normalized = normalizedRecord(record);
 
     if (!REGION_GEO_TYPES.has(normalized.geoType)) {
@@ -521,7 +525,7 @@ function regionPrimitive(record, recordIndex, remainingInstances) {
         };
     }
 
-    const requestedInstances = regionInstanceCount(normalized);
+    const requestedInstances = regionInstanceCount(normalized, general);
 
     if (requestedInstances === 0) {
         return {
@@ -552,7 +556,7 @@ function regionPrimitive(record, recordIndex, remainingInstances) {
     }
 
     const instances = normalizeInstances(
-        expandRegionSymmetry(normalized),
+        expandRegionSymmetry(normalized, general),
     );
 
     if (
@@ -675,6 +679,7 @@ export function buildGeometryScene(model = {}) {
     const createRegion = (record, recordIndex) => regionPrimitive(
         record,
         recordIndex,
+        general,
         remainingInstances,
     );
     const reservePrimitive = (primitive) => {

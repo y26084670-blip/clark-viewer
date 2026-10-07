@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import h5wasm from "h5wasm/node";
 import { appendResultRanges } from "../src/services/results/resultRangeBackfillCore.js";
+import { backfillTaskResultRanges } from "../src/services/results/resultRangeBackfill.js";
 import { Hdf5ResultFile } from "../src/services/results/hdf5ResultFile.js";
 
 async function oldFile(name, Type, body, { steps = [0, 1] } = {}) {
@@ -87,7 +88,7 @@ test("backfill applies AS display conversion once and refuses an existing or inc
   await oldFile("Q", Float64Array, async path => {
     const handle = new h5wasm.File(path, "a");
     assert.throws(() => appendResultRanges(handle, { name: "Q", objectIds: [1, 2], applicability: [true, true],
-      objectKind: "elements", timeStep: .5, lastStep: 2, runId: "bad" }), /полный временной цикл/);
+      objectKind: "elements", timeStep: .5, lastStep: 2, runId: "bad" }), /неполные данные/);
     handle.close();
   }, { steps: [0, 2] });
 });
@@ -107,4 +108,40 @@ test("nonfinite old values are counted and make only the affected global channel
     assert.equal(ranges.validCount[0], 1);
     handle.close();
   });
+});
+
+
+function backfillTask(metadata = {}, files = {}) {
+  return {
+    general: { countTimeSteps: 2, timeStep: .1 },
+    metadata,
+    files,
+    elements: [], regions: [],
+    handle: {
+      async requestPermission() { return "granted"; },
+      async getDirectoryHandle() { return { async getFileHandle(name) { return { name }; } }; },
+    },
+  };
+}
+
+test("empty or missing result families are normal and do not force a per-file report", async () => {
+  const ready = { header: { numbs: [1] }, steps: [{index:0},{index:1},{index:2}],
+    ranges: { available: true, state: "complete", runId: "run" } };
+  const empty = { header: { numbs: [] }, steps: [], ranges: { available: false, state: "missing" } };
+  const task = backfillTask({ MH: ready, HV: empty, AV: empty }, { MH: {}, HV: {}, AV: {} });
+  assert.deepEqual(await backfillTaskResultRanges(task), [
+    { state: "all-ready", message: "Файлы уже содержат данные минимакса" },
+  ]);
+});
+
+test("incomplete data and unusable existing minmax use short user diagnostics", async () => {
+  const incomplete = { header: { numbs: [1] }, steps: [{index:0},{index:2}],
+    ranges: { available: false, state: "missing" } };
+  const invalid = { header: { numbs: [1] }, steps: [{index:0},{index:1},{index:2}],
+    ranges: { available: false, state: "invalid", reason: "technical detail" } };
+  const task = backfillTask({ HV: incomplete, JE: invalid }, { HV: {}, JE: {} });
+  assert.deepEqual(await backfillTaskResultRanges(task), [
+    { name: "HV", state: "problem", message: "неполные данные" },
+    { name: "JE", state: "problem", message: "минмакс присутствует, но не используется: данные повреждены" },
+  ]);
 });

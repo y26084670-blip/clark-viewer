@@ -3,6 +3,26 @@ import { isFmm } from "./fmmCharacteristics.js";
 import { resultRangeChannels } from "./resultRanges.js";
 import { RANGE_BACKFILL_FILES } from "./resultRangeBackfillCore.js";
 
+function unusableRangeReason(ranges) {
+  if (!ranges) return "неизвестная причина";
+  if (ranges.state === "partial") return "неполные данные";
+  if (ranges.state === "stale") return "устаревшие данные";
+  if (ranges.state === "invalid") return "данные повреждены";
+  if (ranges.state === "unsupported") return "неподдерживаемый формат";
+  if (ranges.state === "building") return "подготовка не завершена";
+  return ranges.reason || "неизвестная причина";
+}
+
+function hasResultObjects(metadata) {
+  const numbs = metadata?.header?.numbs;
+  return Array.isArray(numbs) && numbs.some(count => Number(count) > 0);
+}
+
+function hasCompleteSteps(metadata, lastStep) {
+  const steps = metadata?.steps ?? [];
+  return steps.length === lastStep + 1 && steps.every((step, index) => step.index === index);
+}
+
 function applicability(name, channels, record) {
   return channels.map(channel => {
     const quantity = channel.id.split(".")[0];
@@ -66,18 +86,34 @@ export async function backfillTaskResultRanges(task, { signal, onProgress } = {}
     .map(ranges => ranges.runId))];
   if (existingRunIds.length > 1) throw new Error("Существующие HDF5 содержат разные run_id; автоматическая дозапись запрещена");
   const runId = existingRunIds[0] ?? `viewer-backfill-${crypto.randomUUID?.() ?? Date.now()}`;
-  const jobs = [], summary = [];
+  const jobs = [], created = [], problems = [];
+  let readyFiles = 0, dataFiles = 0;
   for (const name of RANGE_BACKFILL_FILES) {
-    if (!task.files?.[name]) { summary.push({ name, state: "absent", message: "файл отсутствует" }); continue; }
-    const ranges = task.metadata?.[name]?.ranges;
-    if (ranges?.available) { summary.push({ name, state: "ready", message: "диапазоны уже существуют" }); continue; }
+    const metadata = task.metadata?.[name];
+    if (!task.files?.[name] || !metadata || metadata.error) continue;
+    if (!hasResultObjects(metadata) || !(metadata.steps?.length)) continue;
+    dataFiles++;
+    const ranges = metadata.ranges;
+    if (ranges?.available) { readyFiles++; continue; }
     if (ranges?.state && ranges.state !== "missing") {
-      summary.push({ name, state: "skipped", message: ranges.reason || `существующий индекс: ${ranges.state}` }); continue;
+      problems.push({ name, state: "problem",
+        message: `минмакс присутствует, но не используется: ${unusableRangeReason(ranges)}` });
+      continue;
+    }
+    if (!hasCompleteSteps(metadata, task.general.countTimeSteps)) {
+      problems.push({ name, state: "problem", message: "неполные данные" });
+      continue;
     }
     const fileHandle = await output.getFileHandle(`${name}.h5`);
     jobs.push({ name, fileHandle, plan: { ...resultRangeBackfillPlan(task, name), runId } });
   }
-  if (!jobs.length) return summary;
+  if (!jobs.length) {
+    if (!problems.length && dataFiles > 0 && readyFiles === dataFiles) {
+      return [{ state: "all-ready", message: "Файлы уже содержат данные минимакса" }];
+    }
+    if (!problems.length) return [{ state: "no-data", message: "Нет данных для подготовки минимакса" }];
+    return problems;
+  }
   const worker = new Worker(new URL("./resultRangeBackfill.worker.js", import.meta.url), { type: "module" });
   const terminate = () => worker.terminate();
   signal?.addEventListener("abort", terminate, { once: true });
@@ -89,9 +125,9 @@ export async function backfillTaskResultRanges(task, { signal, onProgress } = {}
       const result = await runWorker(worker, { action: "backfill", fileHandle: job.fileHandle, plan: job.plan }, {
         signal, onProgress: progress => onProgress?.({ ...progress, name: job.name, file: index + 1, files: jobs.length }),
       });
-      summary.push({ name: job.name, state: "created", message: `${result.steps} шагов, ${result.objects} объектов` });
+      created.push({ name: job.name, state: "created", message: "подготовлено" });
     }
-    return summary;
+    return [...created, ...problems];
   } finally {
     signal?.removeEventListener("abort", terminate);
     worker.terminate();

@@ -321,7 +321,9 @@ export function ViewerToolsMenu(props) {
         <Show when={backfillError()}><p class="viewer-movie-error" role="alert">{backfillError()}</p></Show>
         <Show when={backfillSummary().length}>
           <div class="viewer-backfill-summary">
-            <For each={backfillSummary()}>{item => <div><b>{item.name}.h5</b> — {item.message}</div>}</For>
+            <For each={backfillSummary()}>{item => <div>
+              <Show when={item.name} fallback={item.message}><><b>{item.name}.h5</b> — {item.message}</></Show>
+            </div>}</For>
           </div>
         </Show>
         <div class="viewer-movie-actions">

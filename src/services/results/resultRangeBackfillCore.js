@@ -110,7 +110,7 @@ export function appendResultRanges(handle, plan, onProgress = () => {}) {
   if (!Number.isSafeInteger(plan.lastStep) || plan.lastStep < 0 || !Number.isFinite(plan.timeStep)
       || plan.timeStep < 0 || (plan.lastStep > 0 && plan.timeStep === 0)
       || steps.length !== plan.lastStep + 1 || steps.some((step, i) => step.index !== i)) {
-    throw new Error(`${plan.name}.h5: сохранённые шаги не образуют полный временной цикл`);
+    throw new Error(`${plan.name}.h5: неполные данные`);
   }
   if (new Set(objects).size !== objects.length || objects.some(id => !Number.isSafeInteger(id) || id <= 0)) {
     throw new Error(`${plan.name}.h5: неверные идентификаторы объектов`);

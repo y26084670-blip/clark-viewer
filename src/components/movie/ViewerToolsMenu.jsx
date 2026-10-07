@@ -1,4 +1,4 @@
-import { createEffect, createSignal, createUniqueId, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { saveTaskGif } from "../../services/taskGifService.js";
 import "./ViewerToolsMenu.css";
@@ -16,8 +16,13 @@ export function ViewerToolsMenu(props) {
   const [saveInTask, setSaveInTask] = createSignal(true);
   const [saving, setSaving] = createSignal(false);
   const [savedNotice, setSavedNotice] = createSignal("");
-  let trigger, menu, menuItem, dialog, intervalInput, cancelButton, saveButton, startButton;
-  let runAbort, saveAbort, revision = 0, disposed = false;
+  const [backfillDialogOpen, setBackfillDialogOpen] = createSignal(false);
+  const [backfillRunning, setBackfillRunning] = createSignal(false);
+  const [backfillProgress, setBackfillProgress] = createSignal(null);
+  const [backfillError, setBackfillError] = createSignal("");
+  const [backfillSummary, setBackfillSummary] = createSignal([]);
+  let trigger, menu, menuItem, rangeMenuItem, dialog, backfillDialog, intervalInput, cancelButton, saveButton, startButton;
+  let runAbort, saveAbort, backfillAbort, revision = 0, disposed = false;
   let openedTask, openedTab, closeAfterRun = false, closeAfterSave = false;
   const running = () => phase() === "running" || phase() === "cancelling";
   const staticImage = () => props.frameCount === 1;
@@ -135,6 +140,40 @@ export function ViewerToolsMenu(props) {
       }
     }
   }
+  function openBackfill() {
+    if (!props.backfillEligible || backfillRunning() || running() || saving()) return;
+    closeMenu(); setBackfillError(""); setBackfillSummary([]); setBackfillProgress(null);
+    setBackfillDialogOpen(true);
+  }
+  function closeBackfill() {
+    if (backfillRunning()) { backfillAbort?.abort(); return; }
+    setBackfillDialogOpen(false); setBackfillError(""); trigger?.focus();
+  }
+  async function startBackfill() {
+    if (!props.backfillEligible || backfillRunning() || !props.onBackfill) return;
+    const abort = new AbortController(); backfillAbort = abort;
+    setBackfillRunning(true); setBackfillError(""); setBackfillSummary([]);
+    props.onBusyChange?.(true);
+    try {
+      const summary = await props.onBackfill({ signal: abort.signal, onProgress: setBackfillProgress });
+      if (!disposed && !abort.signal.aborted) setBackfillSummary(summary ?? []);
+    } catch (failure) {
+      if (!disposed) setBackfillError(failure?.name === "AbortError"
+        ? "Операция отменена. Уже завершённые файлы, если они были, остаются обновлёнными."
+        : failure?.message ?? String(failure));
+    } finally {
+      if (backfillAbort === abort) backfillAbort = null;
+      if (!disposed) { setBackfillRunning(false); props.onBusyChange?.(false); }
+    }
+  }
+  const backfillProgressText = () => {
+    const value = backfillProgress();
+    if (!value) return "Подготовка…";
+    if (value.phase === "scan") return `${value.name}.h5 · шаг ${value.step} из ${value.total} · файл ${value.file} из ${value.files}`;
+    if (value.phase === "file") return `${value.name}.h5 · файл ${value.file} из ${value.files}`;
+    return "Обработка HDF5…";
+  };
+
   function onTriggerKeyDown(event) {
     if (event.code === "ArrowDown" || event.code === "ArrowUp") {
       event.preventDefault(); if (!menuOpen()) toggleMenu(); else menuItem?.focus();
@@ -144,7 +183,12 @@ export function ViewerToolsMenu(props) {
   }
   function onMenuKeyDown(event) {
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.code)) {
-      event.preventDefault(); menuItem?.focus();
+      event.preventDefault();
+      const items = [menuItem, rangeMenuItem].filter(Boolean);
+      const current = Math.max(0, items.indexOf(event.target));
+      const index = event.code === "Home" ? 0 : event.code === "End" ? items.length - 1
+        : event.code === "ArrowUp" ? (current + items.length - 1) % items.length : (current + 1) % items.length;
+      items[index]?.focus();
     } else if (event.code === "Escape") {
       event.preventDefault(); event.stopPropagation(); closeMenu(true);
     } else if (event.code === "Tab") closeMenu(true);
@@ -184,6 +228,11 @@ export function ViewerToolsMenu(props) {
     else if (dialog.open) dialog.close();
   });
   createEffect(() => {
+    if (!backfillDialog) return;
+    if (backfillDialogOpen()) { if (!backfillDialog.open) backfillDialog.showModal(); }
+    else if (backfillDialog.open) backfillDialog.close();
+  });
+  createEffect(() => {
     const task = props.task, tab = props.tabIndex;
     if (dialogOpen() && (task !== openedTask || tab !== openedTab)) {
       // Handle each context change once. A later restoration error must remain
@@ -194,8 +243,9 @@ export function ViewerToolsMenu(props) {
     }
   });
   onCleanup(() => {
-    disposed = true; runAbort?.abort(); saveAbort?.abort(); discardResult();
+    disposed = true; runAbort?.abort(); saveAbort?.abort(); backfillAbort?.abort(); discardResult();
     if (dialog?.open) dialog.close();
+    if (backfillDialog?.open) backfillDialog.close();
   });
 
   return <>
@@ -208,6 +258,9 @@ export function ViewerToolsMenu(props) {
           <button ref={menuItem} type="button" role="menuitem" aria-disabled={!props.eligible}
             onClick={openSetup}>Создать moview</button>
           <Show when={!props.eligible}><p class="viewer-tools-disabled-reason">{props.disabledReason}</p></Show>
+          <button ref={rangeMenuItem} type="button" role="menuitem" aria-disabled={!props.backfillEligible}
+            onClick={openBackfill}>Дозаписать глобальные минмакс</button>
+          <Show when={!props.backfillEligible}><p class="viewer-tools-disabled-reason">{props.backfillDisabledReason}</p></Show>
         </div>
       </Show>
       <dialog ref={dialog} class="viewer-movie-dialog" aria-labelledby={titleId}
@@ -251,6 +304,33 @@ export function ViewerToolsMenu(props) {
             <button type="button" disabled={saving()} onClick={closeDialog}>Закрыть</button>
           </>}>
             <button ref={cancelButton} type="button" disabled={phase() === "cancelling"} onClick={() => cancelCapture(false)}>Отмена</button>
+          </Show>
+        </div>
+      </dialog>
+      <dialog ref={backfillDialog} class="viewer-movie-dialog viewer-backfill-dialog"
+        aria-label="Дозаписать глобальные минмакс"
+        onCancel={event => { event.preventDefault(); closeBackfill(); }}
+        onClose={() => { if (backfillDialogOpen() && !backfillRunning()) closeBackfill(); }}>
+        <h2>Дозаписать глобальные минмакс</h2>
+        <p>Для H5 текущего задания без <code>HEADER/RANGES</code> будут вычислены диапазоны по всем сохранённым шагам и полной выходной сетке.</p>
+        <p class="viewer-movie-note">Существующие complete/partial/stale/повреждённые RANGES не перезаписываются. Каждый файл сначала изменяется во временной WASM-копии, повторно проверяется и только затем заменяет исходный файл.</p>
+        <Show when={backfillRunning()}>
+          <p role="status">{backfillProgressText()}</p>
+          <progress max={Math.max(1, backfillProgress()?.files ?? 1)} value={Math.max(0, (backfillProgress()?.file ?? 1) - 1)} />
+        </Show>
+        <Show when={backfillError()}><p class="viewer-movie-error" role="alert">{backfillError()}</p></Show>
+        <Show when={backfillSummary().length}>
+          <div class="viewer-backfill-summary">
+            <For each={backfillSummary()}>{item => <div><b>{item.name}.h5</b> — {item.message}</div>}</For>
+          </div>
+        </Show>
+        <div class="viewer-movie-actions">
+          <Show when={backfillRunning()} fallback={<>
+            <button type="button" disabled={!props.backfillEligible || backfillSummary().some(item => item.state === "created")}
+              onClick={startBackfill}>Выполнить</button>
+            <button type="button" onClick={closeBackfill}>Закрыть</button>
+          </>}>
+            <button type="button" onClick={() => backfillAbort?.abort()}>Отмена</button>
           </Show>
         </div>
       </dialog>

@@ -1,0 +1,32 @@
+{
+  "version": "4.21.0",
+  "base": "87e7ad6e3e1b1787177d004b417c398432988649",
+  "workflow": "https://github.com/y26084670-blip/clark-viewer/actions/runs/37622349821",
+  "tests": {
+    "tests": 402,
+    "pass": 402,
+    "fail": 0,
+    "skipped": 0
+  },
+  "builds": {
+    "release": "passed",
+    "pages": "passed"
+  },
+  "browser": "BROWSER_RANGE_BACKFILL_OK",
+  "checks": [
+    "Real h5wasm Float32 and Float64 old MH files receive valid HEADER/RANGES v1",
+    "Existing numerical time datasets remain unchanged in the core backfill test",
+    "AS global ranges convert display units exactly once",
+    "Inapplicable channels remain empty instead of artificial zero",
+    "NaN/Inf are counted and preserved as invalid channel diagnostics",
+    "Incomplete saved time cycles are refused",
+    "Viewer tool locks interaction, reports progress and returns per-file summary",
+    "Chromium passes a real OPFS FileSystemFileHandle to the worker",
+    "Worker appends in temporary WASM FS, validates, writes via createWritable, and Reader reopens it"
+  ],
+  "limits": [
+    "Browser acceptance uses a deterministic synthetic old MH.h5, not a user Solver calculation",
+    "Native Windows directory picker/permission UI is not exercised in CI",
+    "Existing non-missing partial/stale/invalid/unsupported RANGES are intentionally not repaired"
+  ]
+}

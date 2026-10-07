@@ -141,7 +141,7 @@ test("incomplete data and unusable existing minmax use short user diagnostics", 
     ranges: { available: false, state: "invalid", reason: "technical detail" } };
   const task = backfillTask({ HV: incomplete, JE: invalid }, { HV: {}, JE: {} });
   assert.deepEqual(await backfillTaskResultRanges(task), [
-    { name: "HV", state: "problem", message: "неполные данные" },
     { name: "JE", state: "problem", message: "минмакс присутствует, но не используется: данные повреждены" },
+    { name: "HV", state: "problem", message: "неполные данные" },
   ]);
 });

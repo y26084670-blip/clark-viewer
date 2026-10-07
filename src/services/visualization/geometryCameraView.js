@@ -120,21 +120,37 @@ export function isGeometryCameraShortcutTarget(target, {allowControls=false}={})
 }
 
 
-export function geometryAxisRotationFromKeyboardEvent(event, options) {
+function axisFromModifiedKeyboardEvent(event, modifier, options) {
     if (!event || event.defaultPrevented || event.isComposing
-        || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
+        || event.ctrlKey || event.metaKey
         || !isGeometryCameraShortcutTarget(event.target, options)) return null;
+    const valid = modifier === "alt"
+        ? event.altKey && !event.shiftKey
+        : event.shiftKey && !event.altKey;
+    if (!valid) return null;
     if (event.code === "KeyX") return GEOMETRY_AXIS_ROTATION.X;
     if (event.code === "KeyY") return GEOMETRY_AXIS_ROTATION.Y;
     if (event.code === "KeyZ") return GEOMETRY_AXIS_ROTATION.Z;
     return null;
 }
 
-export function rotateGeometryCameraAroundAxis(camera, controls, axis, angle) {
+export function geometryAxisRotationFromKeyboardEvent(event, options) {
+    return axisFromModifiedKeyboardEvent(event, "alt", options);
+}
+
+export function geometryOriginAxisRotationFromKeyboardEvent(event, options) {
+    return axisFromModifiedKeyboardEvent(event, "shift", options);
+}
+
+export function rotateGeometryCameraAroundAxis(camera, controls, axis, angle, {
+    pivot = controls?.target,
+    rotateTarget = false,
+} = {}) {
     if (!camera?.position || !camera?.up || !controls?.target
         || !Number.isFinite(angle) || angle === 0
         || !Object.values(GEOMETRY_AXIS_ROTATION).includes(axis)) return false;
-    const offset = camera.position.clone().sub(controls.target);
+    if (!pivot) return false;
+    const offset = camera.position.clone().sub(pivot);
     if (!(offset.lengthSq() > 0)) return false;
     const basis = axis === GEOMETRY_AXIS_ROTATION.X ? [1,0,0]
         : axis === GEOMETRY_AXIS_ROTATION.Y ? [0,1,0] : [0,0,1];
@@ -147,7 +163,11 @@ export function rotateGeometryCameraAroundAxis(camera, controls, axis, angle) {
     if (!quaternion) return false;
     offset.applyQuaternion(quaternion);
     camera.up.applyQuaternion(quaternion).normalize();
-    camera.position.copy(controls.target).add(offset);
+    camera.position.copy(pivot).add(offset);
+    if (rotateTarget) {
+        const targetOffset = controls.target.clone().sub(pivot).applyQuaternion(quaternion);
+        controls.target.copy(pivot).add(targetOffset);
+    }
     camera.lookAt(controls.target);
     controls.update?.();
     return true;

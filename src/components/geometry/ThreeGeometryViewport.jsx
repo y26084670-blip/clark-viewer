@@ -23,6 +23,7 @@ import {
   GEOMETRY_CAMERA_COMMANDS,
   INITIAL_GEOMETRY_CAMERA_FRAME,
   geometryAxisRotationFromKeyboardEvent,
+  geometryOriginAxisRotationFromKeyboardEvent,
   orientGeometryCamera,
   normalizeGeometryCameraCommand,
   rotateGeometryCameraAroundAxis,
@@ -1563,6 +1564,7 @@ export function ThreeGeometryViewport(props) {
   let handlePointerDown, handleClick, handleDoubleClick;
   let handleAxisKeyDown, handleAxisKeyUp, handleAxisBlur;
   let fixedAxisRotation = null;
+  let fixedAxisPivot = "target";
   let pointerInsideViewport = false;
   let handleControlsStart;
   let handleControlsEnd;
@@ -1758,8 +1760,9 @@ export function ThreeGeometryViewport(props) {
     });
   };
 
-  const setFixedAxisRotation = (axis) => {
+  const setFixedAxisRotation = (axis, pivot = "target") => {
     fixedAxisRotation = axis;
+    fixedAxisPivot = pivot;
     if (controls) controls.enabled = !axis;
     if (axis) {
       controlsInteracting = true;
@@ -1773,7 +1776,12 @@ export function ThreeGeometryViewport(props) {
     if (!fixedAxisRotation || movieSnapshot || !camera || !controls) return false;
     const movement = Number(event.movementX ?? 0) - Number(event.movementY ?? 0);
     if (!Number.isFinite(movement) || movement === 0) return true;
-    if (rotateGeometryCameraAroundAxis(camera, controls, fixedAxisRotation, movement * 0.006)) {
+    const aroundOrigin = fixedAxisPivot === "origin";
+    const pivot = aroundOrigin ? new THREE.Vector3(0, 0, 0) : controls.target;
+    if (rotateGeometryCameraAroundAxis(camera, controls, fixedAxisRotation, movement * 0.006, {
+      pivot,
+      rotateTarget: aroundOrigin,
+    })) {
       hasFramedGeometry = true;
       clearHoverTooltip();
       requestRender();
@@ -1912,7 +1920,7 @@ export function ThreeGeometryViewport(props) {
       y >= bounds.height - AXES_GIZMO_MARGIN - gizmoSize
     ) {
       showTooltip(
-        "Alt+X/Y/Z + движение мыши — вращение вокруг выбранной оси",
+        "Alt+X/Y/Z + движение мыши — вокруг центра вида\nShift+X/Y/Z + движение мыши — вокруг начала координат",
         AXES_GIZMO_MARGIN,
         Math.max(0, bounds.height - AXES_GIZMO_MARGIN - gizmoSize - 54),
       );
@@ -2594,14 +2602,17 @@ export function ThreeGeometryViewport(props) {
 
       handleAxisKeyDown = event => {
         if (!pointerInsideViewport || movieSnapshot || event.repeat) return;
-        const axis = geometryAxisRotationFromKeyboardEvent(event);
+        const altAxis = geometryAxisRotationFromKeyboardEvent(event);
+        const shiftAxis = geometryOriginAxisRotationFromKeyboardEvent(event);
+        const axis = altAxis ?? shiftAxis;
         if (!axis) return;
         event.preventDefault();
-        setFixedAxisRotation(axis);
+        setFixedAxisRotation(axis, shiftAxis ? "origin" : "target");
       };
       handleAxisKeyUp = event => {
         if (!fixedAxisRotation) return;
-        if (event.code === "AltLeft" || event.code === "AltRight") {
+        if ((fixedAxisPivot === "target" && (event.code === "AltLeft" || event.code === "AltRight"))
+            || (fixedAxisPivot === "origin" && (event.code === "ShiftLeft" || event.code === "ShiftRight"))) {
           setFixedAxisRotation(null);
         }
       };

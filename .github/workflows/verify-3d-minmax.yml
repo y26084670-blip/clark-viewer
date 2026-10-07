@@ -1,0 +1,28 @@
+name: Verify 3D minmax
+on:
+  push:
+    branches: [work/viewer-3d-minmax-20261007]
+permissions:
+  contents: read
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Pack source and installed dependencies without Git credentials
+        run: |
+          mkdir -p /tmp/viewer-minmax/source
+          git archive HEAD | tar -x -C /tmp/viewer-minmax/source
+          cp -a node_modules /tmp/viewer-minmax/source/node_modules
+          tar -czf /tmp/viewer-minmax/workspace.tar.gz -C /tmp/viewer-minmax/source .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: viewer-minmax-workspace
+          path: /tmp/viewer-minmax/workspace.tar.gz
+          retention-days: 1

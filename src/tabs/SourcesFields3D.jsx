@@ -67,7 +67,7 @@ export function SourcesFields3D(props) {
   const [scale, setScale] = createGeometryViewSetting("resultVectorScale", 1);
   const [colorMap, setColorMap] = createGeometryViewSetting("resultVectorColorMap", false);
   const [palette, setPalette] = createGeometryViewSetting("resultPalette", "Rainbow");
-  const [globalMinMax, setGlobalMinMax] = createGeometryViewSetting("resultGlobalMinMax", false);
+  const [globalMinMax, setGlobalMinMax] = createGeometryViewSetting("resultGlobalMinMax", true);
   const [streamlineWidth, setStreamlineWidth] = createGeometryViewSetting("resultStreamlineWidth", 2);
   const [streamlineColorMap, setStreamlineColorMap] = createGeometryViewSetting("resultStreamlineColorMap", true);
   const [elementsMode] = createGeometryViewSetting("elementsMode", "all");

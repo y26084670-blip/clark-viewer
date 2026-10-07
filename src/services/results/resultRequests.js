@@ -11,6 +11,8 @@ import { OBJECT_VISIBILITY_MODES } from "../visualization/geometryRenderFilters.
 // Read excluded-list complements before building a scene, otherwise the display
 // filter could only hide selected results and have no remaining rows to show.
 export function resultDisplaySelection(records = [], selected = [], mode) {
+  if (mode === OBJECT_VISIBILITY_MODES.ALL) return records.map(record => record.id);
+  if (mode === OBJECT_VISIBILITY_MODES.NONE) return [];
   if (mode !== OBJECT_VISIBILITY_MODES.EXCEPT_SELECTED) return selected;
   const excluded = new Set(selected);
   return records.filter(record => !excluded.has(record.id)).map(record => record.id);

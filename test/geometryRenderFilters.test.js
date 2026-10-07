@@ -63,7 +63,9 @@ test("3D result selection reads the complement without changing list selection o
     assert.deepEqual(selected, [4, 99]);
     assert.deepEqual(resultDisplaySelection(records, [], "exceptSelected"), [2, 4, 8]);
     assert.deepEqual(resultDisplaySelection(records, [2, 4, 8], "exceptSelected"), []);
-    for (const mode of ["all", "selected", "none", undefined]) {
+    assert.deepEqual(resultDisplaySelection(records, selected, "all"), [2, 4, 8]);
+    assert.deepEqual(resultDisplaySelection(records, selected, "none"), []);
+    for (const mode of ["selected", undefined]) {
         assert.equal(resultDisplaySelection(records, selected, mode), selected);
     }
 });

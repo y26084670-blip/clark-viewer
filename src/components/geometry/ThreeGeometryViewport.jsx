@@ -176,6 +176,7 @@ function createPrescribedSourceVectors(
   previousRoot = null,
   palette = "Viridis",
   lengthReference = null,
+  displayRange = null,
 ) {
   const root = sourceVectorRoot(THREE, previousRoot, style);
   if (style === "points") {
@@ -188,6 +189,7 @@ function createPrescribedSourceVectors(
       minimum = Math.min(minimum, point.magnitude);
       maximum = Math.max(maximum, point.magnitude);
     }
+    if (displayRange) ({ minimum, maximum } = displayRange);
     const previous = root.getObjectByName("result-vector-color-nodes");
     const nodes = updateResultPoints(THREE, previous, points, {
       colorMap: true, minimum, maximum, palette,
@@ -493,9 +495,10 @@ export function updateResultLayers(THREE, previous, definitions, {
     if (next.has(key)) continue;
     const old = previous.get(key);
     const volumeFields = layer.volumeFields ?? null;
+    const displayRange = layer.displayRange?.available ? layer.displayRange : null;
     const vectorStyle = colorMap ? (volumeFields ? "volume" : "points") : style;
     const signature = [scene, scalarScene, volumeFields, layer.color, layer.quantityKey,
-      layer.groupLabel, filters, colorMap, vectorStyle, scale, palette, opacity, layer.vectorLengthReference];
+      layer.groupLabel, filters, colorMap, vectorStyle, scale, palette, opacity, layer.vectorLengthReference, displayRange];
     if (old && signature.every((value, index) => Object.is(value, old.signature[index]))) {
       next.set(key, old);
       continue;
@@ -515,6 +518,7 @@ export function updateResultLayers(THREE, previous, definitions, {
           minimum = Math.min(minimum, vector.magnitude);
           maximum = Math.max(maximum, vector.magnitude);
         }
+        if (displayRange) ({ minimum, maximum } = displayRange);
         updateResultVolumeMeshes(THREE, state.vectorRoot, domains,
           { minimum, maximum, palette, opacity });
         updateResultSurfaceMeshes(THREE, state.vectorRoot, surfaces,
@@ -539,7 +543,7 @@ export function updateResultLayers(THREE, previous, definitions, {
         state.vectorRoot = createPrescribedSourceVectors(THREE, vectors, null,
           scene.sceneDiagonal, vectorStyle,
           { current: scale, magnetization: scale },
-          scene.maximumMagnitude, color, state.vectorRoot, palette, layer.vectorLengthReference);
+          scene.maximumMagnitude, color, state.vectorRoot, palette, layer.vectorLengthReference, displayRange);
         if (vectorStyle === "points") legend = state.vectorRoot.userData.colorLegend;
         else {
           const nodes = updateResultPoints(THREE,
@@ -558,7 +562,8 @@ export function updateResultLayers(THREE, previous, definitions, {
       const validScalar = item => Number.isFinite(item.value)
         && item.origin?.length === 3 && Array.from(item.origin).every(Number.isFinite) && visible(item);
       const points = scalarScene.points.filter(validScalar);
-      const { minimum, maximum, quantity, unit } = scalarScene;
+      const { quantity, unit } = scalarScene;
+      const { minimum, maximum } = displayRange ?? scalarScene;
       if (Number.isFinite(minimum) && Number.isFinite(maximum)) {
         const volume = Boolean(volumeFields);
         if (state.scalarRoot && (volume ? state.scalarRoot.isPoints : !state.scalarRoot.isPoints)) {

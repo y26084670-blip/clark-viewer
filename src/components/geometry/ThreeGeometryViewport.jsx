@@ -1911,7 +1911,11 @@ export function ThreeGeometryViewport(props) {
       x <= AXES_GIZMO_MARGIN + gizmoSize &&
       y >= bounds.height - AXES_GIZMO_MARGIN - gizmoSize
     ) {
-      setHoverTooltip(null);
+      showTooltip(
+        "Alt+X/Y/Z + движение мыши — вращение вокруг выбранной оси",
+        AXES_GIZMO_MARGIN,
+        Math.max(0, bounds.height - AXES_GIZMO_MARGIN - gizmoSize - 54),
+      );
       return;
     }
 
@@ -2597,8 +2601,7 @@ export function ThreeGeometryViewport(props) {
       };
       handleAxisKeyUp = event => {
         if (!fixedAxisRotation) return;
-        const axisKey = `Key${fixedAxisRotation.toUpperCase()}`;
-        if (event.code === "AltLeft" || event.code === "AltRight" || event.code === axisKey) {
+        if (event.code === "AltLeft" || event.code === "AltRight") {
           setFixedAxisRotation(null);
         }
       };

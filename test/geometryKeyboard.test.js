@@ -68,11 +68,11 @@ test("Editing text or selecting an input value does not move the camera", () => 
 });
 
 test("active 3D tab handles views and one time step from lists, selects, buttons and every range without moving focus",()=>{
-  let handler,time=2,blocked=false,modal=false;const views=[];
-  const owner={document:{querySelector:()=>modal},addEventListener:(name,fn,capture)=>{assert.equal(capture,true);handler=fn;},
-    removeEventListener:(name,fn,capture)=>{assert.equal(fn,handler);assert.equal(capture,true);handler=null;}};
+  const handlers=new Map();let time=2,blocked=false,modal=false;const views=[];
+  const owner={document:{querySelector:()=>modal},addEventListener:(name,fn,capture)=>{assert.equal(capture,true);handlers.set(name,fn);},
+    removeEventListener:(name,fn,capture)=>{assert.equal(fn,handlers.get(name));assert.equal(capture,true);handlers.delete(name);}};
   const remove=installSourcesFieldsKeyboard(owner,{blocked:()=>blocked,time:()=>time,maxTime:()=>3,setTime:t=>time=t,view:v=>views.push(v)});
-  const press=(code,target,extra={})=>{const event={code,key:"я",target,preventDefault(){this.defaultPrevented=true;},...extra};handler(event);return event;};
+  const press=(code,target,extra={})=>{const event={code,key:"я",target,preventDefault(){this.defaultPrevented=true;},...extra};handlers.get("keydown")(event);return event;};
   for(const target of [{tagName:"DIV"},{tagName:"BUTTON"},{tagName:"SELECT"},{tagName:"INPUT",type:"range"},{tagName:"INPUT",type:"checkbox"}]) {
     time=2;assert.equal(press("ArrowRight",target).defaultPrevented,true);assert.equal(time,3);
     press("ArrowRight",target);assert.equal(time,3);press("ArrowLeft",target);assert.equal(time,2);
@@ -84,5 +84,26 @@ test("active 3D tab handles views and one time step from lists, selects, buttons
   press("KeyA",{tagName:"DIV"},{ctrlKey:true});assert.equal(views.at(-1),commands.RESET_OBLIQUE);
   const count=views.length;
   blocked=true;press("KeyZ",{});assert.equal(views.length,count);blocked=false;
-  modal=true;press("ArrowLeft",{});assert.equal(time,2);remove();assert.equal(handler,null);
+  modal=true;press("ArrowLeft",{});assert.equal(time,2);remove();assert.equal(handlers.size,0);
+});
+
+
+test("axis view shortcuts are ignored briefly after Alt is released",()=>{
+  const handlers=new Map();let now=1000;const views=[];
+  const owner={document:{querySelector:()=>false},
+    addEventListener:(name,fn)=>handlers.set(name,fn),
+    removeEventListener:(name)=>handlers.delete(name)};
+  const remove=installSourcesFieldsKeyboard(owner,{
+    blocked:()=>false,time:()=>0,maxTime:()=>0,setTime(){},view:v=>views.push(v),now:()=>now,
+  });
+  handlers.get("keyup")({code:"AltLeft"});
+  const press=(code,extra={})=>{const event={code,target:{tagName:"DIV"},preventDefault(){this.defaultPrevented=true;},...extra};
+    handlers.get("keydown")(event);return event;};
+  assert.equal(press("KeyX").defaultPrevented,true);
+  assert.equal(press("KeyY",{ctrlKey:true}).defaultPrevented,true);
+  assert.deepEqual(views,[]);
+  press("KeyA");assert.deepEqual(views,[commands.FIT_ALL]);
+  now+=699;press("KeyZ");assert.equal(views.length,1);
+  now+=1;press("KeyZ");assert.equal(views.at(-1),commands.VIEW_POSITIVE_Z);
+  remove();assert.equal(handlers.size,0);
 });

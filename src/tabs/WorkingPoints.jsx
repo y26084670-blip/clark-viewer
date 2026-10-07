@@ -8,26 +8,19 @@ import { resultObjects, useAsyncResult } from "../services/results/resultRequest
 import { characteristicCurve, isAnisotropic, isFmm, loadFmmCharacteristic } from "../services/results/fmmCharacteristics.js";
 import { buildGeometryTimeModel } from "../services/visualization/geometryTimeModel.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
-import { globalResultRange } from "../services/results/resultGlobalScale.js";
+import { workingPointGlobalMRange } from "../services/results/resultGlobalScale.js";
 
 export function WorkingPoints(props) {
   const records = createMemo(() => (props.task?.elements ?? []).filter(isFmm));
   const selected = createMemo(() => records().filter(row => props.elements.includes(row.id)));
   const [globalMinMax, setGlobalMinMax] = createGeometryViewSetting("resultGlobalMinMax", true);
-  const globalMRange = createMemo(() => globalResultRange(
+  const globalMRange = createMemo(() => workingPointGlobalMRange(
     props.task,
-    "M",
     selected().map(record => record.id),
   ));
-  const globalYRange = createMemo(() => {
-    const range = globalMRange();
-    if (!globalMinMax() || !range.available) return null;
-    const minimum = Math.min(0, range.minimum);
-    const maximum = range.maximum;
-    return Number.isFinite(minimum) && Number.isFinite(maximum) && minimum < maximum
-      ? { minimum, maximum }
-      : null;
-  });
+  const globalYRange = createMemo(() => globalMinMax() && globalMRange().available
+    ? { minimum: globalMRange().minimum, maximum: globalMRange().maximum }
+    : null);
   const curves = useAsyncResult(() => props.task && ({ task: props.task, records: selected() }), async request => {
     const materials = await Promise.all(request.records.map(async record => {
       try {

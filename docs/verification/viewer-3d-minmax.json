@@ -1,0 +1,47 @@
+{
+  "passed": 15,
+  "checks": [
+    "Short 3D labels and enabled, initially unchecked global range control",
+    "All three groups use HDF5 global bounds with no field reread or second A/B conversion",
+    "Global colour ranges stay fixed across time",
+    "Disabling global mode restores the current-frame colour range",
+    "All elements/regions remain displayed after both list selections are cleared",
+    "Selected-only with empty lists shows no results and disables global minmax",
+    "Selected-only reduces bounds to the original selected model IDs",
+    "Palette and global checkbox share the control row at desktop width",
+    "Real WebGL dynamic GIF contains three frames and restores time/global legends",
+    "Loss scale uses Jmin*Emin/Jmax*Emax, not exact signed dot extrema",
+    "Magnetic energy uses modulus products with the existing unit factor",
+    "Old HDF5 files stay viewable; unavailable global checkbox cannot be checked",
+    "Partial headers are not presented as full-cycle ranges",
+    "A static zero-interval task exports a one-frame non-looping GIF with global bounds",
+    "Global mode remains available for vector arrows and survives representation changes"
+  ],
+  "errors": [],
+  "version": "4.20.0",
+  "base": "6eae42eec2d8ed8c9938ab5d268c0777af0f020f",
+  "tests": {
+    "tests": 397,
+    "pass": 397,
+    "fail": 0,
+    "skipped": 0
+  },
+  "workflow": "https://github.com/y26084670-blip/clark-viewer/actions/runs/37611406346",
+  "inputCommit": "1ea114faf41d3f2adcb34e214de75ebfcecdb4bd",
+  "builds": {
+    "release": "passed",
+    "pages": "passed"
+  },
+  "hdf5": "Real h5wasm Float32/Float64 files with HEADER/RANGES v1; no full field scan for metadata",
+  "policy": {
+    "defaultGlobalMinmax": false,
+    "derived": "product of global magnitude bounds with existing unit factors",
+    "rawValuesChanged": false,
+    "solverChanged": false
+  },
+  "limits": [
+    "Browser uses deterministic task/reader fixtures, not a user Solver calculation",
+    "Julia writer to browser round-trip not executed",
+    "Native Windows folder picker not exercised"
+  ]
+}

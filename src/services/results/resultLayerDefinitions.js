@@ -4,7 +4,7 @@ export const RESULT_LAYER_GROUPS = Object.freeze([
     quantities: Object.freeze(["none", "M", "H", "MHdot", "J", "E", "JEdot"]) }),
   Object.freeze({ key: "regions", label: "Области", defaultQuantity: "none",
     quantities: Object.freeze(["none", "Bs", "As"]) }),
-  Object.freeze({ key: "virtual", label: "Виртуальные элементы", defaultQuantity: "none",
+  Object.freeze({ key: "virtual", label: "Виртуальные", defaultQuantity: "none",
     quantities: Object.freeze(["none", "Bv", "Av"]) }),
 ]);
 

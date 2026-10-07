@@ -1,5 +1,5 @@
 .sources-fields-toolbar {
-  gap: 6px 12px;
+  gap: 6px 8px;
 }
 .source-streamline-toolbar { gap: 6px 12px; }
 .source-streamline-toolbar select { max-width: min(360px, 35vw); }
@@ -11,7 +11,7 @@
   gap: 4px;
 }
 .sources-fields-toolbar .source-quantity-selector select {
-  max-width: min(245px, 55vw);
+  max-width: min(205px, 45vw);
 }
 .source-result-size-slider {
   position: relative;
@@ -42,3 +42,7 @@
 .sources-fields-status .source-layer-error {
   color: #aa2525;
 }
+
+.sources-fields-toolbar > label { white-space: nowrap; }
+.sources-fields-toolbar .source-quantity-selector { flex-wrap: nowrap; }
+.sources-fields-toolbar .source-global-minmax { gap: 4px; }

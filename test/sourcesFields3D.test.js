@@ -121,7 +121,7 @@ test("published layers retain their units and shared time while a newer frame is
   assert.match(ui.layerStatus(layers[2]), /Тл·м/);
   assert.match(ui.layerStatus(layers[2]), /Объёмная карта: 1 сеток/);
   assert.match(ui.layerStatus(layers[2]), /Часть сеток/);
-  assert.deepEqual(ui.resultLayers().map(layer => layer.groupLabel), ["Элементы", "Области", "Виртуальные элементы"]);
+  assert.deepEqual(ui.resultLayers().map(layer => layer.groupLabel), ["Элементы", "Области", "Виртуальные"]);
   assert.equal(ui.resultLayers()[0].scalarScene, frame.value.layers[0].scalarScene);
   assert.equal(ui.resultLayers()[2].scene, frame.value.layers[2].scene);
   ui.close();
@@ -182,6 +182,7 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
     const set = (name, value) => signals.get(name)[1](value);
     assert.equal(requests.length, 1);
     set("resultPalette", "Turbo"); set("resultVectorScale", 2);
+    set("resultGlobalMinMax", true); set("resultGlobalMinMax", false);
     set("resultStreamlineWidth", 8); set("resultStreamlineColorMap", false);
     set("resultStreamlineColorMap", true);
     set("resultVectorColorMap", true); set("resultVectorScale", 8);

@@ -46,6 +46,12 @@ function colorRanges(lines, filters) {
       }
     }
   }
+  for (const line of lines) {
+    const range = ranges.get(line.quantityKey ?? line.id), global = line.displayRange;
+    if (range && global?.available) {
+      range.minimum = global.minimum; range.maximum = global.maximum;
+    }
+  }
   return ranges;
 }
 

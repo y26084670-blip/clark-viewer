@@ -244,3 +244,15 @@ test("returning to the 3D tab restores seeds and tolerance without retaining wor
   props.task={elements:[],regions:[]};ui=open();assert.equal(ui.streamlineSeeds().length,0);
   assert.equal(ui.selectedStreamline(),null);assert.equal(ui.request().streamlineTolerance,.0001);ui.close();
 });
+
+test('3D streamline colours use the optional global magnitude range and restore local bounds',()=>{
+  const root=new THREE.Group(),a=line(1);const options={colorMap:true,resolution:[800,600]};
+  updateStreamlineMeshes(THREE,root,[a],options);
+  assert.deepEqual(root.userData.colorLegends.map(r=>[r.minimum,r.maximum]),[[1,5]]);
+  updateStreamlineMeshes(THREE,root,[{...a,displayRange:{available:true,minimum:0,maximum:100}}],options);
+  assert.deepEqual(root.userData.colorLegends.map(r=>[r.minimum,r.maximum]),[[0,100]]);
+  assert.deepEqual([...a.paths[0].magnitudes],[1,3,5]);
+  updateStreamlineMeshes(THREE,root,[a],options);
+  assert.deepEqual(root.userData.colorLegends.map(r=>[r.minimum,r.maximum]),[[1,5]]);
+  updateStreamlineMeshes(THREE,root,[],options);
+});

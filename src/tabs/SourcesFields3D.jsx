@@ -8,6 +8,7 @@ import { QUANTITIES } from "../services/results/resultMappings.js";
 import { resultDisplaySelection, useResultFrame } from "../services/results/resultRequests.js";
 import { RESULT_LAYER_GROUPS, RESULT_LAYER_QUANTITY_LABELS } from "../services/results/resultLayerDefinitions.js";
 import { createResultLayerReader } from "../services/results/resultLayerRequests.js";
+import { applyResultGlobalRange, resultGlobalScale } from "../services/results/resultGlobalScale.js";
 import { RESULT_SCALAR_PALETTES } from "../services/visualization/resultScalarColors.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import { movie3DFilenamePrefix } from "../services/movie/movieFilename.js";
@@ -66,6 +67,7 @@ export function SourcesFields3D(props) {
   const [scale, setScale] = createGeometryViewSetting("resultVectorScale", 1);
   const [colorMap, setColorMap] = createGeometryViewSetting("resultVectorColorMap", false);
   const [palette, setPalette] = createGeometryViewSetting("resultPalette", "Rainbow");
+  const [globalMinMax, setGlobalMinMax] = createGeometryViewSetting("resultGlobalMinMax", false);
   const [streamlineWidth, setStreamlineWidth] = createGeometryViewSetting("resultStreamlineWidth", 2);
   const [streamlineColorMap, setStreamlineColorMap] = createGeometryViewSetting("resultStreamlineColorMap", true);
   const [elementsMode] = createGeometryViewSetting("elementsMode", "all");
@@ -95,6 +97,8 @@ export function SourcesFields3D(props) {
     return { key: group.key, quantityKey, selected,
       volumeMode: quantityKey !== "none" && volumeMode() };
   }));
+  const globalRanges = createMemo(() => resultGlobalScale(props.task, requestedLayers(), streamlineSeeds()));
+  const effectiveGlobalMinMax = createMemo(() => globalMinMax() && globalRanges().available);
   const hasRequestedResults = createMemo(() => requestedLayers().some(layer => layer.quantityKey !== "none" && layer.selected.length > 0));
   const layerReader = createResultLayerReader();
   onCleanup(() => layerReader.close());
@@ -107,13 +111,13 @@ export function SourcesFields3D(props) {
   const value = () => displayed()?.value;
   const streamlines = createMemo(() => (value()?.streamlines ?? [])
     .filter(line => streamlineSeeds().some(seed => seed.id === line.id))
-    .map(line => ({ ...line, quantity: QUANTITIES[line.quantityKey]?.label ?? line.quantityKey,
+    .map(line => ({ ...line, displayRange: effectiveGlobalMinMax() ? globalRanges().lineRanges[line.quantityKey] : undefined, quantity: QUANTITIES[line.quantityKey]?.label ?? line.quantityKey,
       unit: QUANTITIES[line.quantityKey]?.unit ?? "" })));
   const selectedLineStatus = () => {
     const line = streamlines().find(item => item.id === selectedStreamline());
     return line?.error || line?.reasons?.map(reason => STREAMLINE_REASONS[reason] ?? reason).join(" · ") || "";
   };
-  const layerMetadata = layer => ({ ...layer,
+  const layerMetadata = layer => ({ ...applyResultGlobalRange(layer, effectiveGlobalMinMax() ? globalRanges().layerRanges[layer.key] : null),
     groupLabel: RESULT_LAYER_GROUPS.find(group => group.key === layer.key)?.label ?? layer.key,
     color: layer.quantityKey === "J" ? 0xff5454 : layer.quantityKey === "M" ? 0x44dd66 : 0x44bbff,
   });
@@ -134,12 +138,15 @@ export function SourcesFields3D(props) {
     const scalar = layer.scalarScene;
     const maximum = layer.scene?.maximumMagnitude?.magnetization;
     const number = value => Number.isFinite(value) ? value.toPrecision(6) : "—";
-    const range = scalar ? `${number(scalar.minimum)} … ${number(scalar.maximum)}` : `max ${number(maximum)}`;
+    const bounds = layer.displayRange;
+    const range = bounds ? `${number(bounds.minimum)} … ${number(bounds.maximum)}`
+      : scalar ? `${number(scalar.minimum)} … ${number(scalar.maximum)}` : `max ${number(maximum)}`;
     const representations = [];
     if (layer.volumeFields?.domains?.length) representations.push(`Объёмная карта: ${layer.volumeFields.domains.length} сеток`);
     if (layer.volumeFields?.surfaces?.length) representations.push(`Поверхность: ${layer.volumeFields.surfaces.length} площадок`);
     const volume = layer.volumeFields ? ` · ${representations.join(" · ") || "Объёмная карта недоступна; показаны цветные узлы"}` : "";
     return `${quantity.formula ? quantity.formula + " · " : ""}${range} ${quantity.unit}`
+      + (bounds ? ` · общий минмакс${bounds.approximate ? " (произведение модулей)" : ""}` : "")
       + volume + (layer.volumeNotice ? ` · ${layer.volumeNotice}` : "")
       + (layer.sampled ? " · показана выборка узлов" : "");
   };
@@ -174,8 +181,15 @@ export function SourcesFields3D(props) {
               <input type="range" min="-1" max="1" step="0.05" value={Math.log10(scale())} onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} />
             </span>
           </label>
-          <label><input type="checkbox" checked={effectiveColorMap()} disabled={hasScalars()} onChange={event => !hasScalars() && setColorMap(event.currentTarget.checked)} /> Цветовая карта</label>
+          <label><input type="checkbox" checked={effectiveColorMap()} disabled={hasScalars()} onChange={event => !hasScalars() && setColorMap(event.currentTarget.checked)} /> Карта</label>
         </Show>
+        <label class="source-global-minmax" title={globalRanges().available
+          ? "Общие пределы модулей за весь расчёт из HDF5. Для энергии/потерь — произведения границ модулей."
+          : globalRanges().reason}>
+          <input type="checkbox" aria-label="Общий минмакс" checked={effectiveGlobalMinMax()}
+            disabled={props.movieBusy || !globalRanges().available}
+            onChange={event => !props.movieBusy && globalRanges().available && setGlobalMinMax(event.currentTarget.checked)} />Общий минмакс
+        </label>
         <label>Палитра <select aria-label="Палитра" value={palette()} disabled={paletteDisabled()} onChange={event => setPalette(event.currentTarget.value)}>
           <For each={RESULT_SCALAR_PALETTES}>{name => <option value={name}>{name}</option>}</For>
         </select></label>
@@ -204,6 +218,7 @@ export function SourcesFields3D(props) {
         <For each={statusLayers()}>{layer => <span classList={{ "source-layer-error": layer.state === "error" }}><b>{layer.groupLabel}:</b> {layerStatus(layer)}</span>}</For>
         <Show when={hasRequestedResults() && result().loading && displayed()}><span>Чтение результатов…</span></Show>
         <Show when={hasRequestedResults() && displayed()}><span>Показан шаг {displayed().request.time}</span></Show>
+        <Show when={globalMinMax() && !globalRanges().available}><span>Общий минмакс недоступен: {globalRanges().reason}</span></Show>
         <Show when={streamlineNotice()}><span class="source-layer-error">{streamlineNotice()}</span></Show>
         <Show when={streamlineSeeds().length && result().loading}><span>Расчёт линий…</span></Show>
       </div>

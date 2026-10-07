@@ -5,6 +5,8 @@ import { RESULT_LAYER_GROUPS } from "../../src/services/results/resultLayerDefin
 import { createResultLayerReader } from "../../src/services/results/resultLayerRequests.js";
 import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_REASONS } from "../../src/services/visualization/resultStreamlineField.js";
 
+import { applyResultGlobalRange, resultGlobalScale } from "../../src/services/results/resultGlobalScale.js";
+
 const streamlineSessions = new WeakMap();
 
 // Execute the actual component setup, excluding JSX. Memo reads are evaluated on
@@ -16,7 +18,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     .replace("export function", "function");
   // Evaluate the production JSX bindings and callbacks in that same setup
   // closure, so the tests also observe checkbox state/guards and slider wiring.
-  const controls = source.slice(source.indexOf("<Show when={hasVectors()"), source.indexOf(" Цветовая карта</label>"));
+  const controls = source.slice(source.indexOf("<Show when={hasVectors()"), source.indexOf(" Карта</label>"));
   const visible = controls.match(/<Show when=\{([^\n]+)\}>/);
   const label = controls.match(/<label>\{([^\n}]+)\}/);
   const range = controls.match(/<input type="range" ([^\n]+) \/>/);
@@ -46,13 +48,13 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
   const run = new Function("props", "createGeometryViewSetting", "createMemo", "onCleanup", "createSignal", "createEffect",
     "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_REASONS", "streamlineSessions",
     "QUANTITIES", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
-    "createMovieTabAdapter", "completedMovieFrame", "onMount",
+    "createMovieTabAdapter", "completedMovieFrame", "onMount", "applyResultGlobalRange", "resultGlobalScale",
     `${setup} return { quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
       colorMap, effectiveColorMap, palette, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
       addStreamline, deleteStreamline, changeStreamlineTolerance, streamlines, selectedLineStatus,
       controls: ${controlBindings},
       streamlineControls: ${streamlineBindings},
-      resultLayers, statusLayers, layerStatus, timeIndex, selections }; } return SourcesFields3D(props);`);
+      globalMinMax, setGlobalMinMax, globalRanges, effectiveGlobalMinMax, resultLayers, statusLayers, layerStatus, timeIndex, selections }; } return SourcesFields3D(props);`);
   const api = run(props, options.createGeometryViewSetting ?? ((name, initial) => [() => settings[name] ?? initial, value => { settings[name] = value; }]),
     options.createMemo ?? (compute => compute), callback => cleanup.push(callback),
     options.createSignal ?? (initial => { let value = initial; return [() => value, next => { value = typeof next === "function" ? next(value) : next; }]; }),
@@ -60,7 +62,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_REASONS, streamlineSessions, QUANTITIES, resultDisplaySelection,
     RESULT_LAYER_GROUPS, options.readerFactory ?? createResultLayerReader,
     (source, reader) => { requestSource = source; load = reader; options.observeRequest?.(source); return () => state; },
-    options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame, () => {});
+    options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame, () => {}, applyResultGlobalRange, resultGlobalScale);
   return { ...api, request: () => requestSource(), load: request => load(request),
     setResultState(next) { state = next; },
     flushEffects() { effects.forEach(callback => callback()); },

@@ -57,3 +57,7 @@
 .viewer-movie-save { display: inline-flex; align-items: center; padding: 5px 12px; min-height: 32px; border: 1px solid #185f96; border-radius: 3px; background: #185f96; color: #fff; text-decoration: none; }
 .viewer-movie-save:hover { background: #246b9f; }
 .viewer-movie-dialog :is(button, a, input):focus-visible { outline: 2px solid #92c9ff; outline-offset: 2px; }
+
+.viewer-backfill-dialog code { color: #d9e8f5; }
+.viewer-backfill-summary { margin: 12px 0; max-height: 240px; overflow: auto; font-size: .9rem; line-height: 1.5; }
+.viewer-backfill-summary > div { padding: 3px 0; border-bottom: 1px solid #ffffff14; }

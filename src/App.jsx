@@ -7,6 +7,7 @@ import { AboutDialog } from "./components/AboutDialog.jsx";
 import { ViewerToolsMenu } from "./components/movie/ViewerToolsMenu.jsx";
 import { createMovieExportController } from "./services/movie/movieExportController.js";
 import { createMovieGifEncoder } from "./services/movie/movieGifEncoder.js";
+import { backfillTaskResultRanges } from "./services/results/resultRangeBackfill.js";
 
 const tabs = ["Выбор задания", "Источники / Поле 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Потоки", "Силы / Потери"];
 const SourcesFields3D = lazy(() => import("./tabs/SourcesFields3D.jsx").then(module => ({ default: module.SourcesFields3D })));
@@ -51,6 +52,40 @@ export default function App() {
       reader?.close(); if (revision === loadRevision) setError(`Не удалось загрузить задание: ${error.message}`);
     } finally { if (revision === loadRevision) setBusy(false); }
   }
+  async function backfillRanges(options) {
+    const current = task();
+    if (!current) throw new Error("Задание не загружено");
+    // requestPermission is invoked synchronously inside backfillTaskResultRanges,
+    // while this call still belongs to the user's click.
+    const operation = backfillTaskResultRanges(current, options);
+    activeReader?.close(); activeReader = undefined;
+    try {
+      return await operation;
+    } finally {
+      if (task() === current) {
+        const data = await loadTask(current.handle);
+        let reader;
+        try {
+          let metadata = {};
+          if (Object.keys(data.files).length) {
+            reader = new ResultService();
+            metadata = await reader.open(data.files);
+          }
+          for (const [name, info] of Object.entries(metadata)) {
+            if (!info.error && ["MH", "JE", "HS", "AS", "HV", "AV", "Q"].includes(name)) {
+              try { mapResultObjects(data, name, info.header); }
+              catch (error) { info.error = error.message; }
+            }
+          }
+          activeReader = reader;
+          setTask({ ...data, reader, metadata });
+        } catch (error) {
+          reader?.close();
+          throw new Error(`Диапазоны записаны, но результаты не удалось переоткрыть: ${error.message}`);
+        }
+      }
+    }
+  }
   function changeTime(index) {
     if (Number.isFinite(index)) setTime(Math.max(0, Math.min(task()?.general.countTimeSteps ?? 0, Math.trunc(index))));
   }
@@ -86,7 +121,9 @@ export default function App() {
         disabled={movieBusy()} onClick={() => { if (!movieBusy()) setActive(i()); }}>{title}</button>}</For>
       <ViewerToolsMenu task={task()} tabIndex={active()} frameCount={(task()?.general.countTimeSteps ?? 0) + 1}
         eligible={!movieDisabledReason()} disabledReason={movieDisabledReason()}
-        onRun={options => movieController.run(options)} onBusyChange={setMovieBusy} />
+        backfillEligible={Boolean(task()) && !busy() && !movieBusy()}
+        backfillDisabledReason={!task() ? "Загрузите задание." : busy() ? "Дождитесь загрузки задания." : movieBusy() ? "Дождитесь завершения текущей операции." : ""}
+        onRun={options => movieController.run(options)} onBackfill={backfillRanges} onBusyChange={setMovieBusy} />
     </nav>
     <main class="tabs-body" inert={movieBusy()} aria-busy={movieBusy()}>
       <div class="task-tab" style={{ display: active() === 0 ? "flex" : "none" }}>

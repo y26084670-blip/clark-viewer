@@ -8,11 +8,15 @@ const setup = source.slice(source.indexOf("export function ViewerToolsMenu"), so
 const createRuntime = new Function("props", "createSignal", "createUniqueId", "createEffect", "onCleanup", "queueMicrotask", "window", "document", "URL", "saveTaskGif", `
   ${setup}
     return { toggleMenu, closeMenu, openSetup, closeDialog, startCapture, cancelCapture,
+      openBackfill, closeBackfill, startBackfill, backfillProgressText,
       onTriggerKeyDown, onMenuKeyDown, progressText, setIntervalMs, validInterval, saveToTask, changeSaveLocation,
       state: () => ({ menuOpen: menuOpen(), menuPosition: menuPosition(), dialogOpen: dialogOpen(),
         phase: phase(), result: result(), progress: progress(), error: error(),
-        saveInTask: saveInTask(), saving: saving(), savedNotice: savedNotice() }),
-      attach(refs) { trigger=refs.trigger; menu=refs.menu; menuItem=refs.menuItem; dialog=refs.dialog;
+        saveInTask: saveInTask(), saving: saving(), savedNotice: savedNotice(),
+        backfillDialogOpen: backfillDialogOpen(), backfillRunning: backfillRunning(),
+        backfillProgress: backfillProgress(), backfillError: backfillError(), backfillSummary: backfillSummary() }),
+      attach(refs) { trigger=refs.trigger; menu=refs.menu; menuItem=refs.menuItem; rangeMenuItem=refs.rangeMenuItem;
+        dialog=refs.dialog; backfillDialog=refs.backfillDialog;
         intervalInput=refs.intervalInput; cancelButton=refs.cancelButton; saveButton=refs.saveButton; } };
   }
   return ViewerToolsMenu(props);
@@ -31,10 +35,11 @@ function runtime(overrides = {}) {
   const focusable = () => ({ focused: 0, focus() { this.focused++; } });
   const refs = { trigger: { ...focusable(), ownerDocument: document,
     getBoundingClientRect: () => ({ right: 890, bottom: 590 }) },
-    menu: { offsetWidth: 260, offsetHeight: 90 }, menuItem: focusable(),
+    menu: { offsetWidth: 260, offsetHeight: 120 }, menuItem: focusable(), rangeMenuItem: focusable(),
     dialog: { open: false, showModal() { this.open = true; }, close() { this.open = false; } },
+    backfillDialog: { open: false, showModal() { this.open = true; }, close() { this.open = false; } },
     intervalInput: focusable(), cancelButton: focusable(), saveButton: focusable() };
-  const props = { eligible: true, task: {}, tabIndex: 1, frameCount: 3,
+  const props = { eligible: true, backfillEligible: true, task: {}, tabIndex: 1, frameCount: 3,
     onBusyChange(value) { busy.push(value); }, ...overrides };
   let nextId = 0;
   const api = createRuntime(props, initial => {
@@ -261,6 +266,25 @@ test("stale result cannot write another loaded task and unmount aborts a save wi
   write.resolve({ name: "late.gif" }); await save;
   assert.equal(ui.state().savedNotice, ""); assert.equal(ui.state().result, null);
   assert.deepEqual(ui.busy, [true, false, true, false]);
+});
+
+test("range backfill tool locks Viewer, reports progress and keeps a per-file summary", async () => {
+  let options;
+  const job = deferred();
+  const ui = runtime({ onBackfill: value => { options = value; return job.promise; } });
+  ui.openBackfill(); ui.flushEffects();
+  assert.equal(ui.state().backfillDialogOpen, true);
+  const run = ui.startBackfill();
+  assert.equal(ui.state().backfillRunning, true); assert.deepEqual(ui.busy, [true]);
+  options.onProgress({ phase: "scan", name: "MH", file: 1, files: 2, step: 2, total: 3 });
+  assert.match(ui.backfillProgressText(), /MH\.h5.*шаг 2 из 3/);
+  job.resolve([{ name: "MH", state: "created", message: "3 шагов, 2 объектов" },
+    { name: "JE", state: "ready", message: "диапазоны уже существуют" }]);
+  await run;
+  assert.equal(ui.state().backfillRunning, false); assert.deepEqual(ui.busy, [true, false]);
+  assert.equal(ui.state().backfillSummary.length, 2);
+  ui.closeBackfill(); ui.flushEffects(); assert.equal(ui.state().backfillDialogOpen, false);
+  ui.dispose();
 });
 
 const appSource = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");

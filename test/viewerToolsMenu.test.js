@@ -278,8 +278,8 @@ test("range backfill tool locks Viewer, reports progress and keeps a per-file su
   assert.equal(ui.state().backfillRunning, true); assert.deepEqual(ui.busy, [true]);
   options.onProgress({ phase: "scan", name: "MH", file: 1, files: 2, step: 2, total: 3 });
   assert.match(ui.backfillProgressText(), /MH\.h5.*шаг 2 из 3/);
-  job.resolve([{ name: "MH", state: "created", message: "3 шагов, 2 объектов" },
-    { name: "JE", state: "ready", message: "диапазоны уже существуют" }]);
+  job.resolve([{ name: "MH", state: "created", message: "подготовлено" },
+    { name: "HV", state: "problem", message: "неполные данные" }]);
   await run;
   assert.equal(ui.state().backfillRunning, false); assert.deepEqual(ui.busy, [true, false]);
   assert.equal(ui.state().backfillSummary.length, 2);

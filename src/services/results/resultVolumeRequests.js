@@ -4,13 +4,14 @@ import { resultVolumeDomains, scalarScene, vectorScene } from "./resultPlots.js"
 import { buildResultVolumeField, ResultVolumeLimitError, VOLUME_MAX_DOMAINS } from "../visualization/resultVolumeField.js";
 import { buildResultSurfaceField, isResultSurfaceDomain } from "../visualization/resultSurfaceField.js";
 import { attachResultVolumeSupport } from "./resultVolumeSupport.js";
+import { resultInstanceKey } from "./resultSymmetry.js";
 
 export const VOLUME_MAX_NODES = 100_000;
 const POINT_BUDGET = 5000;
 
-function scenes(frames, quantity) {
-  return { scene: quantity.components === 1 ? null : vectorScene(frames, quantity),
-    scalarScene: quantity.components === 1 ? scalarScene(frames, quantity) : null,
+function scenes(frames, quantity, task) {
+  return { scene: quantity.components === 1 ? null : vectorScene(frames, quantity, task),
+    scalarScene: quantity.components === 1 ? scalarScene(frames, quantity, task) : null,
     sampled: frames.some(item => item.frame.count < item.originalCount) };
 }
 
@@ -20,7 +21,7 @@ export function boundedVolumeFallbackPoints(points, budget) {
   if (points.length <= budget) return points;
   const groups = new Map();
   for (const point of points) {
-    const key = `${point.source.schemaId}:${point.source.recordIndex}:${point.instance.ls}:${point.instance.as}:${point.instance.ps}`;
+    const key = resultInstanceKey(point.source, point.instance);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(point);
   }
@@ -56,8 +57,8 @@ export async function readResultVolumeFrame(request, previousVolumeFields = null
       throw new ResultVolumeLimitError(`Объёмная карта требует ${count.toLocaleString("ru-RU")} узлов; предел — ${VOLUME_MAX_NODES.toLocaleString("ru-RU")}`);
     }
     const frames = await readObjectFrames({ ...request, budget: null });
-    const result = scenes(frames, quantity);
-    const savedDomains = resultVolumeDomains(frames, quantity, result.scene ?? result.scalarScene);
+    const result = scenes(frames, quantity, request.task);
+    const savedDomains = resultVolumeDomains(frames, quantity, result.scene ?? result.scalarScene, request.task);
     if (savedDomains.length > VOLUME_MAX_DOMAINS) {
       throw new ResultVolumeLimitError(`Для объёмной карты допускается не более ${VOLUME_MAX_DOMAINS} отдельных образов`);
     }
@@ -86,7 +87,7 @@ export async function readResultVolumeFrame(request, previousVolumeFields = null
   } catch (error) {
     if (!(error instanceof ResultVolumeLimitError)) throw error;
     const frames = await readObjectFrames({ ...request, budget: fallbackBudget });
-    const result = scenes(frames, quantity);
+    const result = scenes(frames, quantity, request.task);
     const fallbackPoints = result.scene?.vectors ?? result.scalarScene?.points ?? [];
     let minimum = Infinity, maximum = -Infinity;
     for (const point of fallbackPoints) {

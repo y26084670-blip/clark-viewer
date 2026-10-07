@@ -129,8 +129,8 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
             value = await readResultVolumeFrame({ ...layer.request, fallbackBudget: budget, volumeDisabledReason }, null, processor);
           } else {
             const frames = await readObjectFrames({ ...layer.request, budget });
-            value = { scene: layer.quantity.components === 1 ? null : vectorScene(frames, layer.quantity),
-              scalarScene: layer.quantity.components === 1 ? scalarScene(frames, layer.quantity) : null,
+            value = { scene: layer.quantity.components === 1 ? null : vectorScene(frames, layer.quantity, request.task),
+              scalarScene: layer.quantity.components === 1 ? scalarScene(frames, layer.quantity, request.task) : null,
               sampled: frames.some(item => item.frame.count < item.originalCount) };
           }
           return { ...layer.result, ...value, state: "ready" };

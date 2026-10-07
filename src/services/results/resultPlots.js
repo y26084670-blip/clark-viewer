@@ -1,5 +1,6 @@
 import { elementLayout, regionLayout, virtualLayout, QUANTITIES } from "./resultMappings.js";
 import { fmmAxis, isAnisotropic } from "./fmmCharacteristics.js";
+import { expandResultDomain, expandResultScalar, expandResultVector, resultInstanceKey } from "./resultSymmetry.js";
 
 const number = value => Number.isFinite(value) ? String(Number(value.toPrecision(8))) : "—";
 const xyzText = (frame, row) => `XYZ = (${pointAt(frame, row).map(number).join(", ")}) мм`;
@@ -24,7 +25,7 @@ export function pointAt(frame, row) {
   return Array.from(frame.values.subarray(row * frame.stride, row * frame.stride + 3));
 }
 
-export function scalarScene(frames, quantity) {
+export function scalarScene(frames, quantity, task = null) {
   const points = [];
   let minimum = Infinity, maximum = -Infinity;
   const label = quantity.formula ? `${quantity.label} (${quantity.formula})` : quantity.label;
@@ -35,8 +36,11 @@ export function scalarScene(frames, quantity) {
       if (![...origin, value].every(Number.isFinite)) throw new Error("Цветовая карта содержит нечисловые координаты или значения");
       const savedRow = frame.rowIndices?.[row] ?? row * (frame.every ?? 1);
       const { ls, as, ps } = layout.indices(savedRow);
-      points.push({ origin, value, quantity: label, unit: quantity.unit,
-        source: { schemaId: quantity.group, recordIndex: record.recordIndex, name: record.name }, instance: { ls, as, ps } });
+      const item = { origin, value, quantity: label, unit: quantity.unit,
+        source: { schemaId: quantity.group, recordIndex: record.recordIndex, name: record.name }, instance: { ls, as, ps } };
+      const quantityKey = Object.keys(QUANTITIES).find(key => QUANTITIES[key] === quantity);
+      const expanded = task ? expandResultScalar(task, record, quantityKey, item) : [item];
+      points.push(...expanded);
       minimum = Math.min(minimum, value); maximum = Math.max(maximum, value);
     }
   }
@@ -44,7 +48,7 @@ export function scalarScene(frames, quantity) {
     quantity: label, unit: quantity.unit };
 }
 
-export function vectorScene(frames, quantity) {
+export function vectorScene(frames, quantity, task = null) {
   const vectors = [];
   const quantityKey = Object.keys(QUANTITIES).find(key => QUANTITIES[key] === quantity);
   let maximum = 0;
@@ -73,10 +77,12 @@ export function vectorScene(frames, quantity) {
         az = Math.floor(savedRow / nPS) % nAS;
         ls = Math.floor(savedRow / (nPS * nAS)) % record.symLs;
       }
-      vectors.push({ origin, vector, magnitude, kind: "magnetization", characteristicSize: 1,
+      const item = { origin, vector, magnitude, kind: "magnetization", characteristicSize: 1,
         source: { schemaId: quantity.group, recordIndex: record.recordIndex, name: record.name }, instance: { ls, as: az, ps },
         quantity: quantity.label, unit: quantity.unit, quantityKey, savedRow,
-        node: quantity.group === "elements" ? Math.floor(savedRow / copyCount) : null });
+        node: quantity.group === "elements" ? Math.floor(savedRow / copyCount) : null };
+      const expanded = task ? expandResultVector(task, record, quantityKey, item) : [item];
+      vectors.push(...expanded);
     }
     extent = Math.max(extent, Math.hypot(...max.map((v, i) => v - min[i])) || 0);
   }
@@ -88,9 +94,9 @@ export function vectorScene(frames, quantity) {
 // Full saved grids for volumetric interpolation. Geometric copies are the
 // innermost indices in element files, but outermost in observation files.
 // Never infer spatial neighbours from the order of a sampled vector scene.
-export function resultVolumeDomains(frames, quantity, scene) {
+export function resultVolumeDomains(frames, quantity, scene, task = null) {
   const pointsByImage = new Map();
-  const imageKey = (source, instance) => `${source.schemaId}:${source.recordIndex}:${instance.ls}:${instance.as}:${instance.ps}`;
+  const imageKey = resultInstanceKey;
   for (const point of scene?.vectors ?? scene?.points ?? []) {
     const key = imageKey(point.source, point.instance);
     if (!pointsByImage.has(key)) pointsByImage.set(key, []);
@@ -119,8 +125,11 @@ export function resultVolumeDomains(frames, quantity, scene) {
         positions.set(frame.values.subarray(offset, offset + 3), node * 3);
         values[node] = scalarAt(frame, row, quantity);
       }
-      domains.push({ key, source, instance, dimensions, positions, values,
-        coordinateBytes: frame.values.BYTES_PER_ELEMENT, points: pointsByImage.get(key) ?? [] });
+      const domain = { key, source, instance, dimensions, positions, values,
+        coordinateBytes: frame.values.BYTES_PER_ELEMENT, points: pointsByImage.get(key) ?? [] };
+      const quantityKey = Object.keys(QUANTITIES).find(key => QUANTITIES[key] === quantity);
+      const expandedDomains = task ? expandResultDomain(task, record, quantityKey, domain) : [domain];
+      domains.push(...expandedDomains.map(item => ({ ...item, points: pointsByImage.get(item.key) ?? [] })));
     }
   }
   return domains;

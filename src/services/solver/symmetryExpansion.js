@@ -112,19 +112,20 @@ export function expandElementSymmetry(record, general = {}) {
     return instances;
 }
 
-export function expandRegionSymmetry(record) {
+export function expandRegionSymmetry(record, general = {}) {
     const lsCount = loopCount(record?.symLs);
-
     if (lsCount === 0) return [];
-
-    return Array.from({ length: lsCount }, (_, ls) => ({
-        matrix: baseTransform(record, ls),
-        ls,
-        as: 0,
-        ps: 0,
-        mirrorX: 0,
-        mirrorY: 0,
-        axialSign: 1,
-        periodicSign: 1,
-    }));
+    const mirrorYIndexes = mirrorIndexes(general?.mirrorSymmetryY);
+    const mirrorXIndexes = mirrorIndexes(general?.mirrorSymmetryX);
+    const instances = [];
+    for (let ls = 0; ls < lsCount; ls++) {
+        const local = baseTransform(record, ls);
+        for (const mirrorY of mirrorYIndexes) for (const mirrorX of mirrorXIndexes) {
+            instances.push({
+                matrix: multiplyMatrix4(reflectionMatrix4(mirrorX === 1, mirrorY === 1), local),
+                ls, as: 0, ps: 0, mirrorX, mirrorY, axialSign: 1, periodicSign: 1,
+            });
+        }
+    }
+    return instances;
 }

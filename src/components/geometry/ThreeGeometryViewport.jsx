@@ -22,8 +22,10 @@ import {
 import {
   GEOMETRY_CAMERA_COMMANDS,
   INITIAL_GEOMETRY_CAMERA_FRAME,
+  geometryAxisRotationFromKeyboardEvent,
   orientGeometryCamera,
   normalizeGeometryCameraCommand,
+  rotateGeometryCameraAroundAxis,
 } from "../../services/visualization/geometryCameraView.js";
 import { fitCameraToVisibleObjects } from "../../services/visualization/geometryCameraFit.js";
 import { resultVectorLength } from "../../services/visualization/resultVectorScale.js";
@@ -1399,8 +1401,8 @@ function createAxisArrow(THREE, direction, color, label, cssColor) {
   const root = new THREE.Group();
   const material = new THREE.MeshBasicMaterial({
     color,
-    depthTest: false,
-    depthWrite: false,
+    depthTest: true,
+    depthWrite: true,
   });
   const shaft = new THREE.Mesh(
     new THREE.CylinderGeometry(0.035, 0.035, 0.72, 12),
@@ -1412,7 +1414,19 @@ function createAxisArrow(THREE, direction, color, label, cssColor) {
     material.clone(),
   );
   head.position.y = 0.86;
-  root.add(shaft, head);
+  const rearCap = new THREE.Mesh(
+    new THREE.CircleGeometry(0.115, 20),
+    new THREE.MeshBasicMaterial({
+      color: 0x11161b,
+      depthTest: true,
+      depthWrite: true,
+      side: THREE.DoubleSide,
+    }),
+  );
+  rearCap.position.y = 0.718;
+  rearCap.rotation.x = Math.PI / 2;
+  rearCap.name = `axis-${label.toLowerCase()}-rear-cap`;
+  root.add(shaft, head, rearCap);
   root.quaternion.setFromUnitVectors(
     new THREE.Vector3(0, 1, 0),
     direction,

@@ -3,26 +3,80 @@ on:
   push:
     branches: [work/viewer-3d-minmax-20261007]
 permissions:
-  contents: read
+  contents: write
+defaults:
+  run:
+    shell: bash
 jobs:
-  workspace:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
+      - name: Apply scoped integration
+        run: python3 .github/prepare-3d-minmax.py
       - run: npm ci
-      - name: Pack source and installed dependencies without Git credentials
+      - name: Full tests including real HDF5 Float32 and Float64
         run: |
-          mkdir -p /tmp/viewer-minmax/source
-          git archive HEAD | tar -x -C /tmp/viewer-minmax/source
-          cp -a node_modules /tmp/viewer-minmax/source/node_modules
-          tar -czf /tmp/viewer-minmax/workspace.tar.gz -C /tmp/viewer-minmax/source .
+          mkdir -p /tmp/viewer-3d-minmax
+          if npm test -- --test-reporter=tap > /tmp/viewer-3d-minmax/tests.log 2>&1; then
+            tail -n 10 /tmp/viewer-3d-minmax/tests.log
+          else
+            grep -A 24 'not ok' /tmp/viewer-3d-minmax/tests.log || true
+            tail -n 20 /tmp/viewer-3d-minmax/tests.log
+            exit 1
+          fi
+      - name: Release and Pages builds
+        run: |
+          npm run build:release > /tmp/viewer-3d-minmax/build-release.log 2>&1 || { cat /tmp/viewer-3d-minmax/build-release.log; exit 1; }
+          npm run build:pages > /tmp/viewer-3d-minmax/build-pages.log 2>&1 || { cat /tmp/viewer-3d-minmax/build-pages.log; exit 1; }
+          tail -n 4 /tmp/viewer-3d-minmax/build-release.log
+          tail -n 4 /tmp/viewer-3d-minmax/build-pages.log
+      - name: Install isolated browser tools
+        run: |
+          npm install --prefix /tmp/viewer-browser-tools --no-save --package-lock=false playwright
+          /tmp/viewer-browser-tools/node_modules/.bin/playwright install --with-deps chromium > /tmp/viewer-3d-minmax/install-browser.log 2>&1 || { tail -n 60 /tmp/viewer-3d-minmax/install-browser.log; exit 1; }
+      - name: Real browser and WebGL GIF acceptance
+        env:
+          PLAYWRIGHT_MODULE: /tmp/viewer-browser-tools/node_modules/playwright/index.mjs
+          CHECK_OUTPUT: /tmp/viewer-3d-minmax
+        run: node scripts/check-3d-minmax.mjs
+      - name: Record verification and finalize source branch
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, re
+          output = pathlib.Path('/tmp/viewer-3d-minmax')
+          result = json.loads((output/'browser.json').read_text())
+          assert result['errors'] == [] and result['passed'] >= 15 and not result.get('failure')
+          text = (output/'tests.log').read_text()
+          counts = {name: int(re.search(r'^# '+name+r' (\d+)', text, re.M).group(1)) for name in ['tests','pass','fail','skipped']}
+          assert counts['tests'] == counts['pass'] and counts['fail'] == 0 and counts['skipped'] == 0
+          result.update(version='4.20.0', base='6eae42eec2d8ed8c9938ab5d268c0777af0f020f', tests=counts,
+            workflow='https://github.com/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+os.environ['GITHUB_RUN_ID'],
+            inputCommit=os.environ['GITHUB_SHA'], builds={'release':'passed','pages':'passed'},
+            hdf5='Real h5wasm Float32/Float64 files with HEADER/RANGES v1; no full field scan for metadata',
+            policy={'defaultGlobalMinmax':False,'derived':'product of global magnitude bounds with existing unit factors','rawValuesChanged':False,'solverChanged':False},
+            limits=['Browser uses deterministic task/reader fixtures, not a user Solver calculation', 'Julia writer to browser round-trip not executed', 'Native Windows folder picker not exercised'])
+          p=pathlib.Path('docs/verification/viewer-3d-minmax.json'); p.parent.mkdir(parents=True,exist_ok=True)
+          p.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+          for name in ['.github/prepare-3d-minmax.py','.github/minmax-layer-tests.txt','.github/minmax-streamline-tests.txt','.github/workflows/verify-3d-minmax.yml']:
+              pathlib.Path(name).unlink()
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git diff --check
+          git add src test scripts/check-3d-minmax.mjs scripts/test-support docs/verification/viewer-3d-minmax.json package.json package-lock.json
+          git add -u .github
+          git commit -m 'feat: finalize verified 3D all-object selection and global minmax'
+          git push origin HEAD:work/viewer-3d-minmax-20261007
+          git rev-parse HEAD > /tmp/viewer-3d-minmax/final-commit.txt
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: viewer-minmax-workspace
-          path: /tmp/viewer-minmax/workspace.tar.gz
-          retention-days: 1
+          name: viewer-3d-minmax-verification
+          path: /tmp/viewer-3d-minmax
+          retention-days: 3

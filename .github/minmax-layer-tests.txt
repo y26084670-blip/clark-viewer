@@ -1,0 +1,45 @@
+
+test('global point colours and legends change without re-reading or replacing point buffers', () => {
+  const base=layer('elements',[item(5),item(10)]), bounds={available:true,minimum:0,maximum:100};
+  let states=run(new Map(),[base],{colorMap:true});const nodes=states.get('elements').vectorRoot.children[0];
+  const geometry=nodes.geometry,oldColors=[...geometry.getAttribute('color').array];
+  states=run(states,[{...base,displayRange:bounds}],{colorMap:true});
+  assert.equal(states.get('elements').vectorRoot.children[0],nodes);assert.equal(nodes.geometry,geometry);
+  assert.deepEqual(states.get('elements').legends.map(l=>[l.minimum,l.maximum]),[[0,100]]);
+  assert.notDeepEqual([...geometry.getAttribute('color').array],oldColors);
+  states=run(states,[base],{colorMap:true});
+  assert.deepEqual(states.get('elements').legends.map(l=>[l.minimum,l.maximum]),[[5,10]]);
+  assert.deepEqual(base.scene.vectors.map(v=>v.magnitude),[5,10]);clean(states);
+});
+
+test('global extrema drive vector volume textures, surfaces and scalar maps; actual signed values remain untouched',()=>withCanvas(()=>{
+  const vector=item(5),domainData=domain(vector,10),bounds={available:true,minimum:0,maximum:100};
+  let states=run(new Map(),[layer('elements',[vector],{displayRange:bounds,volumeFields:{domains:[domainData],fallbackPoints:[]}})],{colorMap:true});
+  const mesh=states.get('elements').vectorRoot.getObjectByName('result-volume-domain');
+  assert.equal(mesh.userData.minimum,0);assert.equal(mesh.userData.maximum,100);
+  assert.equal(mesh.material.uniforms.uField.value.image.data[4],26);
+  clean(states);
+  const points=[{...item(1),value:-2},{...item(1,{origin:[1,0,0]}),value:3},{...item(1,{origin:[0,1,0]}),value:4},{...item(1,{origin:[1,1,0]}),value:6}];
+  for(const volume of [false,true]){
+    const base=scalarLayer(points,{displayRange:bounds,...(volume?{volumeFields:{domains:[scalarDomain(points)],surfaces:[surface(points)],fallbackPoints:[]}}:{})});
+    states=run(new Map(),[base],{colorMap:true});
+    assert.deepEqual(states.get('elements').legends.map(l=>[l.minimum,l.maximum]),[[0,100]]);
+    assert.deepEqual(points.map(p=>p.value),[-2,3,4,6]);
+    if(volume)assert.equal(states.get('elements').scalarRoot.getObjectByName('result-volume-domain').userData.maximum,100);
+    clean(states);
+  }
+}));
+
+test('global vector length reference survives tiny/large/zero frames without mutating actual extrema',async()=>{
+  const {applyResultGlobalRange}=await import('../src/services/results/resultGlobalScale.js');
+  let states=new Map();
+  for(const magnitude of [1e-6,10,0,5]){
+    const base=layer('elements',[item(magnitude)],{vectorLengthReference:{characteristicSize:1,sceneDiagonal:100,maximumMagnitude:{magnetization:1e-6}}});
+    const displayed=applyResultGlobalRange(base,{available:true,minimum:0,maximum:10});
+    states=run(states,[displayed]);
+    const line=states.get('elements').vectorRoot.getObjectByName('prescribed-source-magnetization');
+    if(magnitude){const p=line.geometry.getAttribute('position').array;assert.ok(Math.abs(p[3]-p[0]-.7*magnitude/10)<1e-6);}
+    assert.equal(base.scene.maximumMagnitude.magnetization,magnitude);
+  }
+  clean(states);
+});

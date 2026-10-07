@@ -60,7 +60,12 @@ export async function backfillTaskResultRanges(task, { signal, onProgress } = {}
   if (permission !== "granted") throw new DOMException("Нет разрешения на запись в каталог задания", "NotAllowedError");
   if (signal?.aborted) throw signal.reason ?? new DOMException("Операция отменена", "AbortError");
   const output = await task.handle.getDirectoryHandle("output3XX");
-  const runId = `viewer-backfill-${crypto.randomUUID?.() ?? Date.now()}`;
+  const existingRunIds = [...new Set(RANGE_BACKFILL_FILES
+    .map(name => task.metadata?.[name]?.ranges)
+    .filter(ranges => ranges?.available && ranges.state === "complete")
+    .map(ranges => ranges.runId))];
+  if (existingRunIds.length > 1) throw new Error("Существующие HDF5 содержат разные run_id; автоматическая дозапись запрещена");
+  const runId = existingRunIds[0] ?? `viewer-backfill-${crypto.randomUUID?.() ?? Date.now()}`;
   const jobs = [], summary = [];
   for (const name of RANGE_BACKFILL_FILES) {
     if (!task.files?.[name]) { summary.push({ name, state: "absent", message: "файл отсутствует" }); continue; }

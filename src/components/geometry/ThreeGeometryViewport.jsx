@@ -1872,6 +1872,7 @@ export function ThreeGeometryViewport(props) {
   };
 
   const showTooltip = (text, x, y) => {
+    if (fixedAxisRotation) return;
     const lines = String(text).split("\n");
     const longestLineLength = Math.max(1, ...lines.map((line) => line.length));
     const widthEstimate = Math.min(390, Math.max(180, longestLineLength * 6));
@@ -1894,6 +1895,10 @@ export function ThreeGeometryViewport(props) {
   };
 
   const pickAtPointer = (pointer, action = "hover") => {
+    if (fixedAxisRotation) {
+      clearHoverTooltip();
+      return;
+    }
     if (
       !pointer ||
       !renderer ||
@@ -2070,9 +2075,13 @@ export function ThreeGeometryViewport(props) {
 
     const scheduleFrame = () => {
       pickTimer = 0;
-      if (!pendingPointer || controlsInteracting) return;
+      if (!pendingPointer || controlsInteracting || fixedAxisRotation) return;
       pickFrame = requestAnimationFrame(() => {
         pickFrame = 0;
+        if (fixedAxisRotation) {
+          pendingPointer = null;
+          return;
+        }
         const pointer = pendingPointer;
         pendingPointer = null;
         lastPickTime = performance.now();

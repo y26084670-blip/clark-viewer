@@ -4,6 +4,7 @@ import { resultVolumeDomains, scalarScene, vectorScene } from "./resultPlots.js"
 import { buildResultVolumeField, ResultVolumeLimitError, VOLUME_MAX_DOMAINS } from "../visualization/resultVolumeField.js";
 import { buildResultSurfaceField, isResultSurfaceDomain } from "../visualization/resultSurfaceField.js";
 import { attachResultVolumeSupport } from "./resultVolumeSupport.js";
+import { resultInstanceKey } from "./resultSymmetry.js";
 
 export const VOLUME_MAX_NODES = 100_000;
 const POINT_BUDGET = 5000;
@@ -20,7 +21,7 @@ export function boundedVolumeFallbackPoints(points, budget) {
   if (points.length <= budget) return points;
   const groups = new Map();
   for (const point of points) {
-    const key = `${point.source.schemaId}:${point.source.recordIndex}:${point.instance.ls}:${point.instance.as}:${point.instance.ps}`;
+    const key = resultInstanceKey(point.source, point.instance);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(point);
   }

@@ -1,0 +1,20 @@
+name: Verify Shift axis origin
+on:
+  push:
+    branches: [work/viewer-shift-axis-origin-20261007]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:release
+      - run: npm run build:pages

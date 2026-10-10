@@ -23,7 +23,6 @@ test("3D quantity groups expose exact independent choices and M/none/none defaul
   assert.equal(RESULT_LAYER_QUANTITY_LABELS.H, "Напряженность МП");
   assert.equal(RESULT_LAYER_QUANTITY_LABELS.E, "Напряженность ЭП");
   const props = fixture(), ui = sourcesFields3DSetup(props);
-  assert.equal(ui.palette(), "Rainbow");
   assert.deepEqual(ui.request().layers.map(layer => layer.quantityKey), ["M", "none", "none"]);
   ui.quantities.regions.write("As"); ui.quantities.virtual.write("Bv");
   assert.deepEqual(ui.request().layers.map(layer => layer.quantityKey), ["M", "As", "Bv"]);
@@ -43,23 +42,21 @@ test("inverse visibility uses the independent physical and virtual complements",
   assert.deepEqual(props.elements, [1]); assert.deepEqual(props.regions, [2]);
   ui.close();
 });
-test("line style controls default to 2 px and colour, enable the palette for lines alone, and persist without changing the data request", () => {
+test("line width persists while streamline colour map is permanently enabled", () => {
   const props=fixture(),settings={resultElementsQuantity:"none"};
   let ui=sourcesFields3DSetup(props,settings);
   ui.setResultState({frame:{request:{task:props.task,time:props.time},value:{layers:[]}}});
-  assert.equal(ui.streamlineControls().width,2);assert.equal(ui.streamlineControls().colorMap,true);
-  assert.equal(ui.streamlineControls().paletteDisabled,true);
-  ui.addStreamline({quantityKey:"H",source:{schemaId:"elements",recordIndex:0},instance:{ls:0,as:0,ps:0},node:0});
-  assert.equal(ui.streamlineControls().paletteDisabled,false);
+  assert.equal(ui.streamlineControls().width,2);
+  assert.equal(ui.streamlineControls().colorMap,true);
   const request=ui.request();
   ui.streamlineControls().onWidthInput({currentTarget:{valueAsNumber:7}});
-  ui.streamlineControls().onColorChange({currentTarget:{checked:false}});
-  assert.equal(ui.streamlineControls().viewportWidth,7);assert.equal(ui.streamlineControls().viewportColorMap,false);
-  assert.equal(ui.streamlineControls().paletteDisabled,true);assert.deepEqual(ui.request(),request);
+  assert.equal(ui.streamlineControls().viewportWidth,7);
+  assert.equal(ui.streamlineControls().viewportColorMap,true);
+  assert.deepEqual(ui.request(),request);
   ui.close();ui=sourcesFields3DSetup(props,settings);
-  assert.equal(ui.streamlineControls().width,7);assert.equal(ui.streamlineControls().colorMap,false);
-  ui.streamlineControls().onColorChange({currentTarget:{checked:true}});
-  assert.equal(ui.streamlineControls().paletteDisabled,false);ui.close();
+  assert.equal(ui.streamlineControls().width,7);
+  assert.equal(ui.streamlineControls().colorMap,true);
+  ui.close();
 });
 
 test("scalar maps expose size controls, force every active layer to color mode and preserve the vector preference", () => {
@@ -160,17 +157,16 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
     });
     const set = (name, value) => signals.get(name)[1](value);
     assert.equal(requests.length, 1);
-    set("resultPalette", "Turbo"); set("resultVectorScale", 2);
+    set("resultVectorScale", 2);
     set("resultGlobalMinMax", true); set("resultGlobalMinMax", false);
-    set("resultStreamlineWidth", 8); set("resultStreamlineColorMap", false);
-    set("resultStreamlineColorMap", true);
+    set("resultStreamlineWidth", 8);
     set("resultVectorColorMap", true); set("resultVectorScale", 8);
     set("resultVectorColorMap", false); set("resultVectorColorMap", true);
     assert.equal(requests.length, 1);
     set("resultVectorScale", 10);
     assert.equal(requests.length, 2);
     assert.equal(requests.at(-1).layers[0].volumeMode, true);
-    set("resultPalette", "Inferno"); set("resultVectorScale", 10);
+    set("resultVectorScale", 10);
     assert.equal(requests.length, 2);
     set("resultVectorScale", 9);
     assert.equal(requests.length, 3);
@@ -181,7 +177,7 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
     assert.equal(requests.length, 4);
     assert.equal(requests.at(-1).layers[0].volumeMode, false);
     assert.equal(ui.controls().checked, true);
-    set("resultPalette", "Rainbow"); set("resultVectorScale", 8);
+    set("resultVectorScale", 8);
     assert.equal(requests.length, 4);
     set("resultVectorScale", 10);
     assert.equal(requests.length, 5);
@@ -204,8 +200,9 @@ test("field method selector keeps the same seeds and tolerance, validates choice
     assert.equal(ui.streamlineControls().method,"trilinear");
     ui.setResultState({frame:{request:{task:props.task,time:props.time},value:{layers:[]}}});
     const vector={quantityKey:"H",source:{schemaId:"elements",recordIndex:0},instance:{ls:0,as:0,ps:0},node:4};
-    ui.addStreamline(vector);ui.changeStreamlineTolerance({currentTarget:{valueAsNumber:.001}});
+    ui.addStreamline(vector);
     const seeds=ui.request().streamlineSeeds,tolerance=ui.request().streamlineTolerance;
+    assert.equal(tolerance,1e-3);
     for(const method of ["trilinear-boundary","quadratic","tricubic","trilinear"]) {
       ui.streamlineControls().onMethodChange({currentTarget:{value:method}});
       assert.equal(ui.request().streamlineMethod,method);
@@ -221,6 +218,14 @@ test("field method selector keeps the same seeds and tolerance, validates choice
   } finally {ui.close();}
 });
 
+test("compact 3D toolbar exposes requested menus and fixed streamline settings",()=>{
+  const source=readFileSync(new URL("../src/tabs/SourcesFields3D.jsx",import.meta.url),"utf8");
+  for(const label of ["Объемные элементы","Области просмотра","Виртуальные элементы","Представление","Линия","Метод"]) assert.ok(source.includes(label),label);
+  assert.match(source,/RESULT_LAYER_QUANTITY_LABELS\[key\].*QUANTITIES\[key\]\?\.unit/s);
+  assert.doesNotMatch(source,/Допуск, % шага сетки|Цвет по модулю|Стереть линию/);
+  assert.ok(source.includes("Удалить линию №"));
+  assert.match(source,/streamlineColorMap=\{true\}/);
+});
 test("selected streamline does not add a status row that changes 3D height",()=>{
   const source=readFileSync(new URL("../src/tabs/SourcesFields3D.jsx",import.meta.url),"utf8");
   assert.doesNotMatch(source,/source-streamline-status|selectedLineStatus/);

@@ -45,7 +45,7 @@ export function ViewerToolsMenu(props) {
     if (!props.backfillEligible) return props.backfillDisabledReason || "Дождитесь завершения текущей операции.";
     if (protocolScanning()) return "Поиск протоколов…";
     if (protocolScanError()) return protocolScanError();
-    return protocols().length ? "" : "В output3XX/comparasion нет HTML-протоколов.";
+    return protocols().length ? "" : "В comparison нет HTML-протоколов.";
   };
 
   async function refreshProtocols(handle = props.task?.handle) {
@@ -375,7 +375,7 @@ export function ViewerToolsMenu(props) {
         onCancel={event => { event.preventDefault(); closeProtocols(); }}
         onClose={() => { if (protocolsDialogOpen()) closeProtocols(); }}>
         <h2 id={protocolsTitleId}>Протоколы тестов</h2>
-        <p class="viewer-movie-note">{props.task?.name} · output3XX/comparasion</p>
+        <p class="viewer-movie-note">{props.task?.name} · comparison</p>
         <Show when={protocolScanning()}><p role="status">Поиск протоколов…</p></Show>
         <Show when={protocolScanError() || protocolOpenError()}>
           <p class="viewer-movie-error" role="alert">{protocolScanError() || protocolOpenError()}</p>

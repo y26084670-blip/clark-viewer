@@ -320,7 +320,7 @@ test("test protocol menu is disabled without loaded task, during discovery and w
   assert.equal(ui.protocolsDisabledReason(), "Загрузка задания");
   ui.dispose();
   const empty = runtime({ task: { handle: {} } });
-  await empty.refreshProtocols(); assert.match(empty.protocolsDisabledReason(), /нет HTML/);
+  await empty.refreshProtocols(); assert.equal(empty.protocolsDisabledReason(), "В comparison нет HTML-протоколов.");
   empty.openProtocols(); assert.equal(empty.state().protocolsDialogOpen, false); empty.dispose();
   assert.match(source, /role="menuitem" disabled=\{Boolean\(protocolsDisabledReason\(\)\)\}/);
 });

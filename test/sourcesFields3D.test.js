@@ -239,7 +239,7 @@ test("field method selector keeps the same seeds and tolerance, validates choice
 
 test("compact 3D toolbar exposes requested menus and fixed streamline settings",()=>{
   const source=readFileSync(new URL("../src/tabs/SourcesFields3D.jsx",import.meta.url),"utf8");
-  for(const label of ["Объемные элементы","Области просмотра","Виртуальные элементы","Представление","Линия","Метод"]) assert.ok(source.includes(label),label);
+  for(const label of ["Объемные элементы","Области просмотра","Виртуальные элементы","Представление","Векторная линия","Метод построения"]) assert.ok(source.includes(label),label);
   assert.match(source,/RESULT_LAYER_QUANTITY_LABELS\[key\].*QUANTITIES\[key\]\?\.unit/s);
   assert.doesNotMatch(source,/Допуск, % шага сетки|Цвет по модулю|Стереть линию/);
   assert.ok(source.includes("Удалить линию №"));

@@ -61,3 +61,16 @@
 .viewer-backfill-dialog code { color: #d9e8f5; }
 .viewer-backfill-summary { margin: 12px 0; max-height: 240px; overflow: auto; font-size: .9rem; line-height: 1.5; }
 .viewer-backfill-summary > div { padding: 3px 0; border-bottom: 1px solid #ffffff14; }
+
+.viewer-protocols-dialog { width: 640px; }
+.viewer-protocols-list { display: grid; gap: 6px; max-height: 50dvh; overflow: auto; }
+.viewer-protocols-list > button {
+  width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
+  border: 1px solid #596773;
+  background: #303b46;
+  color: #e7f2fb;
+}
+.viewer-protocols-list > button:hover:not(:disabled) { background: #405265; border-color: #92c9ff; }
+.viewer-protocols-list > button:disabled { opacity: .65; cursor: default; }

@@ -75,14 +75,20 @@ export async function readResultStreamlines(request,processor) {
   }
   const output=[];
   for(const [quantityKey,group] of groups) {
+    const timing = request.onPerformance ? { totalStart: performance.now(), prepareMs: 0, hdf5Ms: 0, workerMs: 0 } : null;
     try {
+      const prepareStart = timing ? performance.now() : 0;
       const selected=connectedCandidates(descriptors(request.task,quantityKey,request.time),group);
-      if(selected.reduce((n,d)=>n+d.nodeCount,0)>STREAMLINE_LIMITS.nodes)throw new Error("Для линий поля связная группа превышает 200 000 узлов");
+      if (timing) timing.prepareMs = performance.now() - prepareStart;
+      const nodeCount=selected.reduce((n,d)=>n+d.nodeCount,0);
+      if(nodeCount>STREAMLINE_LIMITS.nodes)throw new Error("Для линий поля связная группа превышает 200 000 узлов");
       const q=QUANTITIES[quantityKey], domains=[];
       // Read one saved image by HDF5 stride, without all the other symmetry
       // images or a display sample. The task reader already serializes I/O.
       for(const d of selected) {
+        const readStart = timing ? performance.now() : 0;
         const frame=await request.task.reader.read({name:q.file,step:request.time,start:d.start,count:d.count,every:d.every});
+        if (timing) timing.hdf5Ms += performance.now() - readStart;
         if(frame.count!==d.nodeCount)throw new Error("Сетка линии не совпадает с данными HDF5");
         const positions=new Float64Array(d.nodeCount*3),vectors=new Float64Array(d.nodeCount*3);
         for(let n=0;n<d.nodeCount;n++) {
@@ -91,7 +97,17 @@ export async function readResultStreamlines(request,processor) {
         }
         domains.push({...d,positions,vectors,coordinateBytes:frame.values.BYTES_PER_ELEMENT});
       }
-      output.push(...await processor.process({domains,seeds:group,tolerance:request.streamlineTolerance,method:request.streamlineMethod??"trilinear"}));
+      const workerStart = timing ? performance.now() : 0;
+      const calculated = await processor.process({domains,seeds:group,tolerance:request.streamlineTolerance,method:request.streamlineMethod??"trilinear"});
+      if (timing) {
+        timing.workerMs = performance.now() - workerStart;
+        request.onPerformance({ kind: "line", quantityKey, lines: group.length,
+          domains: selected.length, nodes: nodeCount,
+          points: calculated.reduce((sum,line)=>sum+(line.paths??[]).reduce((n,path)=>n+path.positions.length/3,0),0),
+          prepareMs: timing.prepareMs, hdf5Ms: timing.hdf5Ms, workerMs: timing.workerMs,
+          totalMs: performance.now() - timing.totalStart });
+      }
+      output.push(...calculated);
     } catch(error) {
       if(error.name==="AbortError")throw error;
       output.push(...group.map(seed=>({...seed,paths:[],error:error.message??String(error)})));

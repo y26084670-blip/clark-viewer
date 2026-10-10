@@ -114,14 +114,6 @@ test("published layers retain their units and shared time while a newer frame is
   ] } };
   ui.setResultState({ frame, loading: true, error: "" });
   assert.equal(ui.timeIndex(), 4);
-  const layers = ui.statusLayers();
-  assert.match(ui.layerStatus(layers[0]), /J·E/);
-  assert.match(ui.layerStatus(layers[0]), /Вт\/мм³/);
-  assert.match(ui.layerStatus(layers[0]), /выборка/);
-  assert.equal(ui.layerStatus(layers[1]), "HS.h5 отсутствует");
-  assert.match(ui.layerStatus(layers[2]), /Тл·м/);
-  assert.match(ui.layerStatus(layers[2]), /Объёмная карта: 1 сеток/);
-  assert.match(ui.layerStatus(layers[2]), /Часть сеток/);
   assert.deepEqual(ui.resultLayers().map(layer => layer.groupLabel), ["Элементы", "Области", "Виртуальные"]);
   assert.equal(ui.resultLayers()[0].scalarScene, frame.value.layers[0].scalarScene);
   assert.equal(ui.resultLayers()[2].scene, frame.value.layers[2].scene);
@@ -136,7 +128,6 @@ test("all disabled quantities immediately hide results and follow time without c
     loading: true, error: "" });
   assert.deepEqual(ui.resultLayers(), []);
   assert.equal(ui.timeIndex(), 9);
-  assert.ok(ui.statusLayers().every(layer => layer.state === "disabled"));
   assert.deepEqual(ui.selections(), { elements: [0, 1, 2], regions: [0, 1] });
   const disabled = await ui.load(ui.request());
   assert.ok(disabled.layers.every(layer => layer.state === "disabled"));
@@ -144,22 +135,9 @@ test("all disabled quantities immediately hide results and follow time without c
   ui.close();
 });
 
-test("surface-only layers report continuous planes without the volume fallback warning", () => {
-  const ui = sourcesFields3DSetup(fixture());
-  const base = { key: "regions", quantityKey: "Bs", state: "ready",
-    scene: { maximumMagnitude: { magnetization: 3 } } };
-  const status = ui.layerStatus({ ...base, volumeFields: { domains: [], surfaces: [{}, {}] } });
-  assert.match(status, /Поверхность: 2 площадок/);
-  assert.doesNotMatch(status, /недоступна|цветные узлы/);
-  const partial = ui.layerStatus({ ...base, volumeFields: { domains: [], surfaces: [{}] },
-    volumeNotice: "Вырожденная площадка показана узлами" });
-  assert.match(partial, /Поверхность: 1 площадок/);
-  assert.match(partial, /Вырожденная площадка показана узлами/);
-  const mixed = ui.layerStatus({ ...base, volumeFields: { domains: [{}], surfaces: [{}] } });
-  assert.match(mixed, /Объёмная карта: 1 сеток.*Поверхность: 1 площадок/);
-  const fallback = ui.layerStatus({ ...base, volumeFields: { domains: [], surfaces: [] } });
-  assert.match(fallback, /недоступна; показаны цветные узлы/);
-  ui.close();
+test("3D summary status row is absent so result updates do not change viewport height", () => {
+  const source=readFileSync(new URL("../src/tabs/SourcesFields3D.jsx",import.meta.url),"utf8");
+  assert.doesNotMatch(source,/sources-fields-status|Показан шаг|Общий минмакс недоступен/);
 });
 
 test("Solid subscriptions reread data only when point/volume mode changes, not for palette or vector size", () => {

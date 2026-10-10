@@ -218,3 +218,22 @@ test("reconstruction method changes recalculate the same seeds without mixing ca
     assert.deepEqual(methods,["trilinear-boundary","quadratic","tricubic","quadratic"]);
   } finally {reader.close();}
 });
+
+
+test("streamline performance profile reports preparation, HDF5, worker and geometry counts", async () => {
+  const f=fixture(), profiles=[];
+  const lines=await readResultStreamlines({
+    task:f.task,time:0,streamlineSeeds:[f.seed],streamlineTolerance:1e-3,
+    onPerformance:profile=>profiles.push(profile),
+  }, {process:async input=>calculateStreamlines(input)});
+  assert.equal(lines[0].error,undefined);
+  assert.equal(profiles.length,1);
+  const profile=profiles[0];
+  assert.equal(profile.kind,"line");
+  assert.equal(profile.domains,1);
+  assert.equal(profile.nodes,24);
+  assert.equal(profile.lines,1);
+  assert.ok(profile.points>1);
+  for(const key of ["prepareMs","hdf5Ms","workerMs","totalMs"]) assert.ok(Number.isFinite(profile[key])&&profile[key]>=0,key);
+  assert.ok(profile.totalMs>=profile.workerMs);
+});

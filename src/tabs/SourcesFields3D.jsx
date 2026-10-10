@@ -121,7 +121,8 @@ export function SourcesFields3D(props) {
   // Even a completely disabled frame reaches the reader so it can release its
   // workers; no HDF5 is read, and geometry follows the requested time immediately.
   const result = useResultFrame(() => props.task && ({ task: props.task, time: props.time, layers: requestedLayers(),
-    streamlineSeeds: streamlineSeeds(), streamlineTolerance: STREAMLINE_DEFAULT_TOLERANCE, streamlineMethod: streamlineMethod() }),
+    streamlineSeeds: streamlineSeeds(), streamlineTolerance: STREAMLINE_DEFAULT_TOLERANCE,
+    streamlineMethod: streamlineMethod(), performanceEnabled }),
     request => layerReader.read(request), { onPerformance: onFramePerformance, performanceEnabled });
   const displayed = () => result().frame;
   const value = () => displayed()?.value;

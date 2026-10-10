@@ -155,7 +155,7 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
             seed.instance.ls, seed.instance.as, seed.instance.ps, seed.node]);
           const missing = request.streamlineSeeds.filter(seed => !cached.has(key(seed)));
           const calculated = missing.length ? await readResultStreamlines({ ...request, streamlineSeeds: missing,
-            onPerformance: profile => { linePerformance = profile; } }, streamlineProcessor) : [];
+            onPerformance: request.performanceEnabled?.() ? profile => { linePerformance = profile; } : undefined }, streamlineProcessor) : [];
           missing.forEach(seed => {
             const line = calculated.find(item => item.id === seed.id);
             if (line && !line.error) cached.set(key(seed), line);

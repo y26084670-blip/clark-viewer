@@ -284,3 +284,33 @@ test("a zero on the physical face terminates without inventing a seam crossing",
   closeVector(Array.from(line.paths.at(-1).positions.slice(-3)),[1,.5,.5],1e-6);
   assert.ok(xyz(line).every(p=>p.every(Number.isFinite)&&p[0]<=1));
 });
+
+test("all four methods are compared on the same nonpolynomial data and converge with mesh refinement",()=>{
+  const primitive=x=>.15*Math.sin(2*x)+.04*x*x*x;
+  const errors=new Map();
+  for(const n of [9,17]) {
+    const raw=grid({dims:[n,16,1],lo:[-1,-2,0],hi:[1,2,1],
+      field:x=>[1,.3*Math.cos(2*x)+.12*x*x,0]});
+    const node=((n-1)/2)*16+7;
+    const current={};
+    for(const method of ["trilinear","trilinear-boundary","quadratic","tricubic"]) {
+      const line=trace([raw],node,{method,tolerance:1e-6});
+      closeVector(line.start,[0,-.125,.5]);
+      assert.deepEqual(line.reasons,["boundary"]);
+      let maximum=0;
+      for(const point of xyz(line)) {
+        const exact=line.start[1]+primitive(point[0])-primitive(line.start[0]);
+        maximum=Math.max(maximum,Math.abs(point[1]-exact));
+      }
+      current[method]=maximum;
+      assert.ok(maximum<1e-2,`unresolved trajectory for ${method}`);
+      if(errors.has(method))assert.ok(maximum<errors.get(method)*.6,
+        `refining the saved grid must reduce the error for ${method}`);
+      errors.set(method,maximum);
+    }
+    // These inequalities belong to this analytic test, not to a universal
+    // guarantee for high-order reconstruction of arbitrary saved data.
+    assert.ok(current.quadratic<current.trilinear);
+    assert.ok(current.tricubic<current.quadratic);
+  }
+});

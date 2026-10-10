@@ -1,16 +1,22 @@
 .sources-fields-toolbar {
   position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
   gap: 6px 8px;
-  flex-wrap: nowrap;
   overflow: visible;
 }
 
 .source-toolbar-menu {
   position: relative;
-  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .source-toolbar-menu-button {
+  width: 100%;
   min-height: 27px;
   padding: 3px 8px;
   border: 1px solid #56626e;

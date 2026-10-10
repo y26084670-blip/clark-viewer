@@ -114,6 +114,8 @@ export function ResultsGeometryViewport(props) {
   const [showCentersAndNodes, setShowCentersAndNodes] = createGeometryViewSetting("showCentersAndNodes", false);
   const [vectorStyle, setVectorStyle] = createGeometryViewSetting("vectorStyle", "thin");
   const [resultPalette, setResultPalette] = createGeometryViewSetting("resultPalette", "Rainbow");
+  const [performanceEnabled, setPerformanceEnabled] = createGeometryViewSetting("resultPerformanceOverlay", false);
+  const [renderPerformance, setRenderPerformance] = createSignal(null);
   const [elementsMode, setElementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode, setRegionsMode] = createGeometryViewSetting("regionsMode", "all");
   const [showLocalSymmetry, setShowLocalSymmetry] = createGeometryViewSetting("showLocalSymmetry", true);
@@ -515,6 +517,11 @@ export function ResultsGeometryViewport(props) {
                 onChange={event => setResultPalette(event.currentTarget.value)}>
                 <For each={RESULT_SCALAR_PALETTES}>{name => <option value={name}>палитра {name}</option>}</For>
               </select>
+              <label>
+                <input type="checkbox" checked={performanceEnabled()}
+                  onChange={event => setPerformanceEnabled(event.currentTarget.checked)} />
+                Производительность
+              </label>
             </Show>
 
             <Show when={openPanel() === "elements"}>
@@ -696,6 +703,25 @@ export function ResultsGeometryViewport(props) {
         </Show>
 
         <div class="geometry-viewer-canvas-region">
+          <Show when={performanceEnabled()}>
+            <div class="geometry-performance-overlay" aria-live="polite">
+              <Show when={props.performanceProfile?.mode === "line"} fallback={<>
+                <b>TIME</b>
+                <span>latency {Math.round(props.performanceProfile?.latencyMs ?? 0)} ms · load {Math.round(props.performanceProfile?.loadMs ?? 0)} ms</span>
+                <span>requests {props.performanceProfile?.requests ?? 0} · frames {props.performanceProfile?.published ?? 0} · skipped {props.performanceProfile?.skipped ?? 0}</span>
+              </>}>
+                <b>VECTOR LINE</b>
+                <span>total {Math.round(props.performanceProfile?.totalMs ?? 0)} ms</span>
+                <span>prepare {Math.round(props.performanceProfile?.prepareMs ?? 0)} · HDF5 {Math.round(props.performanceProfile?.hdf5Ms ?? 0)} · worker {Math.round(props.performanceProfile?.workerMs ?? 0)} ms</span>
+                <span>domains {props.performanceProfile?.domains ?? 0} · nodes {props.performanceProfile?.nodes ?? 0} · points {props.performanceProfile?.points ?? 0}</span>
+              </Show>
+              <Show when={renderPerformance()}>
+                <span>render {renderPerformance().renderMs.toFixed(1)} ms · update {renderPerformance().updateMs.toFixed(1)} ms</span>
+                <span>calls {renderPerformance().calls} · △ {renderPerformance().triangles} · lines {renderPerformance().lines} · points {renderPerformance().points}</span>
+                <span>geo {renderPerformance().geometries} · tex {renderPerformance().textures} · programs {renderPerformance().programs}</span>
+              </Show>
+            </div>
+          </Show>
           <ThreeGeometryViewport
             scene={displayScene()}
             captureFrameKey={props.captureFrameKey}
@@ -729,6 +755,8 @@ export function ResultsGeometryViewport(props) {
             fitAllPadding={GEOMETRY_FIT_ALL_PADDING}
             instanceBudget={GEOMETRY_INSTANCE_BUDGET}
             onRenderStats={setRenderStats}
+            performanceEnabled={performanceEnabled()}
+            onPerformance={setRenderPerformance}
             onError={setViewportError}
           />
           <Show when={budgetWarning()} keyed>

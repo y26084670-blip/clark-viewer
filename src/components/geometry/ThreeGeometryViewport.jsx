@@ -1648,6 +1648,9 @@ export function ThreeGeometryViewport(props) {
     if (!renderer || !threeScene || !camera || disposed || contextLost || rendering) return;
     if (renderFrame) { cancelAnimationFrame(renderFrame); renderFrame = 0; }
     rendering = true;
+    const profile = props.performanceEnabled === true;
+    const totalStart = profile ? performance.now() : 0;
+    let updateMs = 0, renderStart = 0;
     try {
       if (pendingResize && !movieSnapshot) applyRendererSize();
       if (pendingGeometry) {
@@ -1658,6 +1661,12 @@ export function ThreeGeometryViewport(props) {
       if (sourcesDirty) { sourcesDirty = false; replacePrescribedSources(); }
       if (vectorsDirty) { vectorsDirty = false; replaceResultLayers(); }
       if (!movieSnapshot && (!hasFramedGeometry || props.autoFit === true)) hasFramedGeometry = fitVisibleObjects();
+      if (profile) {
+        updateMs = performance.now() - totalStart;
+        renderer.info.autoReset = false;
+        renderer.info.reset();
+        renderStart = performance.now();
+      }
       renderer.setScissorTest(false);
       renderer.setViewport(0, 0, viewportWidth, viewportHeight);
       renderer.clear(true, true, true);
@@ -1691,8 +1700,26 @@ export function ThreeGeometryViewport(props) {
         renderer.setViewport(0, 0, viewportWidth, viewportHeight);
       }
       captureGate.rendered(captureFrameKey);
+      if (profile) {
+        const info = renderer.info.render;
+        props.onPerformance?.({
+          updateMs,
+          renderMs: performance.now() - renderStart,
+          totalMs: performance.now() - totalStart,
+          calls: info.calls,
+          triangles: info.triangles,
+          lines: info.lines,
+          points: info.points,
+          geometries: renderer.info.memory.geometries,
+          textures: renderer.info.memory.textures,
+          programs: renderer.info.programs?.length ?? 0,
+        });
+      }
     } catch (error) { reportError(error); }
-    finally { rendering = false; }
+    finally {
+      if (profile && renderer) renderer.info.autoReset = true;
+      rendering = false;
+    }
   };
   const requestRender = () => {
     if (!renderer || !threeScene || !camera || renderFrame || rendering || disposed) return;

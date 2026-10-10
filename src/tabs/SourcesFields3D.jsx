@@ -75,6 +75,19 @@ export function SourcesFields3D(props) {
   const [colorMap, setColorMap] = createGeometryViewSetting("resultVectorColorMap", false);
   const [globalMinMax, setGlobalMinMax] = createGeometryViewSetting("resultGlobalMinMax", true);
   const [streamlineWidth, setStreamlineWidth] = createGeometryViewSetting("resultStreamlineWidth", 2);
+  const [performanceEnabled] = createGeometryViewSetting("resultPerformanceOverlay", false);
+  const [performanceProfile, setPerformanceProfile] = createSignal(null);
+  let lastProfiledTime = props.time;
+  const onFramePerformance = profile => {
+    if (!performanceEnabled()) return;
+    const timeChanged = profile.time !== lastProfiledTime;
+    lastProfiledTime = profile.time;
+    if (!timeChanged && profile.detail?.line) {
+      setPerformanceProfile({ ...profile.detail.line, mode: "line" });
+    } else {
+      setPerformanceProfile({ ...profile, detail: undefined, mode: "time" });
+    }
+  };
   const [elementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode] = createGeometryViewSetting("regionsMode", "all");
   const quantities = {
@@ -108,8 +121,9 @@ export function SourcesFields3D(props) {
   // Even a completely disabled frame reaches the reader so it can release its
   // workers; no HDF5 is read, and geometry follows the requested time immediately.
   const result = useResultFrame(() => props.task && ({ task: props.task, time: props.time, layers: requestedLayers(),
-    streamlineSeeds: streamlineSeeds(), streamlineTolerance: STREAMLINE_DEFAULT_TOLERANCE, streamlineMethod: streamlineMethod() }),
-    request => layerReader.read(request));
+    streamlineSeeds: streamlineSeeds(), streamlineTolerance: STREAMLINE_DEFAULT_TOLERANCE,
+    streamlineMethod: streamlineMethod(), performanceEnabled }),
+    request => layerReader.read(request), { onPerformance: onFramePerformance, performanceEnabled });
   const displayed = () => result().frame;
   const value = () => displayed()?.value;
   const streamlines = createMemo(() => (value()?.streamlines ?? [])
@@ -146,7 +160,7 @@ export function SourcesFields3D(props) {
       <div class="plot-toolbar sources-fields-toolbar">
         <For each={[
           ["elements", "Объемные элементы"],
-          ["regions", "Области просмотра"],
+          ["regions", "Области интересов"],
           ["virtual", "Виртуальные элементы"],
         ]}>{([key, label]) => {
           const group = RESULT_LAYER_GROUPS.find(item => item.key === key);
@@ -200,8 +214,8 @@ export function SourcesFields3D(props) {
 
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
-            aria-expanded={openSourceMenu() === "lines"} aria-label="Векторная линия"
-            onClick={() => toggleSourceMenu("lines")}>Векторная линия</button>
+            aria-expanded={openSourceMenu() === "lines"} aria-label="Векторные линии"
+            onClick={() => toggleSourceMenu("lines")}>Векторные линии</button>
           <Show when={openSourceMenu() === "lines"}>
             <div class="source-toolbar-menu-panel source-lines-panel">
               <Show when={streamlineSeeds().length} fallback={<div class="source-toolbar-empty">Нет линий</div>}>
@@ -251,7 +265,8 @@ export function SourcesFields3D(props) {
           onSelectStreamline={setSelectedStreamline} onResultNodeDoubleClick={addStreamline}
           captureFrameKey={displayed()} onCaptureReady={movie.onCaptureReady}
           resultVectorScale={scale()} resultPickingOnly={true}
-          resultVectorColorMap={effectiveColorMap()} />
+          resultVectorColorMap={effectiveColorMap()}
+          performanceProfile={performanceProfile()} />
       </div>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
     </section>

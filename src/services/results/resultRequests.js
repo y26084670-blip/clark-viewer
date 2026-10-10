@@ -40,9 +40,9 @@ export function useAsyncResult(source, load) {
 }
 
 // Opt-in for 3D, line and surface fields; other tabs keep useAsyncResult semantics.
-export function useResultFrame(source, load) {
+export function useResultFrame(source, load, { onPerformance, performanceEnabled } = {}) {
   const [state, setState] = createSignal({ frame: null, requested: null, loading: false, error: "" });
-  const controller = createResultFrameController({ load, publish: setState });
+  const controller = createResultFrameController({ load, publish: setState, onPerformance, performanceEnabled });
   createEffect(() => controller.request(source()));
   onCleanup(() => controller.close());
   return state;

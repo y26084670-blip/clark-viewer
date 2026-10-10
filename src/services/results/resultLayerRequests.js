@@ -87,6 +87,7 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
   return {
     async read(request) {
       if (closed) throw cancelled();
+      let linePerformance = null;
       if (active) throw new Error("Предыдущий кадр результатов ещё читается");
       active = true;
       try {
@@ -153,7 +154,8 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
           const key = seed => JSON.stringify([seed.id, seed.quantityKey, seed.source.recordIndex,
             seed.instance.ls, seed.instance.as, seed.instance.ps, seed.node]);
           const missing = request.streamlineSeeds.filter(seed => !cached.has(key(seed)));
-          const calculated = missing.length ? await readResultStreamlines({ ...request, streamlineSeeds: missing }, streamlineProcessor) : [];
+          const calculated = missing.length ? await readResultStreamlines({ ...request, streamlineSeeds: missing,
+            onPerformance: request.performanceEnabled?.() ? profile => { linePerformance = profile; } : undefined }, streamlineProcessor) : [];
           missing.forEach(seed => {
             const line = calculated.find(item => item.id === seed.id);
             if (line && !line.error) cached.set(key(seed), line);
@@ -166,7 +168,7 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
           streamlineFrame = null;
         }
         if (closed) throw cancelled();
-        return { layers, streamlines, errors: [
+        return { layers, streamlines, performance: linePerformance ? { line: linePerformance } : null, errors: [
           ...layers.filter(layer => layer.error).map(layer => ({ key: layer.key, message: layer.error })),
           ...streamlines.filter(line => line.error).map(line => ({ key: `line-${line.id}`, message: line.error })),
         ] };

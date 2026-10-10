@@ -200,3 +200,36 @@ test("surface frame requests retain completed surfaces for time bursts and read 
   h.request(21, { ...context, copy: 1 }); assert.equal(h.state().frame, null);
   h.controller.close();
 });
+
+
+test("performance profile counts requested, published and coalesced time frames only when enabled", async () => {
+  const scheduled=new Map(), reads=[], profiles=[]; let id=0, clock=0, enabled=false;
+  const controller=createResultFrameController({
+    publish(){},
+    performanceEnabled:()=>enabled,
+    onPerformance:profile=>profiles.push(profile),
+    now:()=>clock,
+    schedule:callback=>{scheduled.set(++id,callback);return id;},
+    cancel:key=>scheduled.delete(key),
+    load:request=>new Promise(resolve=>reads.push({request,resolve})),
+  });
+  const task={};
+  const request=time=>controller.request({task,time,quantityKey:"M",selected:[1],budget:1});
+  request(0); for(const [,cb] of [...scheduled]){scheduled.clear();void cb();}
+  reads[0].resolve({}); await tick();
+  assert.equal(profiles.length,0);
+
+  enabled=true; clock=10; request(1);
+  for(const [,cb] of [...scheduled]){scheduled.clear();void cb();}
+  clock=11; request(2); clock=12; request(3); clock=13; request(4);
+  clock=20; reads[1].resolve({}); await tick();
+  for(const [,cb] of [...scheduled]){scheduled.clear();void cb();}
+  clock=30; reads[2].resolve({}); await tick();
+  assert.equal(profiles.length,1);
+  assert.equal(profiles[0].time,4);
+  assert.equal(profiles[0].requests,4);
+  assert.equal(profiles[0].published,1);
+  assert.ok(profiles[0].skipped>=3);
+  assert.equal(profiles[0].latencyMs,17);
+  controller.close();
+});

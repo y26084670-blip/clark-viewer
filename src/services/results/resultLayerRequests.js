@@ -146,8 +146,9 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
         let streamlines = [];
         if (request.streamlineSeeds?.length) {
           streamlineProcessor ??= streamlineProcessorFactory();
+          const method = request.streamlineMethod ?? "trilinear";
           const compatible = streamlineFrame?.task === request.task && streamlineFrame.time === request.time
-            && streamlineFrame.tolerance === request.streamlineTolerance;
+            && streamlineFrame.tolerance === request.streamlineTolerance && streamlineFrame.method === method;
           const cached = compatible ? streamlineFrame.lines : new Map();
           const key = seed => JSON.stringify([seed.id, seed.quantityKey, seed.source.recordIndex,
             seed.instance.ls, seed.instance.as, seed.instance.ps, seed.node]);
@@ -158,7 +159,7 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
             if (line && !line.error) cached.set(key(seed), line);
           });
           streamlines = request.streamlineSeeds.map(seed => cached.get(key(seed)) ?? calculated.find(item => item.id === seed.id)).filter(Boolean);
-          streamlineFrame = { task: request.task, time: request.time, tolerance: request.streamlineTolerance,
+          streamlineFrame = { task: request.task, time: request.time, tolerance: request.streamlineTolerance, method,
             lines: new Map(request.streamlineSeeds.filter(seed => cached.has(key(seed))).map(seed => [key(seed), cached.get(key(seed))])) };
         } else {
           if (streamlineProcessor) { streamlineProcessor.close(); streamlineProcessor = null; }

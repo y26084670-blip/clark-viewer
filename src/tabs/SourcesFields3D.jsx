@@ -12,7 +12,7 @@ import { applyResultGlobalRange, resultGlobalScale } from "../services/results/r
 import { RESULT_SCALAR_PALETTES } from "../services/visualization/resultScalarColors.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import { movie3DFilenamePrefix } from "../services/movie/movieFilename.js";
-import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_REASONS } from "../services/visualization/resultStreamlineField.js";
+import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS, STREAMLINE_REASONS } from "../services/visualization/resultStreamlineField.js";
 import "./SourcesFields3D.css";
 
 // Switching tabs unmounts this component. Retain only small seed descriptors,
@@ -31,17 +31,18 @@ export function SourcesFields3D(props) {
   const [streamlineSeeds, setStreamlineSeeds] = createSignal(savedStreamlines?.seeds ?? []);
   const [selectedStreamline, setSelectedStreamline] = createSignal(savedStreamlines?.selected ?? null);
   const [streamlineTolerance, setStreamlineTolerance] = createSignal(savedStreamlines?.tolerance ?? STREAMLINE_DEFAULT_TOLERANCE);
+  const [streamlineMethod, setStreamlineMethod] = createSignal(savedStreamlines?.method ?? "trilinear");
   const [streamlineNotice, setStreamlineNotice] = createSignal("");
   let nextStreamlineId = savedStreamlines?.nextId ?? 1, streamlineTask = props.task;
   createEffect(() => {
     if (props.task === streamlineTask) return;
     streamlineSessions.delete(streamlineTask);
     streamlineTask = props.task; setStreamlineSeeds([]); setSelectedStreamline(null); setStreamlineNotice("");
-    setStreamlineTolerance(STREAMLINE_DEFAULT_TOLERANCE); nextStreamlineId = 1;
+    setStreamlineTolerance(STREAMLINE_DEFAULT_TOLERANCE); setStreamlineMethod("trilinear"); nextStreamlineId = 1;
   });
   onCleanup(() => {
     if (streamlineTask && streamlineTask === props.task) streamlineSessions.set(streamlineTask, {
-      seeds: streamlineSeeds(), selected: selectedStreamline(), tolerance: streamlineTolerance(), nextId: nextStreamlineId,
+      seeds: streamlineSeeds(), selected: selectedStreamline(), tolerance: streamlineTolerance(), method: streamlineMethod(), nextId: nextStreamlineId,
     });
   });
   function addStreamline(vector) {
@@ -55,6 +56,11 @@ export function SourcesFields3D(props) {
   function deleteStreamline() {
     const remaining = streamlineSeeds().filter(seed => seed.id !== selectedStreamline());
     setStreamlineSeeds(remaining); setSelectedStreamline(remaining.at(-1)?.id ?? null); setStreamlineNotice("");
+  }
+  function changeStreamlineMethod(event) {
+    const method = event.currentTarget.value;
+    if (!props.movieBusy && Object.hasOwn(STREAMLINE_METHODS, method)) setStreamlineMethod(method);
+    else event.currentTarget.value = streamlineMethod();
   }
   function changeStreamlineTolerance(event) {
     const value = event.currentTarget.valueAsNumber / 100;
@@ -105,7 +111,7 @@ export function SourcesFields3D(props) {
   // Even a completely disabled frame reaches the reader so it can release its
   // workers; no HDF5 is read, and geometry follows the requested time immediately.
   const result = useResultFrame(() => props.task && ({ task: props.task, time: props.time, layers: requestedLayers(),
-    streamlineSeeds: streamlineSeeds(), streamlineTolerance: streamlineTolerance() }),
+    streamlineSeeds: streamlineSeeds(), streamlineTolerance: streamlineTolerance(), streamlineMethod: streamlineMethod() }),
     request => layerReader.read(request));
   const displayed = () => result().frame;
   const value = () => displayed()?.value;
@@ -115,7 +121,14 @@ export function SourcesFields3D(props) {
       unit: QUANTITIES[line.quantityKey]?.unit ?? "" })));
   const selectedLineStatus = () => {
     const line = streamlines().find(item => item.id === selectedStreamline());
-    return line?.error || line?.reasons?.map(reason => STREAMLINE_REASONS[reason] ?? reason).join(" · ") || "";
+    if (!line) return "";
+    if (line.error) return line.error;
+    const method = STREAMLINE_METHODS[line.method ?? "trilinear"] ?? line.method;
+    const start = line.start?.length === 3 && line.start.every(Number.isFinite)
+      ? `Начало: (${line.start.map(String).join(", ")}) мм` : "";
+    const fallback = line.fallbacks?.length ? `Резерв: ${line.fallbacks.join("; ")}` : "";
+    const reasons = line.reasons?.map(reason => STREAMLINE_REASONS[reason] ?? reason).join(" · ");
+    return [method, start, fallback, reasons].filter(Boolean).join(" · ");
   };
   const layerMetadata = layer => ({ ...applyResultGlobalRange(layer, effectiveGlobalMinMax() ? globalRanges().layerRanges[layer.key] : null),
     groupLabel: RESULT_LAYER_GROUPS.find(group => group.key === layer.key)?.label ?? layer.key,
@@ -204,6 +217,9 @@ export function SourcesFields3D(props) {
             </option>}</For>
           </select></label>
           <button type="button" disabled={selectedStreamline() === null} onClick={deleteStreamline}>Стереть линию</button>
+          <label>Метод <select aria-label="Метод построения линий" value={streamlineMethod()} disabled={props.movieBusy} onChange={changeStreamlineMethod}>
+            <For each={Object.entries(STREAMLINE_METHODS)}>{([key, label]) => <option value={key}>{label}</option>}</For>
+          </select></label>
           <label>Допуск, % шага сетки <input type="number" min="0.00001" max="1" step="0.01"
             aria-label="Допуск линии, процент шага сетки" value={streamlineTolerance() * 100} onChange={changeStreamlineTolerance} /></label>
           <label class="source-streamline-width">Толщина

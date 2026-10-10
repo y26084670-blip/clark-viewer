@@ -683,17 +683,14 @@ export function ResultsGeometryViewport(props) {
                 />
                 Центры и узлы
               </label>
-              <label class="geometry-viewer-source-option">
-                <span>Вид векторов</span>
-                <select
-                  aria-label="Вид векторов"
-                  value={vectorStyle()}
-                  onChange={(event) => setVectorStyle(event.currentTarget.value)}
-                >
-                  <option value="thin">Тонкие</option>
-                  <option value="solid">Объёмные</option>
-                </select>
-              </label>
+              <select class="geometry-viewer-vector-type-select"
+                aria-label="Тип векторов"
+                value={vectorStyle()}
+                onChange={(event) => setVectorStyle(event.currentTarget.value)}
+              >
+                <option value="thin">тип векторов: Тонкие</option>
+                <option value="solid">тип векторов: Объемные</option>
+              </select>
             </Show>
           </div>
         </Show>

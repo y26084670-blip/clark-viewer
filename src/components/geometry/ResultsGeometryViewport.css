@@ -492,3 +492,20 @@
 .geometry-viewer-palette-select:focus {
   background: #1b232b;
 }
+
+
+.geometry-viewer-vector-type-select {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid #697683;
+  border-radius: 3px;
+  background: #141a20;
+  color: #edf2f7;
+  padding: 4px 7px;
+  color-scheme: dark;
+}
+
+.geometry-viewer-vector-type-select:hover,
+.geometry-viewer-vector-type-select:focus {
+  background: #1b232b;
+}

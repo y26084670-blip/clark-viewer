@@ -14,3 +14,12 @@ test("Show panel has fixed no-scroll height and one dark palette selector", () =
   assert.match(css, /\.geometry-viewer-options-panel\.is-view-panel\s*\{[\s\S]*height:\s*330px;[\s\S]*overflow:\s*hidden;/);
   assert.match(css, /\.geometry-viewer-palette-select\s*\{[\s\S]*background:\s*#141a20;[\s\S]*color:\s*#edf2f7;[\s\S]*color-scheme:\s*dark;/);
 });
+
+
+test("General options use one dark vector type selector without a duplicate label", () => {
+  assert.match(jsx, /class="geometry-viewer-vector-type-select"/);
+  assert.doesNotMatch(jsx, /<span>Вид векторов<\/span>/);
+  assert.match(jsx, /<option value="thin">тип векторов: Тонкие<\/option>/);
+  assert.match(jsx, /<option value="solid">тип векторов: Объемные<\/option>/);
+  assert.match(css, /\.geometry-viewer-vector-type-select\s*\{[\s\S]*background:\s*#141a20;[\s\S]*color:\s*#edf2f7;[\s\S]*color-scheme:\s*dark;/);
+});

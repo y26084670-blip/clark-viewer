@@ -33,11 +33,13 @@ function sameSelection(a = [], b = []) {
   return left.length === right.length && left.every((id, i) => id === right[i]);
 }
 
-export function createResultFrameController({ load, publish,
+export function createResultFrameController({ load, publish, onPerformance,
+  now = () => performance.now(),
   schedule = callback => requestAnimationFrame(callback),
   cancel = id => cancelAnimationFrame(id) }) {
   let requested = null, pending = null, frame = null;
   let active = false, disposed = false, revision = 0, scheduled = null;
+  let requests = 0, started = 0, published = 0, skipped = 0;
   const emit = (loading, error = "") => publish({ frame, requested, loading, error });
   function enqueue() {
     if (disposed || active || !pending || scheduled !== null) return;
@@ -49,12 +51,20 @@ export function createResultFrameController({ load, publish,
     const item = pending;
     pending = null;
     active = true;
+    started++;
+    const startedAt = onPerformance ? now() : 0;
     try {
       const value = await load(item.request);
       if (!disposed && item.revision === revision) {
         frame = { request: item.request, value };
         emit(false);
-      }
+        published++;
+        if (onPerformance) {
+          const finishedAt = now();
+          onPerformance({ kind: "time", time: item.request.time, loadMs: finishedAt - startedAt,
+            latencyMs: finishedAt - item.requestedAt, requests, started, published, skipped });
+        }
+      } else if (!disposed) skipped++;
     } catch (error) {
       if (!disposed && item.revision === revision) emit(false, error.message ?? String(error));
     } finally {
@@ -66,9 +76,11 @@ export function createResultFrameController({ load, publish,
     request(next) {
       if (disposed) return;
       revision++;
+      if (next) requests++;
       if (!sameFrameContext(requested, next)) frame = null;
       requested = next;
-      pending = next ? { request: next, revision } : null;
+      if (next && pending) skipped++;
+      pending = next ? { request: next, revision, requestedAt: onPerformance ? now() : 0 } : null;
       if (!next && scheduled !== null) { cancel(scheduled); scheduled = null; }
       emit(Boolean(next));
       enqueue();

@@ -200,8 +200,8 @@ export function SourcesFields3D(props) {
 
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
-            aria-expanded={openSourceMenu() === "lines"} aria-label="Векторная линия"
-            onClick={() => toggleSourceMenu("lines")}>Векторная линия</button>
+            aria-expanded={openSourceMenu() === "lines"} aria-label="Векторные линии"
+            onClick={() => toggleSourceMenu("lines")}>Векторные линии</button>
           <Show when={openSourceMenu() === "lines"}>
             <div class="source-toolbar-menu-panel source-lines-panel">
               <Show when={streamlineSeeds().length} fallback={<div class="source-toolbar-empty">Нет линий</div>}>

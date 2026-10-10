@@ -122,7 +122,7 @@ export function SourcesFields3D(props) {
   // workers; no HDF5 is read, and geometry follows the requested time immediately.
   const result = useResultFrame(() => props.task && ({ task: props.task, time: props.time, layers: requestedLayers(),
     streamlineSeeds: streamlineSeeds(), streamlineTolerance: STREAMLINE_DEFAULT_TOLERANCE, streamlineMethod: streamlineMethod() }),
-    request => layerReader.read(request), { onPerformance: onFramePerformance });
+    request => layerReader.read(request), { onPerformance: onFramePerformance, performanceEnabled });
   const displayed = () => result().frame;
   const value = () => displayed()?.value;
   const streamlines = createMemo(() => (value()?.streamlines ?? [])

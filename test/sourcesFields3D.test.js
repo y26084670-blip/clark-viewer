@@ -221,13 +221,13 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
 test("field method selector keeps the same seeds and tolerance, validates choices and freezes during capture",()=>{
   const props=fixture(),ui=sourcesFields3DSetup(props);
   try {
-    assert.deepEqual(ui.streamlineControls().methodOptions.map(([key])=>key),["trilinear","trilinear-boundary"]);
+    assert.deepEqual(ui.streamlineControls().methodOptions.map(([key])=>key),["trilinear","trilinear-boundary","quadratic","tricubic"]);
     assert.equal(ui.streamlineControls().method,"trilinear");
     ui.setResultState({frame:{request:{task:props.task,time:props.time},value:{layers:[]}}});
     const vector={quantityKey:"H",source:{schemaId:"elements",recordIndex:0},instance:{ls:0,as:0,ps:0},node:4};
     ui.addStreamline(vector);ui.changeStreamlineTolerance({currentTarget:{valueAsNumber:.001}});
     const seeds=ui.request().streamlineSeeds,tolerance=ui.request().streamlineTolerance;
-    for(const method of ["trilinear-boundary","trilinear"]) {
+    for(const method of ["trilinear-boundary","quadratic","tricubic","trilinear"]) {
       ui.streamlineControls().onMethodChange({currentTarget:{value:method}});
       assert.equal(ui.request().streamlineMethod,method);
       assert.equal(ui.request().streamlineSeeds,seeds);assert.equal(ui.request().streamlineTolerance,tolerance);
@@ -255,8 +255,8 @@ test("comparison status reports the displayed method, exact seed coordinates and
     assert.ok(ui.selectedLineStatus().includes("Начало: (7000.125, -9000.875, 15000.0625) мм"));
     assert.ok(ui.selectedLineStatus().includes("граница доступного поля"));
     ui.setResultState({frame:{request:{task:props.task,time:props.time},value:{layers:[],streamlines:[
-      {id,quantityKey:"H",method:"trilinear-boundary",start,fallbacks:["Недостаточно узлов"],reasons:["boundary"]}]}}});
+      {id,quantityKey:"H",method:"quadratic",start,fallbacks:["Недостаточно узлов"],reasons:["boundary"]}]}}});
     assert.ok(ui.selectedLineStatus().includes("Резерв: Недостаточно узлов"));
-    assert.ok(ui.selectedLineStatus().includes(ui.streamlineControls().methodOptions[1][1]));
+    assert.ok(ui.selectedLineStatus().includes(ui.streamlineControls().methodOptions[2][1]));
   } finally {ui.close();}
 });

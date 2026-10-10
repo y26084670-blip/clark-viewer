@@ -258,3 +258,20 @@ test('3D streamline colours use the optional global magnitude range and restore 
   assert.deepEqual(root.userData.colorLegends.map(r=>[r.minimum,r.maximum]),[[1,5]]);
   updateStreamlineMeshes(THREE,root,[],options);
 });
+
+test("quadratic and tricubic comparisons retain each method, seeds and tolerance across a tab replacement",()=>{
+  for(const method of ["quadratic","tricubic"]) {
+    const props={task:{elements:[{id:1,targ:0}],regions:[]},elements:[1],regions:[],time:0};
+    const vector={quantityKey:"H",source:{schemaId:"elements",recordIndex:0},instance:{ls:0,as:0,ps:0},node:4};
+    let ui=sourcesFields3DSetup(props);
+    ui.setResultState({frame:{request:{task:props.task,time:0},value:{layers:[]}},loading:false,error:""});
+    ui.addStreamline(vector);ui.changeStreamlineTolerance({currentTarget:{valueAsNumber:.001}});
+    ui.changeStreamlineMethod({currentTarget:{value:method}});
+    const seeds=ui.request().streamlineSeeds;ui.close();
+    ui=sourcesFields3DSetup(props);
+    try {
+      assert.equal(ui.request().streamlineMethod,method);assert.equal(ui.request().streamlineSeeds,seeds);
+      assert.equal(ui.request().streamlineTolerance,1e-5);assert.equal(ui.selectedStreamline(),seeds[0].id);
+    } finally {ui.close();}
+  }
+});

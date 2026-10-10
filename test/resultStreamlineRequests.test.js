@@ -160,7 +160,7 @@ test("motion reanchors the same saved node at each time, and saved coordinates a
 });
 
 test("each field method reaches the worker with the unchanged saved seeds, data and tolerance",async()=>{
-  for(const method of ["trilinear","trilinear-boundary"]) {
+  for(const method of ["trilinear","trilinear-boundary","quadratic","tricubic"]) {
     const f=fixture(),tolerance=1e-5;let received;
     const lines=await readResultStreamlines({task:f.task,time:0,streamlineSeeds:[f.seed],streamlineTolerance:tolerance,
       streamlineMethod:method},{process:async input=>{received=input;return calculateStreamlines(input);}});
@@ -194,5 +194,27 @@ test("curve cache normalizes the control default, invalidates the method and ret
     const restored=await reader.read({...request,streamlineMethod:"trilinear"});
     assert.equal(inputs.length,5);assert.equal(restored.streamlines[0].method,"trilinear");
     assert.deepEqual(restored.streamlines[0].start,original.streamlines[0].start);
+  } finally {reader.close();}
+});
+
+test("reconstruction method changes recalculate the same seeds without mixing cached curves",async()=>{
+  const f=fixture(),methods=[],reader=createResultLayerReader({streamlineProcessorFactory:()=>({
+    process:async input=>{methods.push(input.method);return calculateStreamlines(input);},close(){}})});
+  const request={task:f.task,time:0,layers:[],streamlineSeeds:[f.seed,{...f.seed,id:2,node:6}],streamlineTolerance:1e-5};
+  try {
+    let previous;
+    for(const method of ["trilinear-boundary","quadratic","tricubic","quadratic"]) {
+      const next=await reader.read({...request,streamlineMethod:method});
+      assert.equal(methods.at(-1),method);assert.equal(next.streamlines.length,2);
+      assert.ok(next.streamlines.every(line=>line.method===method));
+      if(previous) {
+        assert.notEqual(next.streamlines[0],previous.streamlines[0]);
+        assert.deepEqual(next.streamlines.map(line=>line.start),previous.streamlines.map(line=>line.start));
+      }
+      const repeated=await reader.read({...request,streamlineMethod:method});
+      assert.equal(repeated.streamlines[0],next.streamlines[0]);assert.equal(repeated.streamlines[1],next.streamlines[1]);
+      previous=next;
+    }
+    assert.deepEqual(methods,["trilinear-boundary","quadratic","tricubic","quadratic"]);
   } finally {reader.close();}
 });

@@ -1,9 +1,13 @@
+import { prepareStreamlineReconstruction, sampleReconstructedVector } from "./resultStreamlineReconstruction.js";
+
 // Streamlines of the saved vector field, parameterized by arc length in mm.
 // The hexahedron map uses solver vertex order (D1=12, D2=13, D3=15).
 export const STREAMLINE_LIMITS = Object.freeze({ lines: 64, domains: 128, nodes: 200_000, steps: 8192 });
 export const STREAMLINE_METHODS = Object.freeze({
   trilinear: "Трилинейный (контроль)",
   "trilinear-boundary": "Трилинейный · границы",
+  quadratic: "Квадратичная реконструкция",
+  tricubic: "Трикубический Эрмит",
 });
 export const STREAMLINE_DEFAULT_TOLERANCE = 1e-4; // fraction of the local grid spacing
 const bits = Array.from({ length: 8 }, (_, i) => [i & 1, (i >> 1) & 1, (i >> 2) & 1]);
@@ -75,8 +79,13 @@ export function prepareStreamlineDomain(input) {
     }
     maxMagnitude=Math.max(maxMagnitude,Math.hypot(vectors[index*3],vectors[index*3+1],vectors[index*3+2]));
   }
-  return {...input,origin,localVertices,min,max,extent,cellSize,maxMagnitude,
+  const domain={...input,origin,localVertices,min,max,extent,cellSize,maxMagnitude,
     method: input.method ?? "trilinear", fallbacks: new Set()};
+  if(domain.method==="quadratic" || domain.method==="tricubic") {
+    const preparation=prepareStreamlineReconstruction(domain,domain.method);
+    if(preparation.fallback)domain.fallbacks.add(preparation.fallback);
+  }
+  return domain;
 }
 
 // The control sampler retains the original centre clamping. The improved
@@ -87,6 +96,13 @@ export function sampleStreamlineVector(domain, point, guess) {
   const u=streamlineCoordinates(domain,point,guess);
   if(!u) return null;
   if(domain.monitorBoundaryStages && !inside(u,0)) domain.trialOutside=true;
+  if(domain.method==="quadratic" || domain.method==="tricubic") {
+    const bounded=u.map(v=>clamp(v));
+    const sample=sampleReconstructedVector(domain,bounded,inside(u,0)?point:physicalPoint(domain,bounded),domain.method);
+    if(sample.fallback)domain.fallbacks.add(sample.fallback);
+    if(sample.vector)return {u,vector:sample.vector,magnitude:norm(sample.vector)};
+    domain.fallbacks.add("Используется трилинейная реконструкция с продолжением до граней");
+  }
   const dims=domain.dimensions, lower=[], upper=[], weight=[];
   for(let k=0;k<3;k++) {
     if(domain.method==="trilinear" || !domain.method) {

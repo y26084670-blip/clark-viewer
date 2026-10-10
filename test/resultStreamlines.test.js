@@ -178,7 +178,7 @@ test("edge exits with two inward face neighbours are reported as ambiguous",()=>
 });
 
 test("new methods retain separate values on the two sides of a seam",()=>{
-  for(const method of ["trilinear-boundary"]) {
+  for(const method of ["trilinear-boundary","quadratic","tricubic"]) {
     const a=grid({dims:[4,4,4],lo:[0,0,0],hi:[1,1,1],field:x=>[2+x,0,0]});
     const b=grid({key:"b",dims:[5,4,4],lo:[1,0,0],hi:[2,1,1],field:x=>[7+x,0,0]});
     const line=trace([a,b],5,{method});
@@ -190,7 +190,7 @@ test("new methods retain separate values on the two sides of a seam",()=>{
 });
 
 test("boundary methods do not bridge gaps or opposing directions across seams",()=>{
-  for(const method of ["trilinear-boundary"]) {
+  for(const method of ["trilinear-boundary","quadratic","tricubic"]) {
     const a=grid({dims:[4,4,4],lo:[0,0,0],hi:[1,1,1]});
     for(const other of [grid({key:"b",lo:[1.001,0,0],hi:[2,1,1]}),
       grid({key:"b",lo:[1,0,0],hi:[2,1,1],field:()=>[-1,0,0]})]) {
@@ -217,6 +217,61 @@ test("a narrow boundary excursion is detected before the trajectory reenters",()
   assert.equal(line.error,undefined);assert.deepEqual(line.reasons,["boundary"]);
   closeVector(end,[c-Math.sqrt(delta),0,.5],2e-5);
   assert.ok(xyz(line).every(p=>p[0]<c&&p[1]>=-1e-8),"the physical boundary must terminate the first branch");
+});
+
+
+test("quadratic reconstruction reproduces all physical quadratic terms including boundaries",()=>{
+  const field=(x,y,z)=>[1+2*x-.7*y+.3*z+x*x+.2*x*y-.1*y*z,
+    2-x+.5*y*y+.4*x*z,z+.8*z*z-.3*x*y];
+  const raw=grid({dims:[5,5,5],lo:[-1,-1,-1],hi:[1,1,1],field});
+  const d=prepareStreamlineDomain({...raw,method:"quadratic"});
+  for(const p of [[.17,-.23,.31],[1,.25,-.6],[1,-1,1],[-1,-1,-1]]) {
+    closeVector(sampleStreamlineVector(d,p).vector,field(...p),2e-9);
+  }
+});
+
+test("tricubic interpolation reproduces a tensor cubic polynomial at the physical boundary",()=>{
+  const field=(x,y,z)=>[1+x*x*x+.2*x*x*y- .1*y*z*z,
+    2+y*y*y+.3*x*y*z,z*z*z+.2*x*x*x*y*y*y*z*z*z];
+  const raw=grid({dims:[6,6,6],lo:[-1,-1,-1],hi:[1,1,1],field});
+  const d=prepareStreamlineDomain({...raw,method:"tricubic"});
+  for(const p of [[.17,-.23,.31],[1,.25,-.6],[1,-1,1],[-1,-1,-1]]) {
+    closeVector(sampleStreamlineVector(d,p).vector,field(...p),2e-9);
+  }
+});
+
+test("higher-order reconstruction degrades explicitly on thin grids without NaN or invented components",()=>{
+  for(const method of ["quadratic","tricubic"])for(const dims of [[1,1,1],[2,2,2],[1,5,5]]) {
+    const raw=grid({dims,lo:[0,0,0],hi:[1,1,1],field:()=>[3,-2,.5]});
+    const d=prepareStreamlineDomain({...raw,method});
+    closeVector(sampleStreamlineVector(d,[0,1,0]).vector,[3,-2,.5],1e-9);
+    const line=trace([raw],0,{method});
+    assert.equal(line.error,undefined);assert.equal(line.method,method);
+    assert.ok(Array.isArray(line.fallbacks));
+    if(dims.includes(2))assert.ok(line.fallbacks.length>0,"the reported method must include the reason for a reduced-order grid");
+    assert.ok(xyz(line).every(p=>p.every(Number.isFinite)));
+    for(const path of line.paths)assert.ok(path.magnitudes.every(m=>Math.abs(m-Math.hypot(3,-2,.5))<1e-9));
+  }
+});
+
+test("higher-order methods stop on the first boundary exit even when the analytic curve reenters later",()=>{
+  // y=x^3-.75*x: the positive seed at x=-.5 reaches y=0 at x=0,
+  // then stays outside until x=sqrt(.75). A later return cannot bridge that gap.
+  for(const method of ["quadratic","tricubic"]) {
+    const raw=grid({dims:[6,4,3],lo:[-1,0,0],hi:[1,2,1],field:x=>[1,3*x*x-.75,0]});
+    const line=trace([raw],(1*4)*3+1,{method,tolerance:1e-6});
+    assert.equal(line.error,undefined);assert.ok(line.reasons.includes("boundary"));
+    closeVector(line.start,[-.5,.25,.5]);
+    closeVector(Array.from(line.paths.at(-1).positions.slice(-3)),[0,0,.5],2e-5);
+    assert.ok(xyz(line).every(p=>p[0]<=2e-5&&p[1]>=-1e-7));
+  }
+});
+
+test("higher-order zero fields retain the zero termination reason",()=>{
+  for(const method of ["quadratic","tricubic"]) {
+    const line=trace([grid({dims:[5,5,5],field:()=>[0,0,0]})],0,{method});
+    assert.equal(line.error,undefined);assert.deepEqual(line.reasons,["zero"]);assert.equal(line.paths.length,0);
+  }
 });
 
 

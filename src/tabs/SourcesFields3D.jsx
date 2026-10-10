@@ -11,7 +11,7 @@ import { createResultLayerReader } from "../services/results/resultLayerRequests
 import { applyResultGlobalRange, resultGlobalScale } from "../services/results/resultGlobalScale.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import { movie3DFilenamePrefix } from "../services/movie/movieFilename.js";
-import { STREAMLINE_LIMITS, STREAMLINE_METHODS, STREAMLINE_TOLERANCE_MM } from "../services/visualization/resultStreamlineField.js";
+import { STREAMLINE_LIMITS, STREAMLINE_METHODS, STREAMLINE_DEFAULT_TOLERANCE } from "../services/visualization/resultStreamlineField.js";
 import "./SourcesFields3D.css";
 
 // Switching tabs unmounts this component. Retain only small seed descriptors,
@@ -108,7 +108,7 @@ export function SourcesFields3D(props) {
   // Even a completely disabled frame reaches the reader so it can release its
   // workers; no HDF5 is read, and geometry follows the requested time immediately.
   const result = useResultFrame(() => props.task && ({ task: props.task, time: props.time, layers: requestedLayers(),
-    streamlineSeeds: streamlineSeeds(), streamlineTolerance: STREAMLINE_TOLERANCE_MM, streamlineMethod: streamlineMethod() }),
+    streamlineSeeds: streamlineSeeds(), streamlineTolerance: STREAMLINE_DEFAULT_TOLERANCE, streamlineMethod: streamlineMethod() }),
     request => layerReader.read(request));
   const displayed = () => result().frame;
   const value = () => displayed()?.value;

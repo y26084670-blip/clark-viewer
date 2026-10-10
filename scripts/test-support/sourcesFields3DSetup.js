@@ -3,7 +3,7 @@ import { QUANTITIES } from "../../src/services/results/resultMappings.js";
 import { resultDisplaySelection } from "../../src/services/results/resultRequests.js";
 import { RESULT_LAYER_GROUPS } from "../../src/services/results/resultLayerDefinitions.js";
 import { createResultLayerReader } from "../../src/services/results/resultLayerRequests.js";
-import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS, STREAMLINE_REASONS } from "../../src/services/visualization/resultStreamlineField.js";
+import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS } from "../../src/services/visualization/resultStreamlineField.js";
 
 import { applyResultGlobalRange, resultGlobalScale } from "../../src/services/results/resultGlobalScale.js";
 
@@ -54,7 +54,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     "createMovieTabAdapter", "completedMovieFrame", "onMount", "applyResultGlobalRange", "resultGlobalScale",
     `${setup} return { quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
       colorMap, effectiveColorMap, palette, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
-      addStreamline, deleteStreamline, changeStreamlineTolerance, streamlineMethod, changeStreamlineMethod, streamlines, selectedLineStatus,
+      addStreamline, deleteStreamline, changeStreamlineTolerance, streamlineMethod, changeStreamlineMethod, streamlines,
       controls: ${controlBindings},
       streamlineControls: ${streamlineBindings},
       globalMinMax, setGlobalMinMax, globalRanges, effectiveGlobalMinMax, resultLayers, statusLayers, layerStatus, timeIndex, selections }; } return SourcesFields3D(props);`);

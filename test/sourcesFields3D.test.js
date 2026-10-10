@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { sourcesFields3DSetup } from "../scripts/test-support/sourcesFields3DSetup.js";
 import { RESULT_LAYER_GROUPS, RESULT_LAYER_QUANTITY_LABELS } from "../src/services/results/resultLayerDefinitions.js";
 
@@ -242,21 +243,7 @@ test("field method selector keeps the same seeds and tolerance, validates choice
   } finally {ui.close();}
 });
 
-test("comparison status reports the displayed method, exact seed coordinates and fallback",()=>{
-  const props=fixture(),ui=sourcesFields3DSetup(props);
-  try {
-    ui.setResultState({frame:{request:{task:props.task,time:props.time},value:{layers:[]}}});
-    ui.addStreamline({quantityKey:"H",source:{schemaId:"elements",recordIndex:0},instance:{ls:0,as:0,ps:0},node:4});
-    ui.changeStreamlineMethod({currentTarget:{value:"trilinear-boundary"}});
-    const id=ui.selectedStreamline(),start=[7000.125,-9000.875,15000.0625];
-    ui.setResultState({frame:{request:{task:props.task,time:props.time},value:{layers:[],streamlines:[
-      {id,quantityKey:"H",method:"trilinear",start,fallbacks:[],reasons:["boundary"]}]}}});
-    assert.ok(ui.selectedLineStatus().includes(ui.streamlineControls().methodOptions[0][1]));
-    assert.ok(ui.selectedLineStatus().includes("Начало: (7000.125, -9000.875, 15000.0625) мм"));
-    assert.ok(ui.selectedLineStatus().includes("граница доступного поля"));
-    ui.setResultState({frame:{request:{task:props.task,time:props.time},value:{layers:[],streamlines:[
-      {id,quantityKey:"H",method:"quadratic",start,fallbacks:["Недостаточно узлов"],reasons:["boundary"]}]}}});
-    assert.ok(ui.selectedLineStatus().includes("Резерв: Недостаточно узлов"));
-    assert.ok(ui.selectedLineStatus().includes(ui.streamlineControls().methodOptions[2][1]));
-  } finally {ui.close();}
+test("selected streamline does not add a status row that changes 3D height",()=>{
+  const source=readFileSync(new URL("../src/tabs/SourcesFields3D.jsx",import.meta.url),"utf8");
+  assert.doesNotMatch(source,/source-streamline-status|selectedLineStatus/);
 });

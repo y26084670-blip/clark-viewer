@@ -12,7 +12,7 @@ import { applyResultGlobalRange, resultGlobalScale } from "../services/results/r
 import { RESULT_SCALAR_PALETTES } from "../services/visualization/resultScalarColors.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import { movie3DFilenamePrefix } from "../services/movie/movieFilename.js";
-import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS, STREAMLINE_REASONS } from "../services/visualization/resultStreamlineField.js";
+import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS } from "../services/visualization/resultStreamlineField.js";
 import "./SourcesFields3D.css";
 
 // Switching tabs unmounts this component. Retain only small seed descriptors,
@@ -119,17 +119,6 @@ export function SourcesFields3D(props) {
     .filter(line => streamlineSeeds().some(seed => seed.id === line.id))
     .map(line => ({ ...line, displayRange: effectiveGlobalMinMax() ? globalRanges().lineRanges[line.quantityKey] : undefined, quantity: QUANTITIES[line.quantityKey]?.label ?? line.quantityKey,
       unit: QUANTITIES[line.quantityKey]?.unit ?? "" })));
-  const selectedLineStatus = () => {
-    const line = streamlines().find(item => item.id === selectedStreamline());
-    if (!line) return "";
-    if (line.error) return line.error;
-    const method = STREAMLINE_METHODS[line.method ?? "trilinear"] ?? line.method;
-    const start = line.start?.length === 3 && line.start.every(Number.isFinite)
-      ? `Начало: (${line.start.map(String).join(", ")}) мм` : "";
-    const fallback = line.fallbacks?.length ? `Резерв: ${line.fallbacks.join("; ")}` : "";
-    const reasons = line.reasons?.map(reason => STREAMLINE_REASONS[reason] ?? reason).join(" · ");
-    return [method, start, fallback, reasons].filter(Boolean).join(" · ");
-  };
   const layerMetadata = layer => ({ ...applyResultGlobalRange(layer, effectiveGlobalMinMax() ? globalRanges().layerRanges[layer.key] : null),
     groupLabel: RESULT_LAYER_GROUPS.find(group => group.key === layer.key)?.label ?? layer.key,
     color: layer.quantityKey === "J" ? 0xff5454 : layer.quantityKey === "M" ? 0x44dd66 : 0x44bbff,
@@ -227,7 +216,6 @@ export function SourcesFields3D(props) {
             <span>{streamlineWidth()} px</span>
           </label>
           <label><input type="checkbox" aria-label="Цвет линий по модулю" checked={streamlineColorMap()} onChange={event => setStreamlineColorMap(event.currentTarget.checked)} /> Цвет по модулю</label>
-          <span class="source-streamline-status">{selectedLineStatus()}</span>
         </div>
       </Show>
       <div class="plot-status sources-fields-status" role="status">

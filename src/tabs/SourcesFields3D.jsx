@@ -75,6 +75,19 @@ export function SourcesFields3D(props) {
   const [colorMap, setColorMap] = createGeometryViewSetting("resultVectorColorMap", false);
   const [globalMinMax, setGlobalMinMax] = createGeometryViewSetting("resultGlobalMinMax", true);
   const [streamlineWidth, setStreamlineWidth] = createGeometryViewSetting("resultStreamlineWidth", 2);
+  const [performanceEnabled] = createGeometryViewSetting("resultPerformanceOverlay", false);
+  const [performanceProfile, setPerformanceProfile] = createSignal(null);
+  let lastProfiledTime = props.time;
+  const onFramePerformance = profile => {
+    if (!performanceEnabled()) return;
+    const timeChanged = profile.time !== lastProfiledTime;
+    lastProfiledTime = profile.time;
+    if (!timeChanged && profile.detail?.line) {
+      setPerformanceProfile({ ...profile.detail.line, mode: "line" });
+    } else {
+      setPerformanceProfile({ ...profile, detail: undefined, mode: "time" });
+    }
+  };
   const [elementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode] = createGeometryViewSetting("regionsMode", "all");
   const quantities = {
@@ -109,7 +122,7 @@ export function SourcesFields3D(props) {
   // workers; no HDF5 is read, and geometry follows the requested time immediately.
   const result = useResultFrame(() => props.task && ({ task: props.task, time: props.time, layers: requestedLayers(),
     streamlineSeeds: streamlineSeeds(), streamlineTolerance: STREAMLINE_DEFAULT_TOLERANCE, streamlineMethod: streamlineMethod() }),
-    request => layerReader.read(request));
+    request => layerReader.read(request), { onPerformance: onFramePerformance });
   const displayed = () => result().frame;
   const value = () => displayed()?.value;
   const streamlines = createMemo(() => (value()?.streamlines ?? [])
@@ -251,7 +264,8 @@ export function SourcesFields3D(props) {
           onSelectStreamline={setSelectedStreamline} onResultNodeDoubleClick={addStreamline}
           captureFrameKey={displayed()} onCaptureReady={movie.onCaptureReady}
           resultVectorScale={scale()} resultPickingOnly={true}
-          resultVectorColorMap={effectiveColorMap()} />
+          resultVectorColorMap={effectiveColorMap()}
+          performanceProfile={performanceProfile()} />
       </div>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
     </section>

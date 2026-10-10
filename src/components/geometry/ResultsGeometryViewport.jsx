@@ -416,6 +416,7 @@ export function ResultsGeometryViewport(props) {
             }}
             id={OPTIONS_PANEL_ID}
             class="geometry-viewer-options-panel"
+            classList={{ "is-view-panel": openPanel() === "view" }}
             role="dialog"
             aria-modal="false"
             aria-label={openPanel() === "view"
@@ -509,15 +510,11 @@ export function ResultsGeometryViewport(props) {
               >
                 вид против Z
               </button>
-              <div class="geometry-viewer-options-title">Палитра</div>
-              <label class="geometry-viewer-source-option">
-                <span>Палитра</span>
-                <select aria-label="Палитра результатов"
-                  value={resultPalette()}
-                  onChange={event => setResultPalette(event.currentTarget.value)}>
-                  <For each={RESULT_SCALAR_PALETTES}>{name => <option value={name}>{name}</option>}</For>
-                </select>
-              </label>
+              <select class="geometry-viewer-palette-select" aria-label="Палитра результатов"
+                value={resultPalette()}
+                onChange={event => setResultPalette(event.currentTarget.value)}>
+                <For each={RESULT_SCALAR_PALETTES}>{name => <option value={name}>палитра {name}</option>}</For>
+              </select>
             </Show>
 
             <Show when={openPanel() === "elements"}>

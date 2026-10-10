@@ -5,17 +5,21 @@ import test from "node:test";
 const source = readFileSync(new URL("../src/components/movie/ViewerToolsMenu.jsx", import.meta.url), "utf8");
 const setup = source.slice(source.indexOf("export function ViewerToolsMenu"), source.indexOf("  return <>"))
   .replace("export function", "function");
-const createRuntime = new Function("props", "createSignal", "createUniqueId", "createEffect", "onCleanup", "queueMicrotask", "window", "document", "URL", "saveTaskGif", `
+const createRuntime = new Function("props", "createSignal", "createUniqueId", "createEffect", "onCleanup", "queueMicrotask", "window", "document", "URL", "saveTaskGif", "listTaskTestProtocols", "readTaskTestProtocol", `
   ${setup}
     return { toggleMenu, closeMenu, openSetup, closeDialog, startCapture, cancelCapture,
       openBackfill, closeBackfill, startBackfill, backfillProgressText,
+      refreshProtocols, openProtocols, closeProtocols, openProtocol, protocolsDisabledReason,
       onTriggerKeyDown, onMenuKeyDown, progressText, setIntervalMs, validInterval, saveToTask, changeSaveLocation,
       state: () => ({ menuOpen: menuOpen(), menuPosition: menuPosition(), dialogOpen: dialogOpen(),
         phase: phase(), result: result(), progress: progress(), error: error(),
         saveInTask: saveInTask(), saving: saving(), savedNotice: savedNotice(),
         backfillDialogOpen: backfillDialogOpen(), backfillRunning: backfillRunning(),
-        backfillProgress: backfillProgress(), backfillError: backfillError(), backfillSummary: backfillSummary() }),
+        backfillProgress: backfillProgress(), backfillError: backfillError(), backfillSummary: backfillSummary(),
+        protocols: protocols(), protocolScanning: protocolScanning(), protocolScanError: protocolScanError(),
+        protocolOpenError: protocolOpenError(), protocolsDialogOpen: protocolsDialogOpen(), protocolOpening: protocolOpening() }),
       attach(refs) { trigger=refs.trigger; menu=refs.menu; menuItem=refs.menuItem; rangeMenuItem=refs.rangeMenuItem;
+        protocolsMenuItem=refs.protocolsMenuItem; protocolsDialog=refs.protocolsDialog; protocolsCloseButton=refs.protocolsCloseButton;
         dialog=refs.dialog; backfillDialog=refs.backfillDialog;
         intervalInput=refs.intervalInput; cancelButton=refs.cancelButton; saveButton=refs.saveButton; } };
   }
@@ -29,15 +33,22 @@ function events() {
     count(name) { return callbacks.get(name)?.size ?? 0; } };
 }
 function runtime(overrides = {}) {
-  const cleanups = [], effects = [], urls = [], revoked = [], busy = [];
+  const cleanups = [], effects = [], urls = [], revoked = [], busy = [], openedTabs = [];
   let currentEffect;
-  const document = events(), window = { ...events(), innerWidth: 900, innerHeight: 600 };
+  const document = events(), window = { ...events(), innerWidth: 900, innerHeight: 600,
+    open: overrides.windowOpen ?? ((...args) => {
+      const tab = { args, closed: false, opener: {}, navigations: [], close() { this.closed = true; } };
+      tab.location = { replace(url) { tab.navigations.push(url); } };
+      openedTabs.push(tab); return tab;
+    }) };
   const focusable = () => ({ focused: 0, focus() { this.focused++; } });
   const refs = { trigger: { ...focusable(), ownerDocument: document,
     getBoundingClientRect: () => ({ right: 890, bottom: 590 }) },
     menu: { offsetWidth: 260, offsetHeight: 120 }, menuItem: focusable(), rangeMenuItem: focusable(),
     dialog: { open: false, showModal() { this.open = true; }, close() { this.open = false; } },
     backfillDialog: { open: false, showModal() { this.open = true; }, close() { this.open = false; } },
+    protocolsMenuItem: { ...focusable(), disabled: true }, protocolsCloseButton: focusable(),
+    protocolsDialog: { open: false, showModal() { this.open = true; }, close() { this.open = false; } },
     intervalInput: focusable(), cancelButton: focusable(), saveButton: focusable() };
   const props = { eligible: true, backfillEligible: true, task: {}, tabIndex: 1, frameCount: 3,
     onBusyChange(value) { busy.push(value); }, ...overrides };
@@ -48,9 +59,10 @@ function runtime(overrides = {}) {
   }, () => `menu-${++nextId}`, callback => effects.push({ callback, cleanups: [] }),
   callback => (currentEffect?.cleanups ?? cleanups).push(callback), callback => callback(), window, document,
   { createObjectURL(blob) { const url = `blob:test/${urls.length + 1}`; urls.push({ url, blob }); return url; },
-    revokeObjectURL(url) { revoked.push(url); } }, overrides.saveTaskGif ?? (async () => ({ name: "example.gif" })));
+    revokeObjectURL(url) { revoked.push(url); } }, overrides.saveTaskGif ?? (async () => ({ name: "example.gif" })),
+  overrides.listTaskTestProtocols ?? (async () => []), overrides.readTaskTestProtocol ?? (async () => new Blob(["<!doctype html><title>Протокол</title>"], { type: "text/html" })));
   api.attach(refs);
-  return { ...api, props, refs, window, document, busy, urls, revoked,
+  return { ...api, props, refs, window, document, busy, urls, revoked, openedTabs,
     flushEffects() { for (const effect of effects) {
       effect.cleanups.splice(0).forEach(fn => fn()); currentEffect = effect;
       effect.callback(); currentEffect = undefined;
@@ -285,6 +297,132 @@ test("range backfill tool locks Viewer, reports progress and keeps a per-file su
   assert.equal(ui.state().backfillSummary.length, 2);
   ui.closeBackfill(); ui.flushEffects(); assert.equal(ui.state().backfillDialogOpen, false);
   ui.dispose();
+});
+
+const protocolEntry = (path = "mufem/report.html") => ({ path, name: path.split("/").at(-1), handle: { kind: "file", name: path.split("/").at(-1) } });
+
+test("test protocol menu is disabled without loaded task, during discovery and when no HTML exists", async () => {
+  const job = deferred(), entry = protocolEntry();
+  const ui = runtime({ task: null, listTaskTestProtocols: () => job.promise });
+  assert.match(ui.protocolsDisabledReason(), /Загрузите/);
+  ui.openProtocols(); assert.equal(ui.state().protocolsDialogOpen, false);
+  ui.props.task = { handle: {}, name: "loaded" };
+  ui.flushEffects();
+  assert.match(ui.protocolsDisabledReason(), /Поиск/);
+  ui.openProtocols(); assert.equal(ui.state().protocolsDialogOpen, false);
+  job.resolve([entry]); await Promise.resolve();
+  assert.equal(ui.protocolsDisabledReason(), "");
+  ui.openProtocols(); ui.flushEffects();
+  assert.equal(ui.refs.protocolsDialog.open, true);
+  ui.closeProtocols(); ui.flushEffects();
+  assert.equal(ui.refs.protocolsDialog.open, false);
+  ui.props.backfillEligible = false; ui.props.backfillDisabledReason = "Загрузка задания";
+  assert.equal(ui.protocolsDisabledReason(), "Загрузка задания");
+  ui.dispose();
+  const empty = runtime({ task: { handle: {} } });
+  await empty.refreshProtocols(); assert.match(empty.protocolsDisabledReason(), /нет HTML/);
+  empty.openProtocols(); assert.equal(empty.state().protocolsDialogOpen, false); empty.dispose();
+  assert.match(source, /role="menuitem" disabled=\{Boolean\(protocolsDisabledReason\(\)\)\}/);
+});
+
+test("protocol scans and failures from the previous loaded task cannot update the current list", async () => {
+  const first = deferred(), second = deferred(), oldHandle = {}, newHandle = {};
+  const requests = [], current = protocolEntry("comsol/current.html");
+  const ui = runtime({ task: { handle: oldHandle }, listTaskTestProtocols: (handle, options) => {
+    requests.push({ handle, ...options }); return handle === oldHandle ? first.promise : second.promise;
+  } });
+  ui.flushEffects(); assert.equal(requests[0].handle, oldHandle);
+  ui.props.task = { handle: newHandle }; ui.flushEffects();
+  assert.equal(requests[0].signal.aborted, true); assert.equal(requests[1].handle, newHandle);
+  second.resolve([current]); await Promise.resolve();
+  assert.deepEqual(ui.state().protocols, [current]);
+  first.reject(new Error("old task denied")); await Promise.resolve();
+  assert.deepEqual(ui.state().protocols, [current]); assert.equal(ui.state().protocolScanError, "");
+  ui.props.task = null; ui.flushEffects();
+  assert.deepEqual(ui.state().protocols, []); assert.match(ui.protocolsDisabledReason(), /Загрузите/);
+  ui.dispose();
+});
+
+test("protocol menu and focus refresh discovery, handle access errors, and include enabled item in keyboard navigation", async () => {
+  const entry = protocolEntry(); let scans = 0, denied = false;
+  const ui = runtime({ task: { handle: {} }, listTaskTestProtocols: async () => {
+    scans++; if (denied) throw new Error("доступ запрещён"); return [entry];
+  } });
+  ui.flushEffects(); await Promise.resolve(); const initial = scans;
+  ui.toggleMenu(); await Promise.resolve(); assert.equal(scans, initial + 1);
+  ui.refs.protocolsMenuItem.disabled = false;
+  ui.onMenuKeyDown(key("End")); assert.equal(ui.refs.protocolsMenuItem.focused, 1);
+  ui.refs.protocolsMenuItem.disabled = true;
+  ui.onMenuKeyDown(key("End")); assert.equal(ui.refs.rangeMenuItem.focused, 1);
+  ui.window.emit("focus"); await Promise.resolve(); assert.equal(scans, initial + 2);
+  denied = true; await ui.refreshProtocols();
+  assert.match(ui.protocolsDisabledReason(), /доступ запрещён/);
+  assert.equal(ui.state().protocolScanning, false); assert.deepEqual(ui.state().protocols, []);
+  ui.dispose(); assert.equal(ui.window.count("focus"), 0);
+});
+
+test("each HTML opens independently, reserving a tab before async read and retaining URLs across dialog and task changes", async () => {
+  const entries = [protocolEntry("comsol/report.html"), protocolEntry("mufem/report.html")];
+  const job = deferred(), requests = [];
+  const ui = runtime({ task: { handle: {} }, listTaskTestProtocols: async () => entries,
+    readTaskTestProtocol: (handle, options) => { requests.push({ handle, ...options }); return requests.length === 1 ? job.promise : Promise.resolve(new Blob(["second"], { type: "text/html" })); } });
+  ui.flushEffects(); await Promise.resolve(); ui.openProtocols(); ui.flushEffects();
+  const open = ui.openProtocol(entries[0]);
+  assert.equal(ui.openedTabs.length, 1); assert.equal(ui.openedTabs[0].opener, null);
+  assert.equal(ui.openedTabs[0].navigations.length, 0); assert.equal(requests[0].handle, entries[0].handle);
+  job.resolve(new Blob(["first"], { type: "text/html" })); await open;
+  await ui.openProtocol(entries[1]);
+  assert.equal(ui.openedTabs.length, 2);
+  assert.deepEqual(ui.openedTabs.map(tab => tab.navigations), [["blob:test/1"], ["blob:test/2"]]);
+  assert.equal(await ui.urls[0].blob.text(), "first"); assert.equal(await ui.urls[1].blob.text(), "second");
+  ui.closeProtocols(); ui.props.task = { handle: {} }; ui.flushEffects();
+  assert.deepEqual(ui.revoked, []); assert.ok(ui.openedTabs.every(tab => !tab.closed));
+  ui.openedTabs[0].close(); ui.window.emit("focus");
+  assert.deepEqual(ui.revoked, ["blob:test/1"]);
+  ui.dispose(); assert.deepEqual(ui.revoked, ["blob:test/1", "blob:test/2"]);
+});
+
+test("blocked protocol popup never reads a file and a disappeared file closes the reserved tab and refreshes the list", async () => {
+  const entry = protocolEntry(); let reads = 0;
+  const blocked = runtime({ task: { handle: {} }, listTaskTestProtocols: async () => [entry],
+    windowOpen: () => null, readTaskTestProtocol: async () => { reads++; } });
+  blocked.flushEffects(); await Promise.resolve(); blocked.openProtocols();
+  await blocked.openProtocol(entry);
+  assert.equal(reads, 0); assert.match(blocked.state().protocolOpenError, /заблокировал/); blocked.dispose();
+
+  let entries = [entry];
+  const missing = runtime({ task: { handle: {} }, listTaskTestProtocols: async () => entries,
+    readTaskTestProtocol: async () => { entries = []; throw new DOMException("Файл удалён", "NotFoundError"); } });
+  missing.flushEffects(); await Promise.resolve(); missing.openProtocols(); await missing.openProtocol(entry);
+  assert.equal(missing.openedTabs[0].closed, true); assert.equal(missing.urls.length, 0);
+  assert.match(missing.state().protocolOpenError, /Файл удалён/);
+  assert.deepEqual(missing.state().protocols, []); assert.match(missing.protocolsDisabledReason(), /нет HTML/); missing.dispose();
+});
+
+test("closing or changing task cancels pending HTML reads and reopening does not wait for the old read", async () => {
+  for (const action of [ui => ui.closeProtocols(), ui => { ui.props.task = { handle: {} }; ui.flushEffects(); }]) {
+    const entry = protocolEntry(), old = deferred(); let request, reads = 0;
+    const ui = runtime({ task: { handle: {} }, listTaskTestProtocols: async () => [entry],
+      readTaskTestProtocol: (_handle, options) => { request = options; return ++reads === 1 ? old.promise : Promise.resolve(new Blob(["new"])); } });
+    ui.flushEffects(); await Promise.resolve(); ui.openProtocols();
+    const opening = ui.openProtocol(entry); action(ui);
+    assert.equal(request.signal.aborted, true); assert.equal(ui.openedTabs[0].closed, true);
+    assert.equal(ui.state().protocolOpening, "");
+    await ui.refreshProtocols(); ui.openProtocols(); await ui.openProtocol(entry);
+    old.resolve(new Blob(["stale"])); await opening;
+    assert.equal(ui.urls.length, 1); assert.equal(await ui.urls[0].blob.text(), "new");
+    assert.equal(ui.state().protocolOpenError, ""); ui.dispose();
+  }
+});
+
+test("Viewer disposal aborts pending scan/read and never publishes a late HTML tab", async () => {
+  const entry = protocolEntry(), job = deferred(); let request;
+  const ui = runtime({ task: { handle: {} }, listTaskTestProtocols: async () => [entry],
+    readTaskTestProtocol: (_handle, options) => { request = options; return job.promise; } });
+  ui.flushEffects(); await Promise.resolve(); ui.openProtocols(); const opening = ui.openProtocol(entry);
+  ui.dispose(); assert.equal(request.signal.aborted, true); assert.equal(ui.openedTabs[0].closed, true);
+  job.resolve(new Blob(["late"])); await opening;
+  assert.equal(ui.urls.length, 0);
 });
 
 const appSource = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");

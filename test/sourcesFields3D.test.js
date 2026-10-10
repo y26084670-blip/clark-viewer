@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { execFileSync } from "node:child_process";\nimport { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { sourcesFields3DSetup } from "../scripts/test-support/sourcesFields3DSetup.js";
 import { RESULT_LAYER_GROUPS, RESULT_LAYER_QUANTITY_LABELS } from "../src/services/results/resultLayerDefinitions.js";
 

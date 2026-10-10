@@ -718,6 +718,7 @@ export function ResultsGeometryViewport(props) {
               <Show when={renderPerformance()}>
                 <span>render {renderPerformance().renderMs.toFixed(1)} ms · update {renderPerformance().updateMs.toFixed(1)} ms</span>
                 <span>calls {renderPerformance().calls} · △ {renderPerformance().triangles} · lines {renderPerformance().lines} · points {renderPerformance().points}</span>
+                <span>geo {renderPerformance().geometries} · tex {renderPerformance().textures} · programs {renderPerformance().programs}</span>
               </Show>
             </div>
           </Show>

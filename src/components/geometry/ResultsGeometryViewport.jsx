@@ -433,7 +433,7 @@ export function ResultsGeometryViewport(props) {
               <button
                 type="button"
                 class="geometry-viewer-view-command"
-                title="или нажмите A"
+                title="или нажмите A или Ctrl-A"
                 onClick={() => requestView(
                   GEOMETRY_CAMERA_COMMANDS.FIT_ALL,
                   true,

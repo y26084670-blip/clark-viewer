@@ -67,7 +67,7 @@ test("scalar maps expose size controls, force every active layer to color mode a
   assert.equal(ui.effectiveColorMap(), true);
   assert.equal(ui.colorMap(), false);
   assert.equal(ui.controls().visible, true);
-  assert.equal(ui.controls().label, "Размер точки");
+  assert.equal(ui.controls().label, "Размер");
   assert.equal(ui.controls().checked, true);
   assert.equal(ui.controls().disabled, true);
   assert.equal(ui.controls().viewportColorMap, true);
@@ -86,7 +86,7 @@ test("scalar maps expose size controls, force every active layer to color mode a
   ui.quantities.elements.write("M");
   assert.equal(ui.controls().checked, false);
   assert.equal(ui.controls().disabled, false);
-  assert.equal(ui.controls().label, "Векторы");
+  assert.equal(ui.controls().label, "Размер");
   assert.equal(ui.controls().viewportColorMap, false);
   assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [false, false, false]);
   ui.controls().onChange({ currentTarget: { checked: true } });
@@ -191,6 +191,25 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
     assert.equal(ui.controls().checked, false);
     ui.close(); dispose();
   `], { cwd: new URL("../", import.meta.url), stdio: "pipe" });
+});
+
+test("line menu delete control removes its own line and preserves another selection",()=>{
+  const props=fixture(),ui=sourcesFields3DSetup(props);
+  try {
+    ui.setResultState({frame:{request:{task:props.task,time:props.time},value:{layers:[]}}});
+    const base={quantityKey:"H",source:{schemaId:"elements",recordIndex:0},instance:{ls:0,as:0,ps:0}};
+    ui.addStreamline({...base,node:1});
+    const first=ui.selectedStreamline();
+    ui.addStreamline({...base,node:2});
+    const second=ui.selectedStreamline();
+    assert.notEqual(first,second);
+    ui.deleteStreamline(first);
+    assert.deepEqual(ui.request().streamlineSeeds.map(seed=>seed.id),[second]);
+    assert.equal(ui.selectedStreamline(),second);
+    ui.deleteStreamline(second);
+    assert.deepEqual(ui.request().streamlineSeeds,[]);
+    assert.equal(ui.selectedStreamline(),null);
+  } finally {ui.close();}
 });
 
 test("field method selector keeps the same seeds and tolerance, validates choices and freezes during capture",()=>{

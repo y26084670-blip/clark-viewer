@@ -56,7 +56,7 @@ export function SourcesFields3D(props) {
       node: vector.node, quantityKey: vector.quantityKey };
     setStreamlineSeeds(previous => [...previous, seed]); setSelectedStreamline(seed.id); setStreamlineNotice("");
   }
-  function deleteStreamline(id) {
+  function deleteStreamline(id = selectedStreamline()) {
     const current = selectedStreamline();
     const remaining = streamlineSeeds().filter(seed => seed.id !== id);
     setStreamlineSeeds(remaining);

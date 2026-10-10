@@ -1,6 +1,5 @@
-// Standalone test reports belong to the selected task's result directory.
-// Preserve the historical directory spelling used by existing test outputs.
-const DIRECTORY_PARTS = ["output3XX", "comparasion"];
+// Standalone test reports live in comparison directly below the task directory.
+const DIRECTORY_PARTS = ["comparison"];
 
 function assertCurrent(signal) {
   if (signal?.aborted) throw Object.assign(new Error("Поиск протоколов тестов отменён"), { name: "AbortError" });

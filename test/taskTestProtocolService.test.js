@@ -47,32 +47,32 @@ function filesystem() {
   return { root, directory, file, environment };
 }
 
-test("missing task or exact result directories returns an empty list without creating anything", async () => {
+test("missing task comparison returns an empty list and ignores HTML in other directories without creating anything", async () => {
   const f = filesystem();
   assert.deepEqual(await listTaskTestProtocols(null), []);
   assert.deepEqual(await listTaskTestProtocols(f.root), []);
-  f.directory("output3XX");
+  f.file("output3XX/comparison/mufem/report.html");
+  f.file("output3XX/comparasion/mufem/report.html");
+  f.file("comparasion/mufem/report.html");
+  f.file("input3XX/comparison/mufem/report.html");
   assert.deepEqual(await listTaskTestProtocols(f.root), []);
-  f.file("output3XX/comparison/wrong-spelling.html");
-  f.file("input3XX/comparasion/input.html");
-  assert.deepEqual(await listTaskTestProtocols(f.root), []);
-  assert.deepEqual(f.environment.calls.filter(call => call.operation === "directory").map(call => call.name),
-    ["output3XX", "output3XX", "comparasion", "output3XX", "comparasion"]);
+  assert.deepEqual(f.environment.calls.map(call => call.name), ["comparison", "comparison"]);
   assert.ok(f.environment.calls.every(call => call.operation === "directory" && call.options.create === false));
-  assert.equal(f.directory("output3XX").children.has("comparasion"), false);
+  assert.equal(f.root.children.has("comparison"), false);
 });
 
-test("recursive discovery finds arbitrary HTML names and independent duplicates, with Russian numeric path sorting", async () => {
+test("task comparison discovery works without output3XX and preserves arbitrary names, duplicate paths, and Russian numeric sorting", async () => {
   const f = filesystem();
-  const paths = ["mufem/report10.html", "mufem/report2.HTML", "comsol/вложено/Отчёт.html", "root.html", "comsol/report2.html", "mufem/Отчёт.html"];
-  const handles = new Map(paths.map(path => [path, f.file(`output3XX/comparasion/${path}`)]));
-  f.file("output3XX/comparasion/mufem/notes.txt");
-  f.file("output3XX/comparasion/mufem/page.htm");
-  f.directory("output3XX/comparasion/not-a-file.html");
-  f.file("output3XX/demo/ignored.html");
+  const paths = ["mufem/report10.html", "mufem/report2.HTML", "comsol/вложено/Отчёт.html", "root.html", "comsol/report2.html", "mufem/Отчёт.html", "another-model run/report with spaces.html"];
+  const handles = new Map(paths.map(path => [path, f.file(`comparison/${path}`)]));
+  f.file("comparison/mufem/notes.txt");
+  f.file("comparison/mufem/page.htm");
+  f.directory("comparison/not-a-file.html");
+  f.file("demo/ignored.html");
+  assert.equal(f.root.children.has("output3XX"), false);
   const found = await listTaskTestProtocols(f.root);
   assert.deepEqual(found.map(entry => entry.path),
-    ["comsol/вложено/Отчёт.html", "comsol/report2.html", "mufem/Отчёт.html", "mufem/report2.HTML", "mufem/report10.html", "root.html"]);
+    ["another-model run/report with spaces.html", "comsol/вложено/Отчёт.html", "comsol/report2.html", "mufem/Отчёт.html", "mufem/report2.HTML", "mufem/report10.html", "root.html"]);
   for (const entry of found) {
     assert.equal(entry.name, entry.path.split("/").at(-1));
     assert.equal(entry.handle, handles.get(entry.path));
@@ -85,7 +85,7 @@ test("sort order is independent of discovery order even for names that collate a
   const paths = ["report02.html", "report2.html", "REPORT2.html", "Report2.html"];
   const discover = async order => {
     const f = filesystem();
-    for (const path of order) f.file(`output3XX/comparasion/${path}`);
+    for (const path of order) f.file(`comparison/${path}`);
     return (await listTaskTestProtocols(f.root)).map(entry => entry.path);
   };
   assert.deepEqual(await discover(paths), await discover([...paths].reverse()));
@@ -95,20 +95,20 @@ test("invalid task handles and wrong directory types report errors instead of ap
   for (const handle of [{}, { kind: "file" }, { kind: "directory" }]) {
     await assert.rejects(listTaskTestProtocols(handle), /локальное задание/);
   }
-  const f = filesystem(); f.file("output3XX/comparasion");
+  const f = filesystem(); f.file("comparison");
   await assert.rejects(listTaskTestProtocols(f.root), { name: "TypeMismatchError" });
 });
 
 test("denied access and enumeration errors propagate, while a disappearing subdirectory is skipped", async () => {
   for (const operation of ["directory", "entries", "entry", "end"]) {
-    const f = filesystem(); f.file("output3XX/comparasion/mufem/report.html");
+    const f = filesystem(); f.file("comparison/mufem/report.html");
     const error = fsError("NotAllowedError", `${operation} denied`);
     f.environment.hook = call => { if (call.operation === operation) throw error; };
     await assert.rejects(listTaskTestProtocols(f.root), candidate => candidate === error);
   }
   const f = filesystem();
-  f.file("output3XX/comparasion/disappeared/report.html");
-  const kept = f.file("output3XX/comparasion/mufem/report.html");
+  f.file("comparison/disappeared/report.html");
+  const kept = f.file("comparison/mufem/report.html");
   f.environment.hook = call => { if (call.operation === "entries" && call.handle.name === "disappeared") throw fsError("NotFoundError"); };
   assert.deepEqual(await listTaskTestProtocols(f.root), [{ name: "report.html", path: "mufem/report.html", handle: kept }]);
 });
@@ -118,8 +118,8 @@ test("abort checks cover directory reads, entry iteration, and completion of an 
   await assert.rejects(listTaskTestProtocols(null, { signal: already.signal }), { name: "AbortError" });
   for (const operation of ["directory", "entries", "entry", "end"]) {
     const f = filesystem(), abort = new AbortController();
-    if (operation === "entry") f.file("output3XX/comparasion/report.html");
-    else f.directory("output3XX/comparasion");
+    if (operation === "entry") f.file("comparison/report.html");
+    else f.directory("comparison");
     f.environment.hook = call => { if (call.operation === operation) abort.abort(); };
     await assert.rejects(listTaskTestProtocols(f.root, { signal: abort.signal }), { name: "AbortError" });
   }
@@ -137,18 +137,18 @@ test("read returns HTML MIME even for an untyped file and preserves all original
   const f = filesystem();
   const bytes = new Uint8Array([0xef, 0xbb, 0xbf, 0x3c, 0x21, 0x44, 0x4f, 0x43, 0xd0, 0x00, 0xff]);
   for (const type of ["", "application/octet-stream", "text/plain"]) {
-    const handle = f.file("output3XX/comparasion/report.HTML", new Blob([bytes], { type }));
+    const handle = f.file("comparison/report.HTML", new Blob([bytes], { type }));
     const result = await readTaskTestProtocol(handle);
     assert.ok(result instanceof Blob); assert.equal(result.type, "text/html");
     assert.deepEqual(new Uint8Array(await result.arrayBuffer()), bytes);
   }
-  const empty = await readTaskTestProtocol(f.file("output3XX/comparasion/empty.html", new Blob()));
+  const empty = await readTaskTestProtocol(f.file("comparison/empty.html", new Blob()));
   assert.equal(empty.size, 0); assert.equal(empty.type, "text/html");
 });
 
 test("read validates HTML file handles before touching their contents", async () => {
   const f = filesystem();
-  const invalid = [null, f.directory("output3XX/comparasion/folder.html"), f.file("output3XX/comparasion/report.htm"),
+  const invalid = [null, f.directory("comparison/folder.html"), f.file("comparison/report.htm"),
     { kind: "file", name: "report.html" }, { kind: "file", name: "../report.html", getFile() { throw new Error("must not read"); } }];
   for (const handle of invalid) await assert.rejects(readTaskTestProtocol(handle), /HTML-файл/);
   assert.equal(f.environment.calls.length, 0);
@@ -156,12 +156,12 @@ test("read validates HTML file handles before touching their contents", async ()
 
 test("file read errors propagate and cancelled reads cannot publish stale documents", async () => {
   for (const name of ["NotFoundError", "NotAllowedError"]) {
-    const f = filesystem(), handle = f.file("output3XX/comparasion/report.html"), error = fsError(name);
+    const f = filesystem(), handle = f.file("comparison/report.html"), error = fsError(name);
     f.environment.hook = call => { if (call.operation === "getFile") throw error; };
     await assert.rejects(readTaskTestProtocol(handle), candidate => candidate === error);
   }
   for (const fail of [false, true]) {
-    const f = filesystem(), handle = f.file("output3XX/comparasion/report.html"), abort = new AbortController();
+    const f = filesystem(), handle = f.file("comparison/report.html"), abort = new AbortController();
     f.environment.hook = call => {
       if (call.operation === "getFile") { abort.abort(); if (fail) throw fsError("NotAllowedError"); }
     };

@@ -509,3 +509,29 @@
 .geometry-viewer-vector-type-select:focus {
   background: #1b232b;
 }
+
+
+.geometry-performance-overlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  display: grid;
+  gap: 3px;
+  min-width: 255px;
+  max-width: min(420px, calc(100% - 16px));
+  padding: 8px 10px;
+  border: 1px solid #6c7884;
+  border-radius: 4px;
+  background: rgba(20, 26, 32, .93);
+  color: #eaf0f5;
+  font-size: 11px;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.geometry-performance-overlay b {
+  color: #9fd0ff;
+  font-size: 11px;
+}

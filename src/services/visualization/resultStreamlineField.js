@@ -9,7 +9,7 @@ export const STREAMLINE_METHODS = Object.freeze({
   quadratic: "Квадратичная реконструкция",
   tricubic: "Трикубический Эрмит",
 });
-export const STREAMLINE_DEFAULT_TOLERANCE = 1e-4; // fraction of the local grid spacing
+export const STREAMLINE_DEFAULT_TOLERANCE = 1e-3; // fraction of the local grid spacing = 0.1%
 const bits = Array.from({ length: 8 }, (_, i) => [i & 1, (i >> 1) & 1, (i >> 2) & 1]);
 const add = (a, b, scale = 1) => a.map((v, i) => v + scale * b[i]);
 const sub = (a, b) => a.map((v, i) => v - b[i]);

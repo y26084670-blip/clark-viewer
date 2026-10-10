@@ -223,27 +223,27 @@ test("actual 3D setup accumulates double-click seeds, deletes only the selected 
   ui.addStreamline({...vector,quantityKey:"JEdot"});ui.addStreamline({...vector,source:{schemaId:"regions",recordIndex:0}});
   assert.equal(ui.streamlineSeeds().length,2);
   ui.setSelectedStreamline(1);ui.deleteStreamline();assert.deepEqual(ui.streamlineSeeds().map(s=>s.id),[2]);
-  ui.changeStreamlineTolerance({currentTarget:{valueAsNumber:.001}});assert.equal(ui.request().streamlineTolerance,.00001);
+  assert.equal(ui.request().streamlineTolerance,.001);
   props.task={elements:[],regions:[]};ui.flushEffects();assert.equal(ui.streamlineSeeds().length,0);assert.equal(ui.selectedStreamline(),null);
   ui.close();
 });
-test("returning to the 3D tab restores seeds and tolerance without retaining workers or sharing them with another task",()=>{
+test("returning to the 3D tab restores seeds and fixed tolerance without retaining workers or sharing them with another task",()=>{
   const props={task:{elements:[{id:1,targ:0}],regions:[]},elements:[1],regions:[],time:0};
   const vector={quantityKey:"H",source:{schemaId:"elements",recordIndex:0},instance:{ls:0,as:0,ps:0},node:4};
   let closed=0;
   const open=()=>sourcesFields3DSetup(props,{}, {readerFactory:()=>({close(){closed++;}})});
   let ui=open();
   ui.setResultState({frame:{request:{task:props.task,time:0},value:{layers:[]}},loading:false,error:""});
-  ui.addStreamline(vector);ui.changeStreamlineTolerance({currentTarget:{valueAsNumber:.001}});
+  ui.addStreamline(vector);
   ui.changeStreamlineMethod({currentTarget:{value:"trilinear-boundary"}});ui.close();
   assert.equal(closed,1);
   ui=open();assert.equal(ui.streamlineSeeds().length,1);assert.equal(ui.selectedStreamline(),1);
-  assert.equal(ui.request().streamlineTolerance,.00001);assert.equal(ui.request().streamlineMethod,"trilinear-boundary");
+  assert.equal(ui.request().streamlineTolerance,.001);assert.equal(ui.request().streamlineMethod,"trilinear-boundary");
   ui.setResultState({frame:{request:{task:props.task,time:0},value:{layers:[]}},loading:false,error:""});
   ui.addStreamline({...vector,node:7});assert.deepEqual(ui.streamlineSeeds().map(s=>s.id),[1,2]);ui.close();
   assert.equal(closed,2);
   props.task={elements:[],regions:[]};ui=open();assert.equal(ui.streamlineSeeds().length,0);
-  assert.equal(ui.selectedStreamline(),null);assert.equal(ui.request().streamlineTolerance,.0001);
+  assert.equal(ui.selectedStreamline(),null);assert.equal(ui.request().streamlineTolerance,.001);
   assert.equal(ui.request().streamlineMethod,"trilinear");ui.close();
 });
 
@@ -259,19 +259,19 @@ test('3D streamline colours use the optional global magnitude range and restore 
   updateStreamlineMeshes(THREE,root,[],options);
 });
 
-test("quadratic and tricubic comparisons retain each method, seeds and tolerance across a tab replacement",()=>{
+test("quadratic and tricubic comparisons retain each method, seeds and fixed tolerance across a tab replacement",()=>{
   for(const method of ["quadratic","tricubic"]) {
     const props={task:{elements:[{id:1,targ:0}],regions:[]},elements:[1],regions:[],time:0};
     const vector={quantityKey:"H",source:{schemaId:"elements",recordIndex:0},instance:{ls:0,as:0,ps:0},node:4};
     let ui=sourcesFields3DSetup(props);
     ui.setResultState({frame:{request:{task:props.task,time:0},value:{layers:[]}},loading:false,error:""});
-    ui.addStreamline(vector);ui.changeStreamlineTolerance({currentTarget:{valueAsNumber:.001}});
+    ui.addStreamline(vector);
     ui.changeStreamlineMethod({currentTarget:{value:method}});
     const seeds=ui.request().streamlineSeeds;ui.close();
     ui=sourcesFields3DSetup(props);
     try {
       assert.equal(ui.request().streamlineMethod,method);assert.equal(ui.request().streamlineSeeds,seeds);
-      assert.equal(ui.request().streamlineTolerance,1e-5);assert.equal(ui.selectedStreamline(),seeds[0].id);
+      assert.equal(ui.request().streamlineTolerance,1e-3);assert.equal(ui.selectedStreamline(),seeds[0].id);
     } finally {ui.close();}
   }
 });

@@ -22,6 +22,7 @@ import {
   GEOMETRY_INSTANCE_BUDGET,
   ThreeGeometryViewport,
 } from "./ThreeGeometryViewport.jsx";
+import { RESULT_SCALAR_PALETTES } from "../../services/visualization/resultScalarColors.js";
 import "./ResultsGeometryViewport.css";
 
 const EMPTY_COUNTS = Object.freeze({
@@ -112,6 +113,7 @@ export function ResultsGeometryViewport(props) {
     createGeometryViewSetting("showDiscretizationLines", false);
   const [showCentersAndNodes, setShowCentersAndNodes] = createGeometryViewSetting("showCentersAndNodes", false);
   const [vectorStyle, setVectorStyle] = createGeometryViewSetting("vectorStyle", "thin");
+  const [resultPalette, setResultPalette] = createGeometryViewSetting("resultPalette", "Rainbow");
   const [elementsMode, setElementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode, setRegionsMode] = createGeometryViewSetting("regionsMode", "all");
   const [showLocalSymmetry, setShowLocalSymmetry] = createGeometryViewSetting("showLocalSymmetry", true);
@@ -507,6 +509,15 @@ export function ResultsGeometryViewport(props) {
               >
                 вид против Z
               </button>
+              <div class="geometry-viewer-options-title">Палитра</div>
+              <label class="geometry-viewer-source-option">
+                <span>Палитра</span>
+                <select aria-label="Палитра результатов"
+                  value={resultPalette()}
+                  onChange={event => setResultPalette(event.currentTarget.value)}>
+                  <For each={RESULT_SCALAR_PALETTES}>{name => <option value={name}>{name}</option>}</For>
+                </select>
+              </label>
             </Show>
 
             <Show when={openPanel() === "elements"}>
@@ -705,7 +716,7 @@ export function ResultsGeometryViewport(props) {
             onResultNodeDoubleClick={props.onResultNodeDoubleClick}
             resultVectorScene={props.resultVectorScene}
             resultVectorColorMap={props.resultVectorColorMap}
-            resultPalette={props.resultPalette}
+            resultPalette={resultPalette()}
             resultVolumeFields={props.resultVolumeFields}
             resultScalarScene={props.resultScalarScene}
             resultPickingOnly={props.resultPickingOnly}

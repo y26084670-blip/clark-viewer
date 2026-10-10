@@ -9,7 +9,7 @@ export const STREAMLINE_METHODS = Object.freeze({
   quadratic: "Квадратичная реконструкция",
   tricubic: "Трикубический Эрмит",
 });
-export const STREAMLINE_TOLERANCE_MM = 0.1; // absolute integration tolerance, mm
+export const STREAMLINE_DEFAULT_TOLERANCE = 1e-3; // fraction of the local grid spacing = 0.1%
 const bits = Array.from({ length: 8 }, (_, i) => [i & 1, (i >> 1) & 1, (i >> 2) & 1]);
 const add = (a, b, scale = 1) => a.map((v, i) => v + scale * b[i]);
 const sub = (a, b) => a.map((v, i) => v - b[i]);
@@ -224,11 +224,11 @@ function neighbour(domains,current,point,tangent,sign) {
   return hits.length===1 ? hits[0] : {reason:hits.length ? "ambiguous" : "boundary"};
 }
 
-function traceDirection(domains,first,seed,sign,toleranceMm,maxSteps) {
+function traceDirection(domains,first,seed,sign,tolerance,maxSteps) {
   let domain=first,p=[...seed],h=first.cellSize*.25,length=0,attempts=0,firstReturn=null;
   const points=[p], pieces=[{key:first.key,source:first.source,instance:first.instance,start:0}], startDirection=direction(first,p,sign);
   if(!startDirection)return {points,pieces,reason:"zero",length};
-  const closeDistance=toleranceMm*2, maxLength=Math.max(...domains.map(d=>d.extent))*1000;
+  const closeDistance=first.cellSize*tolerance*2, maxLength=Math.max(...domains.map(d=>d.extent))*1000;
   const finish=(reason)=>({points,pieces,reason,length});
   while(points.length<maxSteps && attempts++<maxSteps*16 && length<maxLength) {
     h=Math.min(h,domain.cellSize*.35);
@@ -237,7 +237,7 @@ function traceDirection(domains,first,seed,sign,toleranceMm,maxSteps) {
     domain.monitorBoundaryStages=false;
     const stageOutside=domain.trialOutside;
     if(!one||!two) { if(h>domain.cellSize*1e-6){h/=2;continue;} return finish("zero"); }
-    const error=distance(one,two)/15, allowed=toleranceMm;
+    const error=distance(one,two)/15, allowed=domain.cellSize*tolerance;
     if(error>allowed) { if(h<=domain.cellSize*1e-6)return finish("accuracy"); h*=Math.max(.2,.8*(allowed/error)**.2);continue; }
     let next=two;
     const event=boundaryPoint(domain,p,h,sign,next,allowed,stageOutside);
@@ -294,9 +294,9 @@ export const STREAMLINE_REASONS = Object.freeze({ boundary:"граница до�
   zero:"нулевое или неопределённое поле", closed:"замкнута в пределах допуска", limit:"предел длины/шагов",
   stagnation:"слишком малый шаг", accuracy:"не достигнут допуск" });
 
-export function calculateStreamlines({domains:inputs,seeds,tolerance=STREAMLINE_TOLERANCE_MM,maxSteps=STREAMLINE_LIMITS.steps,method="trilinear"}) {
+export function calculateStreamlines({domains:inputs,seeds,tolerance=STREAMLINE_DEFAULT_TOLERANCE,maxSteps=STREAMLINE_LIMITS.steps,method="trilinear"}) {
   if(!Object.hasOwn(STREAMLINE_METHODS,method))throw new Error("Неизвестный метод линии поля");
-  if(!Number.isFinite(tolerance)||tolerance<=0)throw new Error("Допуск линии вне диапазона");
+  if(!Number.isFinite(tolerance)||tolerance<1e-7||tolerance>1e-2)throw new Error("Допуск линии вне диапазона");
   if(!Number.isSafeInteger(maxSteps)||maxSteps<32||maxSteps>STREAMLINE_LIMITS.steps)throw new Error("Некорректный предел шагов линии");
   if(seeds.length>STREAMLINE_LIMITS.lines||inputs.length>STREAMLINE_LIMITS.domains
     ||inputs.reduce((s,d)=>s+d.dimensions.reduce((a,b)=>a*b,1),0)>STREAMLINE_LIMITS.nodes)throw new Error("Превышен предел расчёта линий поля");

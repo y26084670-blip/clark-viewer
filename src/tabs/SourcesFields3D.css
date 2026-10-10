@@ -32,16 +32,6 @@
   clip-path: polygon(0 0, 100% 0, 50% 100%);
   pointer-events: none;
 }
-.sources-fields-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 3px 16px;
-}
-.sources-fields-status .source-layer-error {
-  color: #aa2525;
-}
-
 .sources-fields-toolbar > label { white-space: nowrap; }
 .sources-fields-toolbar .source-quantity-selector { flex-wrap: nowrap; }
 .sources-fields-toolbar .source-global-minmax { gap: 4px; }

@@ -200,8 +200,8 @@ export function SourcesFields3D(props) {
 
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
-            aria-expanded={openSourceMenu() === "lines"} aria-label="Линия"
-            onClick={() => toggleSourceMenu("lines")}>Линия</button>
+            aria-expanded={openSourceMenu() === "lines"} aria-label="Векторная линия"
+            onClick={() => toggleSourceMenu("lines")}>Векторная линия</button>
           <Show when={openSourceMenu() === "lines"}>
             <div class="source-toolbar-menu-panel source-lines-panel">
               <Show when={streamlineSeeds().length} fallback={<div class="source-toolbar-empty">Нет линий</div>}>
@@ -225,8 +225,8 @@ export function SourcesFields3D(props) {
 
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
-            aria-expanded={openSourceMenu() === "method"} aria-label="Метод"
-            onClick={() => toggleSourceMenu("method")}>Метод</button>
+            aria-expanded={openSourceMenu() === "method"} aria-label="Метод построения"
+            onClick={() => toggleSourceMenu("method")}>Метод построения</button>
           <Show when={openSourceMenu() === "method"}>
             <div class="source-toolbar-menu-panel">
               <For each={Object.entries(STREAMLINE_METHODS)}>{([key, label]) =>

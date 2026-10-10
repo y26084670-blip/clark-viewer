@@ -62,7 +62,8 @@ export function createResultFrameController({ load, publish, onPerformance,
         if (onPerformance) {
           const finishedAt = now();
           onPerformance({ kind: "time", time: item.request.time, loadMs: finishedAt - startedAt,
-            latencyMs: finishedAt - item.requestedAt, requests, started, published, skipped });
+            latencyMs: finishedAt - item.requestedAt, requests, started, published, skipped,
+            detail: value?.performance ?? null });
         }
       } else if (!disposed) skipped++;
     } catch (error) {

@@ -57,7 +57,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
       addStreamline, deleteStreamline, changeStreamlineTolerance, streamlineMethod, changeStreamlineMethod, streamlines,
       controls: ${controlBindings},
       streamlineControls: ${streamlineBindings},
-      globalMinMax, setGlobalMinMax, globalRanges, effectiveGlobalMinMax, resultLayers, statusLayers, layerStatus, timeIndex, selections }; } return SourcesFields3D(props);`);
+      globalMinMax, setGlobalMinMax, globalRanges, effectiveGlobalMinMax, resultLayers, timeIndex, selections }; } return SourcesFields3D(props);`);
   const api = run(props, options.createGeometryViewSetting ?? ((name, initial) => [() => settings[name] ?? initial, value => { settings[name] = value; }]),
     options.createMemo ?? (compute => compute), callback => cleanup.push(callback),
     options.createSignal ?? (initial => { let value = initial; return [() => value, next => { value = typeof next === "function" ? next(value) : next; }]; }),

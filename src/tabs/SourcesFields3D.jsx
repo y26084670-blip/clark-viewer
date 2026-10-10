@@ -146,7 +146,7 @@ export function SourcesFields3D(props) {
       <div class="plot-toolbar sources-fields-toolbar">
         <For each={[
           ["elements", "Объемные элементы"],
-          ["regions", "Области просмотра"],
+          ["regions", "Области интересов"],
           ["virtual", "Виртуальные элементы"],
         ]}>{([key, label]) => {
           const group = RESULT_LAYER_GROUPS.find(item => item.key === key);

@@ -469,3 +469,26 @@
     gap: 8px;
   }
 }
+
+
+.geometry-viewer-options-panel.is-view-panel {
+  height: 330px;
+  max-height: 330px;
+  overflow: hidden;
+}
+
+.geometry-viewer-palette-select {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid #697683;
+  border-radius: 3px;
+  background: #141a20;
+  color: #edf2f7;
+  padding: 4px 7px;
+  color-scheme: dark;
+}
+
+.geometry-viewer-palette-select:hover,
+.geometry-viewer-palette-select:focus {
+  background: #1b232b;
+}

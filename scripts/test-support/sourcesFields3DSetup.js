@@ -16,34 +16,29 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
   const source = readFileSync(new URL("../../src/tabs/SourcesFields3D.jsx", import.meta.url), "utf8");
   const setup = source.slice(source.indexOf("export function SourcesFields3D"), source.indexOf("  return <div"))
     .replace("export function", "function");
-  // Evaluate the production JSX bindings and callbacks in that same setup
-  // closure, so the tests also observe checkbox state/guards and slider wiring.
-  const controls = source.slice(source.indexOf("<Show when={hasVectors()"), source.indexOf(" Карта</label>"));
-  const visible = controls.match(/<Show when=\{([^\n]+)\}>/);
-  const label = controls.match(/<label>\{([^\n}]+)\}/);
-  const range = controls.match(/<input type="range" ([^\n]+) \/>/);
-  const checkbox = controls.match(/<input type="checkbox" ([^\n]+) \/>/);
-  if (!visible || !label || !range || !checkbox) throw new Error("3D result size controls were not found");
-  const binding = (text, name) => {
-    const value = text.match(new RegExp(`${name}=\\{([^}]+)\\}`));
-    if (!value) throw new Error(`3D control binding ${name} was not found`);
-    return value[1];
-  };
-  const controlBindings = `() => ({ visible: ${visible[1]}, label: ${label[1]},
-    sliderValue: ${binding(range[1], "value")}, onInput: ${binding(range[1], "onInput")},
-    checked: ${binding(checkbox[1], "checked")}, disabled: ${binding(checkbox[1], "disabled")},
-    onChange: ${binding(checkbox[1], "onChange")},
-    viewportColorMap: ${binding(source, "resultVectorColorMap")} })`;
-  const widthInput = source.match(/<input type="range"[^\n]+aria-label="Толщина линий, пиксели"[^\n]+/)[0];
-  const lineColorInput = source.match(/<input type="checkbox"[^\n]+aria-label="Цвет линий по модулю"[^\n]+/)[0];
-  const methodInput = source.match(/<select aria-label="Метод построения линий"[^\n]+/)[0];
-  const streamlineBindings = `() => ({ method: ${binding(methodInput, "value")},
-    methodOptions: Object.entries(STREAMLINE_METHODS), methodDisabled: ${binding(methodInput, "disabled")},
-    onMethodChange: ${binding(methodInput, "onChange")}, width: ${binding(widthInput, "value")},
-    onWidthInput: ${binding(widthInput, "onInput")}, colorMap: ${binding(lineColorInput, "checked")},
-    onColorChange: ${binding(lineColorInput, "onChange")},
-    viewportWidth: ${binding(source, "streamlineWidth")}, viewportColorMap: ${binding(source, "streamlineColorMap")},
-    paletteDisabled: paletteDisabled() })`;
+  // Expose the production setup state without depending on the exact JSX menu
+  // markup. The compact toolbar is tested separately as a source/UI contract.
+  const controlBindings = `() => ({
+    visible: hasVectors() || hasScalars(),
+    label: "Размер",
+    sliderValue: Math.log10(scale()),
+    onInput: event => setScale(10 ** event.currentTarget.valueAsNumber),
+    checked: effectiveColorMap(),
+    disabled: hasScalars(),
+    onChange: event => !hasScalars() && setColorMap(event.currentTarget.checked),
+    viewportColorMap: effectiveColorMap(),
+  })`;
+  const streamlineBindings = `() => ({
+    method: streamlineMethod(),
+    methodOptions: Object.entries(STREAMLINE_METHODS),
+    methodDisabled: props.movieBusy,
+    onMethodChange: changeStreamlineMethod,
+    width: streamlineWidth(),
+    onWidthInput: event => setStreamlineWidth(event.currentTarget.valueAsNumber),
+    colorMap: true,
+    viewportWidth: streamlineWidth(),
+    viewportColorMap: true,
+  })`;
   const cleanup = [];
   const effects = [];
   let requestSource, load;
@@ -53,8 +48,8 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     "QUANTITIES", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
     "createMovieTabAdapter", "completedMovieFrame", "onMount", "applyResultGlobalRange", "resultGlobalScale",
     `${setup} return { quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
-      colorMap, effectiveColorMap, palette, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
-      addStreamline, deleteStreamline, changeStreamlineTolerance, streamlineMethod, changeStreamlineMethod, streamlines,
+      colorMap, effectiveColorMap, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
+      addStreamline, deleteStreamline, streamlineMethod, changeStreamlineMethod, streamlines,
       controls: ${controlBindings},
       streamlineControls: ${streamlineBindings},
       globalMinMax, setGlobalMinMax, globalRanges, effectiveGlobalMinMax, resultLayers, timeIndex, selections }; } return SourcesFields3D(props);`);

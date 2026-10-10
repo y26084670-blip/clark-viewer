@@ -9,7 +9,6 @@ import { resultDisplaySelection, useResultFrame } from "../services/results/resu
 import { RESULT_LAYER_GROUPS, RESULT_LAYER_QUANTITY_LABELS } from "../services/results/resultLayerDefinitions.js";
 import { createResultLayerReader } from "../services/results/resultLayerRequests.js";
 import { applyResultGlobalRange, resultGlobalScale } from "../services/results/resultGlobalScale.js";
-import { RESULT_SCALAR_PALETTES } from "../services/visualization/resultScalarColors.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import { movie3DFilenamePrefix } from "../services/movie/movieFilename.js";
 import { STREAMLINE_LIMITS, STREAMLINE_METHODS, STREAMLINE_TOLERANCE_MM } from "../services/visualization/resultStreamlineField.js";
@@ -153,7 +152,7 @@ export function SourcesFields3D(props) {
           const group = RESULT_LAYER_GROUPS.find(item => item.key === key);
           return <div class="source-toolbar-menu">
             <button type="button" class="source-toolbar-menu-button"
-              aria-expanded={openSourceMenu() === key}
+              aria-expanded={openSourceMenu() === key} aria-label={label}
               onClick={() => toggleSourceMenu(key)}>{label}</button>
             <Show when={openSourceMenu() === key}>
               <div class="source-toolbar-menu-panel">
@@ -172,26 +171,26 @@ export function SourcesFields3D(props) {
 
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
-            aria-expanded={openSourceMenu() === "presentation"}
+            aria-expanded={openSourceMenu() === "presentation"} aria-label="Представление"
             onClick={() => toggleSourceMenu("presentation")}>Представление</button>
           <Show when={openSourceMenu() === "presentation"}>
             <div class="source-toolbar-menu-panel source-presentation-panel">
               <label class="source-presentation-slider">Размер
                 <input type="range" min="-1" max="1" step="0.05"
-                  value={Math.log10(scale())}
+                  value={Math.log10(scale())} aria-label="Размер представления"
                   onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} />
               </label>
-              <label><input type="checkbox" checked={effectiveColorMap()} disabled={hasScalars()}
+              <label><input type="checkbox" aria-label="Карта" checked={effectiveColorMap()} disabled={hasScalars()}
                 onChange={event => !hasScalars() && setColorMap(event.currentTarget.checked)} /> Карта</label>
               <label title={globalRanges().available ? "Общие пределы за весь расчёт из HDF5." : globalRanges().reason}>
-                <input type="checkbox" checked={effectiveGlobalMinMax()}
+                <input type="checkbox" aria-label="Общий минимакс" checked={effectiveGlobalMinMax()}
                   disabled={props.movieBusy || !globalRanges().available}
                   onChange={event => !props.movieBusy && globalRanges().available
                     && setGlobalMinMax(event.currentTarget.checked)} /> Общий минимакс
               </label>
               <label class="source-presentation-slider">Толщина
                 <input type="range" min="1" max="10" step="1"
-                  value={streamlineWidth()}
+                  value={streamlineWidth()} aria-label="Толщина линий"
                   onInput={event => setStreamlineWidth(event.currentTarget.valueAsNumber)} />
                 <span>{streamlineWidth()} px</span>
               </label>
@@ -201,7 +200,7 @@ export function SourcesFields3D(props) {
 
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
-            aria-expanded={openSourceMenu() === "lines"}
+            aria-expanded={openSourceMenu() === "lines"} aria-label="Линия"
             onClick={() => toggleSourceMenu("lines")}>Линия</button>
           <Show when={openSourceMenu() === "lines"}>
             <div class="source-toolbar-menu-panel source-lines-panel">
@@ -219,21 +218,22 @@ export function SourcesFields3D(props) {
                   </div>}
                 </For>
               </Show>
+              <Show when={streamlineNotice()}><div class="source-toolbar-empty">{streamlineNotice()}</div></Show>
             </div>
           </Show>
         </div>
 
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
-            aria-expanded={openSourceMenu() === "method"}
+            aria-expanded={openSourceMenu() === "method"} aria-label="Метод"
             onClick={() => toggleSourceMenu("method")}>Метод</button>
           <Show when={openSourceMenu() === "method"}>
             <div class="source-toolbar-menu-panel">
               <For each={Object.entries(STREAMLINE_METHODS)}>{([key, label]) =>
                 <label class="source-toolbar-option">
-                  <input type="radio" name="source-streamline-method"
+                  <input type="radio" name="source-streamline-method" value={key}
                     checked={streamlineMethod() === key} disabled={props.movieBusy}
-                    onChange={() => !props.movieBusy && setStreamlineMethod(key)} />
+                    onChange={changeStreamlineMethod} />
                   <span>{label}</span>
                 </label>}
               </For>

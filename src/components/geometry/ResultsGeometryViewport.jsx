@@ -513,7 +513,7 @@ export function ResultsGeometryViewport(props) {
               <select class="geometry-viewer-palette-select" aria-label="Палитра результатов"
                 value={resultPalette()}
                 onChange={event => setResultPalette(event.currentTarget.value)}>
-                <For each={RESULT_SCALAR_PALETTES}>{name => <option value={name}>Палитра: {name}</option>}</For>
+                <For each={RESULT_SCALAR_PALETTES}>{name => <option value={name}>палитра {name}</option>}</For>
               </select>
             </Show>
 

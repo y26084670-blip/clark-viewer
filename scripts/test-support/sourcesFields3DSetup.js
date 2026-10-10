@@ -3,7 +3,7 @@ import { QUANTITIES } from "../../src/services/results/resultMappings.js";
 import { resultDisplaySelection } from "../../src/services/results/resultRequests.js";
 import { RESULT_LAYER_GROUPS } from "../../src/services/results/resultLayerDefinitions.js";
 import { createResultLayerReader } from "../../src/services/results/resultLayerRequests.js";
-import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_REASONS } from "../../src/services/visualization/resultStreamlineField.js";
+import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS, STREAMLINE_REASONS } from "../../src/services/visualization/resultStreamlineField.js";
 
 import { applyResultGlobalRange, resultGlobalScale } from "../../src/services/results/resultGlobalScale.js";
 
@@ -36,7 +36,10 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     viewportColorMap: ${binding(source, "resultVectorColorMap")} })`;
   const widthInput = source.match(/<input type="range"[^\n]+aria-label="Толщина линий, пиксели"[^\n]+/)[0];
   const lineColorInput = source.match(/<input type="checkbox"[^\n]+aria-label="Цвет линий по модулю"[^\n]+/)[0];
-  const streamlineBindings = `() => ({ width: ${binding(widthInput, "value")},
+  const methodInput = source.match(/<select aria-label="Метод построения линий"[^\n]+/)[0];
+  const streamlineBindings = `() => ({ method: ${binding(methodInput, "value")},
+    methodOptions: Object.entries(STREAMLINE_METHODS), methodDisabled: ${binding(methodInput, "disabled")},
+    onMethodChange: ${binding(methodInput, "onChange")}, width: ${binding(widthInput, "value")},
     onWidthInput: ${binding(widthInput, "onInput")}, colorMap: ${binding(lineColorInput, "checked")},
     onColorChange: ${binding(lineColorInput, "onChange")},
     viewportWidth: ${binding(source, "streamlineWidth")}, viewportColorMap: ${binding(source, "streamlineColorMap")},
@@ -46,12 +49,12 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
   let requestSource, load;
   let state = { frame: null, requested: null, error: "", loading: false };
   const run = new Function("props", "createGeometryViewSetting", "createMemo", "onCleanup", "createSignal", "createEffect",
-    "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_REASONS", "streamlineSessions",
+    "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_METHODS", "STREAMLINE_REASONS", "streamlineSessions",
     "QUANTITIES", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
     "createMovieTabAdapter", "completedMovieFrame", "onMount", "applyResultGlobalRange", "resultGlobalScale",
     `${setup} return { quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
       colorMap, effectiveColorMap, palette, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
-      addStreamline, deleteStreamline, changeStreamlineTolerance, streamlines, selectedLineStatus,
+      addStreamline, deleteStreamline, changeStreamlineTolerance, streamlineMethod, changeStreamlineMethod, streamlines, selectedLineStatus,
       controls: ${controlBindings},
       streamlineControls: ${streamlineBindings},
       globalMinMax, setGlobalMinMax, globalRanges, effectiveGlobalMinMax, resultLayers, statusLayers, layerStatus, timeIndex, selections }; } return SourcesFields3D(props);`);
@@ -59,7 +62,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     options.createMemo ?? (compute => compute), callback => cleanup.push(callback),
     options.createSignal ?? (initial => { let value = initial; return [() => value, next => { value = typeof next === "function" ? next(value) : next; }]; }),
     options.createEffect ?? (callback => { effects.push(callback); callback(); }),
-    STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_REASONS, streamlineSessions, QUANTITIES, resultDisplaySelection,
+    STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS, STREAMLINE_REASONS, streamlineSessions, QUANTITIES, resultDisplaySelection,
     RESULT_LAYER_GROUPS, options.readerFactory ?? createResultLayerReader,
     (source, reader) => { requestSource = source; load = reader; options.observeRequest?.(source); return () => state; },
     options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame, () => {}, applyResultGlobalRange, resultGlobalScale);

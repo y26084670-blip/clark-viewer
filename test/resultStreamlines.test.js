@@ -83,3 +83,149 @@ test("Float32 and Float64 saved coordinates work after a large translation",()=>
     const line=trace([d]);assert.equal(line.error,undefined);assert.equal(line.reasons[0],"boundary");
   }
 });
+
+
+function mappedGrid({dims=[4,4,4],vertices,field,key="mapped"}={}) {
+  const map=u=>[0,1,2].map(axis=>vertices.reduce((sum,p,n)=>
+    sum+p[axis]*u.reduce((w,value,k)=>w*((n>>k)&1?value:1-value),1),0));
+  const positions=[],vectors=[];
+  for(let i=0;i<dims[0];i++)for(let j=0;j<dims[1];j++)for(let k=0;k<dims[2];k++) {
+    const p=map([i,j,k].map((v,a)=>(v+.5)/dims[a]));
+    positions.push(...p);vectors.push(...field(...p));
+  }
+  return {key,source:{schemaId:"elements",recordIndex:0},instance:{ls:0,as:0,ps:0},
+    dimensions:dims,vertices,positions:new Float64Array(positions),vectors:new Float64Array(vectors),coordinateBytes:8,map};
+}
+function closeVector(actual,expected,tolerance=1e-11) {
+  assert.equal(actual.length,expected.length);
+  actual.forEach((value,k)=>assert.ok(Math.abs(value-expected[k])<=tolerance,
+    `component ${k}: ${value} vs ${expected[k]}`));
+}
+
+test("the legacy method remains the default and keeps its nearest-centre boundary values",()=>{
+  const raw=grid({dims:[2,2,2],lo:[0,0,0],hi:[1,1,1],field:(x,y,z)=>[x,y,z]});
+  for(const method of [undefined,"trilinear"]) {
+    const d=prepareStreamlineDomain({...raw,method});
+    closeVector(sampleStreamlineVector(d,[0,1,0]).vector,[.25,.75,.25]);
+  }
+  const a=trace([raw]),b=trace([raw],0,{method:"trilinear"});
+  assert.equal(a.method,"trilinear");assert.equal(b.method,"trilinear");
+  assert.deepEqual(a.paths.map(p=>Array.from(p.positions)),b.paths.map(p=>Array.from(p.positions)));
+});
+
+test("boundary continuation reproduces an affine field on faces, edges and corners",()=>{
+  const field=(x,y,z)=>[1+2*x-y,3*y-z,2*z+x];
+  const raw=grid({dims:[4,5,3],lo:[-2,-1,0],hi:[2,3,2],field});
+  const d=prepareStreamlineDomain({...raw,method:"trilinear-boundary"});
+  for(const point of [[-2,.7,1],[2,3,.4],[-2,-1,0],[2,3,2],[0,0,1]]) {
+    closeVector(sampleStreamlineVector(d,point).vector,field(...point));
+  }
+  const old=prepareStreamlineDomain({...raw,method:"trilinear"});
+  assert.ok(Math.abs(sampleStreamlineVector(old,[2,3,2]).vector[0]-field(2,3,2)[0])>.1);
+});
+
+test("boundary continuation uses the solver hexahedron map on skew, nonuniform physical grids",()=>{
+  const vertices=Array.from({length:8},(_,n)=>{
+    const u=n&1,v=(n>>1)&1,w=(n>>2)&1;
+    return [3+2*u+.2*v,-1+1.5*v+.1*w,2+w+.12*u*v];
+  });
+  const field=(x,y,z)=>[1+.3*x-.2*y,z+.4*x,2-y+.1*z];
+  const raw=mappedGrid({vertices,field});
+  const d=prepareStreamlineDomain({...raw,method:"trilinear-boundary"});
+  for(const u of [[0,.31,.8],[1,1,.25],[0,0,0],[1,1,1],[.23,.61,.72]]) {
+    const point=raw.map(u);closeVector(sampleStreamlineVector(d,point).vector,field(...point),1e-10);
+  }
+});
+
+test("boundary continuation preserves one-cell axes and is exact with two centres",()=>{
+  const raw=grid({dims:[1,2,1],lo:[0,0,0],hi:[2,4,6],field:(x,y,z)=>[7,2*y-3,11]});
+  const d=prepareStreamlineDomain({...raw,method:"trilinear-boundary"});
+  for(const point of [[0,0,0],[2,4,6],[1,2,3]])closeVector(sampleStreamlineVector(d,point).vector,[7,2*point[1]-3,11]);
+  assert.ok(sampleStreamlineVector(d,[2,4,6]).vector.every(Number.isFinite));
+});
+
+test("a curved trajectory reaches the physical face on its integrated curve",()=>{
+  const d=grid({dims:[8,4,1],lo:[0,0,0],hi:[1,1,1],field:(x,y)=>[1,y,0]});
+  const line=trace([d],6*4+1,{method:"trilinear-boundary",tolerance:1e-6});
+  assert.equal(line.error,undefined);assert.equal(line.method,"trilinear-boundary");
+  assert.deepEqual(line.reasons,["boundary"]);
+  closeVector(line.start,[.8125,.375,.5]);
+  const forward=line.paths.at(-1),end=Array.from(forward.positions.slice(-3));
+  closeVector(end,[1,.375*Math.exp(1-.8125),.5],1e-6);
+  for(const path of line.paths)for(let i=0;i<path.magnitudes.length;i++)
+    assert.ok(Math.abs(path.magnitudes[i]-Math.hypot(1,path.positions[3*i+1]))<1e-11);
+});
+
+test("a trajectory that touches a boundary tangentially continues inside the domain",()=>{
+  const d=grid({dims:[2,2,1],lo:[-1,0,0],hi:[1,1,1],field:(x)=>[1,2*x,0]});
+  const line=trace([d],0,{method:"trilinear-boundary",tolerance:1e-6});
+  assert.equal(line.error,undefined);assert.deepEqual(line.reasons,["boundary"]);
+  const forward=line.paths.at(-1);
+  closeVector(Array.from(forward.positions.slice(-3)),[1,1,.5],1e-5);
+  const points=xyz(line);assert.ok(points.some(p=>p[0]<-.1)&&points.some(p=>p[0]>.1));
+  assert.ok(points.every(p=>p[1]>=-1e-7),"a tangent contact must not invent an outside display segment");
+  assert.ok(points.every(p=>Math.abs(p[1]-p[0]*p[0])<1e-5));
+});
+
+test("edge exits with two inward face neighbours are reported as ambiguous",()=>{
+  const a=grid({dims:[2,2,1],lo:[0,0,0],hi:[1,1,1],field:()=>[1,1,0]});
+  const b=grid({key:"b",dims:[2,2,1],lo:[1,0,0],hi:[2,2,1],field:()=>[1,-1,0]});
+  const c=grid({key:"c",dims:[2,2,1],lo:[0,1,0],hi:[2,2,1],field:()=>[-1,1,0]});
+  const line=trace([a,b,c],0,{method:"trilinear-boundary",tolerance:1e-6});
+  assert.ok(line.reasons.includes("ambiguous"));
+  assert.ok(line.paths.every(path=>path.key==="a"));
+  closeVector(Array.from(line.paths.at(-1).positions.slice(-3)),[1,1,.5],1e-7);
+});
+
+test("new methods retain separate values on the two sides of a seam",()=>{
+  for(const method of ["trilinear-boundary"]) {
+    const a=grid({dims:[4,4,4],lo:[0,0,0],hi:[1,1,1],field:x=>[2+x,0,0]});
+    const b=grid({key:"b",dims:[5,4,4],lo:[1,0,0],hi:[2,1,1],field:x=>[7+x,0,0]});
+    const line=trace([a,b],5,{method});
+    assert.equal(line.error,undefined);assert.equal(line.method,method);
+    assert.ok(Array.isArray(line.fallbacks));assert.ok(line.paths.some(path=>path.key==="b"));
+    for(const path of line.paths)for(let i=0;i<path.magnitudes.length;i++)
+      assert.ok(Math.abs(path.magnitudes[i]-(path.key==="a"?2:7)-path.positions[3*i])<1e-8);
+  }
+});
+
+test("boundary methods do not bridge gaps or opposing directions across seams",()=>{
+  for(const method of ["trilinear-boundary"]) {
+    const a=grid({dims:[4,4,4],lo:[0,0,0],hi:[1,1,1]});
+    for(const other of [grid({key:"b",lo:[1.001,0,0],hi:[2,1,1]}),
+      grid({key:"b",lo:[1,0,0],hi:[2,1,1],field:()=>[-1,0,0]})]) {
+      const line=trace([a,other],5,{method});
+      assert.deepEqual(line.reasons,["boundary"]);
+      assert.ok(line.paths.every(path=>path.key==="a"));
+      assert.ok(xyz(line).every(p=>p[0]<=1+1e-8));
+    }
+  }
+});
+
+test("invalid method values are rejected",()=>{
+  assert.throws(()=>trace([grid()],0,{method:"unknown"}),/метод|интерпол|Method|method/i);
+});
+
+
+test("a narrow boundary excursion is detected before the trajectory reenters",()=>{
+  // The minimum is eight times deeper than the requested local tolerance.
+  // Sixteen fixed event samples can all lie inside even though the curve exits.
+  const c=.5625+Math.sqrt(.100001),delta=1e-6;
+  const raw=grid({dims:[8,1,1],lo:[0,0,0],hi:[1,.2,1],field:x=>[1,2*(x-c),0]});
+  const line=trace([raw],4,{method:"trilinear-boundary",tolerance:1e-6});
+  const end=Array.from(line.paths.at(-1).positions.slice(-3));
+  assert.equal(line.error,undefined);assert.deepEqual(line.reasons,["boundary"]);
+  closeVector(end,[c-Math.sqrt(delta),0,.5],2e-5);
+  assert.ok(xyz(line).every(p=>p[0]<c&&p[1]>=-1e-8),"the physical boundary must terminate the first branch");
+});
+
+
+test("a zero on the physical face terminates without inventing a seam crossing",()=>{
+  const a=grid({dims:[8,1,1],lo:[0,0,0],hi:[1,1,1],field:x=>[1-x,0,0]});
+  const b=grid({key:"b",dims:[4,1,1],lo:[1,0,0],hi:[2,1,1]});
+  const line=trace([a,b],4,{method:"trilinear-boundary",tolerance:1e-6});
+  assert.equal(line.error,undefined);assert.ok(line.reasons.includes("zero"));
+  assert.ok(line.paths.every(path=>path.key==="a"));
+  closeVector(Array.from(line.paths.at(-1).positions.slice(-3)),[1,.5,.5],1e-6);
+  assert.ok(xyz(line).every(p=>p.every(Number.isFinite)&&p[0]<=1));
+});

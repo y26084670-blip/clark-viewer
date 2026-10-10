@@ -234,15 +234,17 @@ test("returning to the 3D tab restores seeds and tolerance without retaining wor
   const open=()=>sourcesFields3DSetup(props,{}, {readerFactory:()=>({close(){closed++;}})});
   let ui=open();
   ui.setResultState({frame:{request:{task:props.task,time:0},value:{layers:[]}},loading:false,error:""});
-  ui.addStreamline(vector);ui.changeStreamlineTolerance({currentTarget:{valueAsNumber:.001}});ui.close();
+  ui.addStreamline(vector);ui.changeStreamlineTolerance({currentTarget:{valueAsNumber:.001}});
+  ui.changeStreamlineMethod({currentTarget:{value:"trilinear-boundary"}});ui.close();
   assert.equal(closed,1);
   ui=open();assert.equal(ui.streamlineSeeds().length,1);assert.equal(ui.selectedStreamline(),1);
-  assert.equal(ui.request().streamlineTolerance,.00001);
+  assert.equal(ui.request().streamlineTolerance,.00001);assert.equal(ui.request().streamlineMethod,"trilinear-boundary");
   ui.setResultState({frame:{request:{task:props.task,time:0},value:{layers:[]}},loading:false,error:""});
   ui.addStreamline({...vector,node:7});assert.deepEqual(ui.streamlineSeeds().map(s=>s.id),[1,2]);ui.close();
   assert.equal(closed,2);
   props.task={elements:[],regions:[]};ui=open();assert.equal(ui.streamlineSeeds().length,0);
-  assert.equal(ui.selectedStreamline(),null);assert.equal(ui.request().streamlineTolerance,.0001);ui.close();
+  assert.equal(ui.selectedStreamline(),null);assert.equal(ui.request().streamlineTolerance,.0001);
+  assert.equal(ui.request().streamlineMethod,"trilinear");ui.close();
 });
 
 test('3D streamline colours use the optional global magnitude range and restore local bounds',()=>{

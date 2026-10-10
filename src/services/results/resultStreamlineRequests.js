@@ -91,7 +91,7 @@ export async function readResultStreamlines(request,processor) {
         }
         domains.push({...d,positions,vectors,coordinateBytes:frame.values.BYTES_PER_ELEMENT});
       }
-      output.push(...await processor.process({domains,seeds:group,tolerance:request.streamlineTolerance}));
+      output.push(...await processor.process({domains,seeds:group,tolerance:request.streamlineTolerance,method:request.streamlineMethod??"trilinear"}));
     } catch(error) {
       if(error.name==="AbortError")throw error;
       output.push(...group.map(seed=>({...seed,paths:[],error:error.message??String(error)})));

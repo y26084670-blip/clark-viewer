@@ -217,3 +217,46 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
     ui.close(); dispose();
   `], { cwd: new URL("../", import.meta.url), stdio: "pipe" });
 });
+
+test("field method selector keeps the same seeds and tolerance, validates choices and freezes during capture",()=>{
+  const props=fixture(),ui=sourcesFields3DSetup(props);
+  try {
+    assert.deepEqual(ui.streamlineControls().methodOptions.map(([key])=>key),["trilinear","trilinear-boundary"]);
+    assert.equal(ui.streamlineControls().method,"trilinear");
+    ui.setResultState({frame:{request:{task:props.task,time:props.time},value:{layers:[]}}});
+    const vector={quantityKey:"H",source:{schemaId:"elements",recordIndex:0},instance:{ls:0,as:0,ps:0},node:4};
+    ui.addStreamline(vector);ui.changeStreamlineTolerance({currentTarget:{valueAsNumber:.001}});
+    const seeds=ui.request().streamlineSeeds,tolerance=ui.request().streamlineTolerance;
+    for(const method of ["trilinear-boundary","trilinear"]) {
+      ui.streamlineControls().onMethodChange({currentTarget:{value:method}});
+      assert.equal(ui.request().streamlineMethod,method);
+      assert.equal(ui.request().streamlineSeeds,seeds);assert.equal(ui.request().streamlineTolerance,tolerance);
+      assert.equal(ui.selectedStreamline(),seeds[0].id);
+    }
+    const invalid={currentTarget:{value:"unknown"}};
+    ui.streamlineControls().onMethodChange(invalid);assert.equal(invalid.currentTarget.value,"trilinear");
+    props.movieBusy=true;assert.equal(ui.streamlineControls().methodDisabled,true);
+    const blocked={currentTarget:{value:"trilinear-boundary"}};
+    ui.streamlineControls().onMethodChange(blocked);assert.equal(blocked.currentTarget.value,"trilinear");
+    assert.equal(ui.request().streamlineMethod,"trilinear");
+  } finally {ui.close();}
+});
+
+test("comparison status reports the displayed method, exact seed coordinates and fallback",()=>{
+  const props=fixture(),ui=sourcesFields3DSetup(props);
+  try {
+    ui.setResultState({frame:{request:{task:props.task,time:props.time},value:{layers:[]}}});
+    ui.addStreamline({quantityKey:"H",source:{schemaId:"elements",recordIndex:0},instance:{ls:0,as:0,ps:0},node:4});
+    ui.changeStreamlineMethod({currentTarget:{value:"trilinear-boundary"}});
+    const id=ui.selectedStreamline(),start=[7000.125,-9000.875,15000.0625];
+    ui.setResultState({frame:{request:{task:props.task,time:props.time},value:{layers:[],streamlines:[
+      {id,quantityKey:"H",method:"trilinear",start,fallbacks:[],reasons:["boundary"]}]}}});
+    assert.ok(ui.selectedLineStatus().includes(ui.streamlineControls().methodOptions[0][1]));
+    assert.ok(ui.selectedLineStatus().includes("Начало: (7000.125, -9000.875, 15000.0625) мм"));
+    assert.ok(ui.selectedLineStatus().includes("граница доступного поля"));
+    ui.setResultState({frame:{request:{task:props.task,time:props.time},value:{layers:[],streamlines:[
+      {id,quantityKey:"H",method:"trilinear-boundary",start,fallbacks:["Недостаточно узлов"],reasons:["boundary"]}]}}});
+    assert.ok(ui.selectedLineStatus().includes("Резерв: Недостаточно узлов"));
+    assert.ok(ui.selectedLineStatus().includes(ui.streamlineControls().methodOptions[1][1]));
+  } finally {ui.close();}
+});

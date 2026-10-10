@@ -158,3 +158,41 @@ test("motion reanchors the same saved node at each time, and saved coordinates a
   assert.equal(later.error,undefined);assert.equal(later.start[0]-first.start[0],5);
   assert.ok(later.paths.every(path=>path.positions[0]>=15&&path.positions[0]<=17));
 });
+
+test("each field method reaches the worker with the unchanged saved seeds, data and tolerance",async()=>{
+  for(const method of ["trilinear","trilinear-boundary"]) {
+    const f=fixture(),tolerance=1e-5;let received;
+    const lines=await readResultStreamlines({task:f.task,time:0,streamlineSeeds:[f.seed],streamlineTolerance:tolerance,
+      streamlineMethod:method},{process:async input=>{received=input;return calculateStreamlines(input);}});
+    assert.equal(received.method,method);assert.equal(received.tolerance,tolerance);
+    assert.deepEqual(received.seeds.map(seed=>[seed.id,seed.node,seed.quantityKey,seed.source,seed.instance]),
+      [[f.seed.id,f.seed.node,f.seed.quantityKey,f.seed.source,f.seed.instance]]);
+    assert.equal(received.domains[0].positions.length,24*3);assert.equal(f.frames[0].values.byteLength,48*9*8);
+    assert.equal(lines[0].method,method);assert.ok(Array.isArray(lines[0].fallbacks));assert.equal(lines[0].error,undefined);
+  }
+});
+
+test("curve cache normalizes the control default, invalidates the method and retains matching seeds",async()=>{
+  const f=fixture(),inputs=[];
+  const reader=createResultLayerReader({streamlineProcessorFactory:()=>({
+    process:async input=>{inputs.push(input);return calculateStreamlines(input);},close(){}})});
+  const request={task:f.task,time:0,layers:[],streamlineSeeds:[f.seed],streamlineTolerance:1e-4};
+  try {
+    const original=await reader.read(request);
+    const explicit=await reader.read({...request,streamlineMethod:"trilinear"});
+    assert.equal(inputs.length,1);assert.equal(explicit.streamlines[0],original.streamlines[0]);
+    const changed=await reader.read({...request,streamlineMethod:"trilinear-boundary"});
+    assert.equal(inputs.length,2);assert.notEqual(changed.streamlines[0],original.streamlines[0]);
+    assert.equal(changed.streamlines[0].method,"trilinear-boundary");
+    assert.deepEqual(changed.streamlines[0].start,original.streamlines[0].start);
+    const other={...f.seed,id:2,node:6},two={...request,streamlineMethod:"trilinear-boundary",streamlineSeeds:[f.seed,other]};
+    const added=await reader.read(two);
+    assert.equal(inputs.length,3);assert.equal(added.streamlines[0],changed.streamlines[0]);
+    assert.deepEqual(inputs.at(-1).seeds.map(seed=>seed.id),[2]);assert.equal(inputs.at(-1).method,"trilinear-boundary");
+    await reader.read({...two,streamlineTolerance:1e-5});
+    assert.equal(inputs.length,4);assert.deepEqual(inputs.at(-1).seeds.map(seed=>seed.id),[1,2]);
+    const restored=await reader.read({...request,streamlineMethod:"trilinear"});
+    assert.equal(inputs.length,5);assert.equal(restored.streamlines[0].method,"trilinear");
+    assert.deepEqual(restored.streamlines[0].start,original.streamlines[0].start);
+  } finally {reader.close();}
+});

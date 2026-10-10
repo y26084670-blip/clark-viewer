@@ -124,34 +124,6 @@ export function SourcesFields3D(props) {
     color: layer.quantityKey === "J" ? 0xff5454 : layer.quantityKey === "M" ? 0x44dd66 : 0x44bbff,
   });
   const resultLayers = createMemo(() => hasRequestedResults() ? (value()?.layers ?? []).map(layerMetadata) : []);
-  const statusLayers = createMemo(() => {
-    const published = hasRequestedResults() && value()?.layers;
-    return (published || requestedLayers().map(layer => ({ ...layer,
-      state: layer.quantityKey === "none" ? "disabled" : layer.selected.length === 0 ? "empty"
-        : result().error ? "error" : "loading", error: result().error,
-    }))).map(layerMetadata);
-  });
-  const layerStatus = layer => {
-    if (layer.state === "disabled") return "Не показывать";
-    if (layer.state === "empty") return "Нет объектов для показа";
-    if (layer.state === "error") return layer.error || "Не удалось прочитать результаты";
-    if (layer.state !== "ready") return "Чтение результатов…";
-    const quantity = QUANTITIES[layer.quantityKey];
-    const scalar = layer.scalarScene;
-    const maximum = layer.scene?.maximumMagnitude?.magnetization;
-    const number = value => Number.isFinite(value) ? value.toPrecision(6) : "—";
-    const bounds = layer.displayRange;
-    const range = bounds ? `${number(bounds.minimum)} … ${number(bounds.maximum)}`
-      : scalar ? `${number(scalar.minimum)} … ${number(scalar.maximum)}` : `max ${number(maximum)}`;
-    const representations = [];
-    if (layer.volumeFields?.domains?.length) representations.push(`Объёмная карта: ${layer.volumeFields.domains.length} сеток`);
-    if (layer.volumeFields?.surfaces?.length) representations.push(`Поверхность: ${layer.volumeFields.surfaces.length} площадок`);
-    const volume = layer.volumeFields ? ` · ${representations.join(" · ") || "Объёмная карта недоступна; показаны цветные узлы"}` : "";
-    return `${quantity.formula ? quantity.formula + " · " : ""}${range} ${quantity.unit}`
-      + (bounds ? ` · общий минмакс${bounds.approximate ? " (произведение модулей)" : ""}` : "")
-      + volume + (layer.volumeNotice ? ` · ${layer.volumeNotice}` : "")
-      + (layer.sampled ? " · показана выборка узлов" : "");
-  };
   const timeIndex = () => hasRequestedResults() || streamlineSeeds().length ? displayed()?.request.time ?? props.time : props.time;
   const selections = createMemo(() => ({
     elements: props.elements.map(id => id - 1), regions: props.regions.map(id => id - 1),
@@ -218,14 +190,6 @@ export function SourcesFields3D(props) {
           <label><input type="checkbox" aria-label="Цвет линий по модулю" checked={streamlineColorMap()} onChange={event => setStreamlineColorMap(event.currentTarget.checked)} /> Цвет по модулю</label>
         </div>
       </Show>
-      <div class="plot-status sources-fields-status" role="status">
-        <For each={statusLayers()}>{layer => <span classList={{ "source-layer-error": layer.state === "error" }}><b>{layer.groupLabel}:</b> {layerStatus(layer)}</span>}</For>
-        <Show when={hasRequestedResults() && result().loading && displayed()}><span>Чтение результатов…</span></Show>
-        <Show when={hasRequestedResults() && displayed()}><span>Показан шаг {displayed().request.time}</span></Show>
-        <Show when={globalMinMax() && !globalRanges().available}><span>Общий минмакс недоступен: {globalRanges().reason}</span></Show>
-        <Show when={streamlineNotice()}><span class="source-layer-error">{streamlineNotice()}</span></Show>
-        <Show when={streamlineSeeds().length && result().loading}><span>Расчёт линий…</span></Show>
-      </div>
       <div class="embedded-geometry">
         <ResultsGeometryViewport open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           cameraRequest={cameraRequest()}

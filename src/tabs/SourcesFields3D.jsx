@@ -12,7 +12,7 @@ import { applyResultGlobalRange, resultGlobalScale } from "../services/results/r
 import { RESULT_SCALAR_PALETTES } from "../services/visualization/resultScalarColors.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import { movie3DFilenamePrefix } from "../services/movie/movieFilename.js";
-import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS } from "../services/visualization/resultStreamlineField.js";
+import { STREAMLINE_LIMITS, STREAMLINE_METHODS, STREAMLINE_TOLERANCE_MM } from "../services/visualization/resultStreamlineField.js";
 import "./SourcesFields3D.css";
 
 // Switching tabs unmounts this component. Retain only small seed descriptors,
@@ -25,24 +25,28 @@ export function SourcesFields3D(props) {
     const remove=installSourcesFieldsKeyboard(window,{blocked:()=>props.movieBusy,
       time:()=>props.time,maxTime:()=>props.task?.general.countTimeSteps??0,setTime:props.setTime,
       view:command=>setCameraRequest(previous=>({command,sequence:(previous?.sequence??0)+1}))});
-    onCleanup(remove);
+    const closeMenus = event => {
+      if (!event.target?.closest?.(".source-toolbar-menu")) setOpenSourceMenu(null);
+    };
+    window.addEventListener("pointerdown", closeMenus, true);
+    onCleanup(() => { remove(); window.removeEventListener("pointerdown", closeMenus, true); });
   });
   const savedStreamlines = props.task && streamlineSessions.get(props.task);
   const [streamlineSeeds, setStreamlineSeeds] = createSignal(savedStreamlines?.seeds ?? []);
   const [selectedStreamline, setSelectedStreamline] = createSignal(savedStreamlines?.selected ?? null);
-  const [streamlineTolerance, setStreamlineTolerance] = createSignal(savedStreamlines?.tolerance ?? STREAMLINE_DEFAULT_TOLERANCE);
   const [streamlineMethod, setStreamlineMethod] = createSignal(savedStreamlines?.method ?? "trilinear");
   const [streamlineNotice, setStreamlineNotice] = createSignal("");
+  const [openSourceMenu, setOpenSourceMenu] = createSignal(null);
   let nextStreamlineId = savedStreamlines?.nextId ?? 1, streamlineTask = props.task;
   createEffect(() => {
     if (props.task === streamlineTask) return;
     streamlineSessions.delete(streamlineTask);
     streamlineTask = props.task; setStreamlineSeeds([]); setSelectedStreamline(null); setStreamlineNotice("");
-    setStreamlineTolerance(STREAMLINE_DEFAULT_TOLERANCE); setStreamlineMethod("trilinear"); nextStreamlineId = 1;
+    setStreamlineMethod("trilinear"); nextStreamlineId = 1;
   });
   onCleanup(() => {
     if (streamlineTask && streamlineTask === props.task) streamlineSessions.set(streamlineTask, {
-      seeds: streamlineSeeds(), selected: selectedStreamline(), tolerance: streamlineTolerance(), method: streamlineMethod(), nextId: nextStreamlineId,
+      seeds: streamlineSeeds(), selected: selectedStreamline(), method: streamlineMethod(), nextId: nextStreamlineId,
     });
   });
   function addStreamline(vector) {
@@ -53,29 +57,25 @@ export function SourcesFields3D(props) {
       node: vector.node, quantityKey: vector.quantityKey };
     setStreamlineSeeds(previous => [...previous, seed]); setSelectedStreamline(seed.id); setStreamlineNotice("");
   }
-  function deleteStreamline() {
-    const remaining = streamlineSeeds().filter(seed => seed.id !== selectedStreamline());
-    setStreamlineSeeds(remaining); setSelectedStreamline(remaining.at(-1)?.id ?? null); setStreamlineNotice("");
+  function deleteStreamline(id) {
+    const current = selectedStreamline();
+    const remaining = streamlineSeeds().filter(seed => seed.id !== id);
+    setStreamlineSeeds(remaining);
+    if (current === id) setSelectedStreamline(remaining.at(-1)?.id ?? null);
+    setStreamlineNotice("");
   }
   function changeStreamlineMethod(event) {
     const method = event.currentTarget.value;
     if (!props.movieBusy && Object.hasOwn(STREAMLINE_METHODS, method)) setStreamlineMethod(method);
     else event.currentTarget.value = streamlineMethod();
   }
-  function changeStreamlineTolerance(event) {
-    const value = event.currentTarget.valueAsNumber / 100;
-    if (Number.isFinite(value) && value >= 1e-7 && value <= 1e-2) setStreamlineTolerance(value);
-    else event.currentTarget.value = streamlineTolerance() * 100;
-  }
   const [elementsQuantity, setElementsQuantity] = createGeometryViewSetting("resultElementsQuantity", "M");
   const [regionsQuantity, setRegionsQuantity] = createGeometryViewSetting("resultRegionsQuantity", "none");
   const [virtualQuantity, setVirtualQuantity] = createGeometryViewSetting("resultVirtualQuantity", "none");
   const [scale, setScale] = createGeometryViewSetting("resultVectorScale", 1);
   const [colorMap, setColorMap] = createGeometryViewSetting("resultVectorColorMap", false);
-  const [palette, setPalette] = createGeometryViewSetting("resultPalette", "Rainbow");
   const [globalMinMax, setGlobalMinMax] = createGeometryViewSetting("resultGlobalMinMax", true);
   const [streamlineWidth, setStreamlineWidth] = createGeometryViewSetting("resultStreamlineWidth", 2);
-  const [streamlineColorMap, setStreamlineColorMap] = createGeometryViewSetting("resultStreamlineColorMap", true);
   const [elementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode] = createGeometryViewSetting("regionsMode", "all");
   const quantities = {
@@ -90,8 +90,6 @@ export function SourcesFields3D(props) {
   // Scalars require a color map, but must not replace the user's vector-mode
   // preference when a later quantity selection contains only vectors again.
   const effectiveColorMap = createMemo(() => hasScalars() || colorMap());
-  const paletteDisabled = createMemo(() => !hasScalars() && !(hasVectors() && colorMap())
-    && !(streamlineSeeds().length && streamlineColorMap()));
   const volumeMode = createMemo(() => effectiveColorMap() && scale() >= 10 - 1e-9);
   const requestedLayers = createMemo(() => RESULT_LAYER_GROUPS.map(group => {
     const records = group.key === "regions" ? props.task?.regions ?? []
@@ -111,7 +109,7 @@ export function SourcesFields3D(props) {
   // Even a completely disabled frame reaches the reader so it can release its
   // workers; no HDF5 is read, and geometry follows the requested time immediately.
   const result = useResultFrame(() => props.task && ({ task: props.task, time: props.time, layers: requestedLayers(),
-    streamlineSeeds: streamlineSeeds(), streamlineTolerance: streamlineTolerance(), streamlineMethod: streamlineMethod() }),
+    streamlineSeeds: streamlineSeeds(), streamlineTolerance: STREAMLINE_TOLERANCE_MM, streamlineMethod: streamlineMethod() }),
     request => layerReader.read(request));
   const displayed = () => result().frame;
   const value = () => displayed()?.value;
@@ -135,6 +133,11 @@ export function SourcesFields3D(props) {
     const errors = status.value.value.errors ?? [];
     return errors.length ? { error: errors.map(item => item.message).join(" · ") } : status;
   } });
+  const quantityText = key => key === "none"
+    ? RESULT_LAYER_QUANTITY_LABELS.none
+    : `${RESULT_LAYER_QUANTITY_LABELS[key]}, ${QUANTITIES[key]?.unit ?? ""}`;
+  const toggleSourceMenu = name => setOpenSourceMenu(current => current === name ? null : name);
+
   return <div class="results-layout">
     <aside class="split-list-column">
       <ObjectList title="Элементы" records={props.task?.elements} selected={props.elements} onSelect={props.setElements} />
@@ -142,65 +145,113 @@ export function SourcesFields3D(props) {
     </aside>
     <section class="plot-panel">
       <div class="plot-toolbar sources-fields-toolbar">
-        <For each={RESULT_LAYER_GROUPS}>{group => <label class="source-quantity-selector">{group.label}
-          <select aria-label={group.label} value={quantities[group.key].read()}
-            onChange={event => quantities[group.key].write(event.currentTarget.value)}>
-            <For each={group.quantities}>{key => <option value={key}>{RESULT_LAYER_QUANTITY_LABELS[key]}</option>}</For>
-          </select>
-          <span class="unit-label">{QUANTITIES[quantities[group.key].read()]?.unit ?? ""}</span>
-        </label>}</For>
-        <Show when={hasVectors() || hasScalars()}>
-          <label>{effectiveColorMap() ? "Размер точки" : "Векторы"}
-            <span class="source-result-size-slider" classList={{ "is-color-map": effectiveColorMap() }}>
-              <input type="range" min="-1" max="1" step="0.05" value={Math.log10(scale())} onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} />
-            </span>
-          </label>
-          <label><input type="checkbox" checked={effectiveColorMap()} disabled={hasScalars()} onChange={event => !hasScalars() && setColorMap(event.currentTarget.checked)} /> Карта</label>
-        </Show>
-        <label class="source-global-minmax" title={globalRanges().available
-          ? "Общие пределы модулей за весь расчёт из HDF5. Для энергии/потерь — произведения границ модулей."
-          : globalRanges().reason}>
-          <input type="checkbox" aria-label="Общий минмакс" checked={effectiveGlobalMinMax()}
-            disabled={props.movieBusy || !globalRanges().available}
-            onChange={event => !props.movieBusy && globalRanges().available && setGlobalMinMax(event.currentTarget.checked)} />Общий минмакс
-        </label>
-        <label>Палитра <select aria-label="Палитра" value={palette()} disabled={paletteDisabled()} onChange={event => setPalette(event.currentTarget.value)}>
-          <For each={RESULT_SCALAR_PALETTES}>{name => <option value={name}>{name}</option>}</For>
-        </select></label>
-      </div>
-      <Show when={streamlineSeeds().length}>
-        <div class="plot-toolbar source-streamline-toolbar">
-          <label>Линия <select aria-label="Выбранная линия поля" value={selectedStreamline() ?? ""}
-            onChange={event => setSelectedStreamline(Number(event.currentTarget.value) || null)}>
-            <option value="">не выбрана</option>
-            <For each={streamlineSeeds()}>{seed => <option value={seed.id}>
-              №{seed.id} · {QUANTITIES[seed.quantityKey]?.label} · Элемент №{seed.source.recordIndex + 1}
-            </option>}</For>
-          </select></label>
-          <button type="button" disabled={selectedStreamline() === null} onClick={deleteStreamline}>Стереть линию</button>
-          <label>Метод <select aria-label="Метод построения линий" value={streamlineMethod()} disabled={props.movieBusy} onChange={changeStreamlineMethod}>
-            <For each={Object.entries(STREAMLINE_METHODS)}>{([key, label]) => <option value={key}>{label}</option>}</For>
-          </select></label>
-          <label>Допуск, % шага сетки <input type="number" min="0.00001" max="1" step="0.01"
-            aria-label="Допуск линии, процент шага сетки" value={streamlineTolerance() * 100} onChange={changeStreamlineTolerance} /></label>
-          <label class="source-streamline-width">Толщина
-            <input type="range" min="1" max="10" step="1" aria-label="Толщина линий, пиксели" value={streamlineWidth()} onInput={event => setStreamlineWidth(event.currentTarget.valueAsNumber)} />
-            <span>{streamlineWidth()} px</span>
-          </label>
-          <label><input type="checkbox" aria-label="Цвет линий по модулю" checked={streamlineColorMap()} onChange={event => setStreamlineColorMap(event.currentTarget.checked)} /> Цвет по модулю</label>
+        <For each={[
+          ["elements", "Объемные элементы"],
+          ["regions", "Области просмотра"],
+          ["virtual", "Виртуальные элементы"],
+        ]}>{([key, label]) => {
+          const group = RESULT_LAYER_GROUPS.find(item => item.key === key);
+          return <div class="source-toolbar-menu">
+            <button type="button" class="source-toolbar-menu-button"
+              aria-expanded={openSourceMenu() === key}
+              onClick={() => toggleSourceMenu(key)}>{label}</button>
+            <Show when={openSourceMenu() === key}>
+              <div class="source-toolbar-menu-panel">
+                <For each={group.quantities}>{quantityKey =>
+                  <label class="source-toolbar-option">
+                    <input type="radio" name={`source-quantity-${key}`}
+                      checked={quantities[key].read() === quantityKey}
+                      onChange={() => quantities[key].write(quantityKey)} />
+                    <span>{quantityText(quantityKey)}</span>
+                  </label>}
+                </For>
+              </div>
+            </Show>
+          </div>;
+        }}</For>
+
+        <div class="source-toolbar-menu">
+          <button type="button" class="source-toolbar-menu-button"
+            aria-expanded={openSourceMenu() === "presentation"}
+            onClick={() => toggleSourceMenu("presentation")}>Представление</button>
+          <Show when={openSourceMenu() === "presentation"}>
+            <div class="source-toolbar-menu-panel source-presentation-panel">
+              <label class="source-presentation-slider">Размер
+                <input type="range" min="-1" max="1" step="0.05"
+                  value={Math.log10(scale())}
+                  onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} />
+              </label>
+              <label><input type="checkbox" checked={effectiveColorMap()} disabled={hasScalars()}
+                onChange={event => !hasScalars() && setColorMap(event.currentTarget.checked)} /> Карта</label>
+              <label title={globalRanges().available ? "Общие пределы за весь расчёт из HDF5." : globalRanges().reason}>
+                <input type="checkbox" checked={effectiveGlobalMinMax()}
+                  disabled={props.movieBusy || !globalRanges().available}
+                  onChange={event => !props.movieBusy && globalRanges().available
+                    && setGlobalMinMax(event.currentTarget.checked)} /> Общий минимакс
+              </label>
+              <label class="source-presentation-slider">Толщина
+                <input type="range" min="1" max="10" step="1"
+                  value={streamlineWidth()}
+                  onInput={event => setStreamlineWidth(event.currentTarget.valueAsNumber)} />
+                <span>{streamlineWidth()} px</span>
+              </label>
+            </div>
+          </Show>
         </div>
-      </Show>
+
+        <div class="source-toolbar-menu">
+          <button type="button" class="source-toolbar-menu-button"
+            aria-expanded={openSourceMenu() === "lines"}
+            onClick={() => toggleSourceMenu("lines")}>Линия</button>
+          <Show when={openSourceMenu() === "lines"}>
+            <div class="source-toolbar-menu-panel source-lines-panel">
+              <Show when={streamlineSeeds().length} fallback={<div class="source-toolbar-empty">Нет линий</div>}>
+                <For each={streamlineSeeds()}>{seed =>
+                  <div class="source-line-row" classList={{ selected: selectedStreamline() === seed.id }}>
+                    <button type="button" class="source-line-select"
+                      onClick={() => setSelectedStreamline(seed.id)}>
+                      №{seed.id} · {QUANTITIES[seed.quantityKey]?.label} · Элемент №{seed.source.recordIndex + 1}
+                    </button>
+                    <button type="button" class="source-line-delete"
+                      aria-label={`Удалить линию №${seed.id}`}
+                      title="Удалить линию"
+                      onClick={() => deleteStreamline(seed.id)}>×</button>
+                  </div>}
+                </For>
+              </Show>
+            </div>
+          </Show>
+        </div>
+
+        <div class="source-toolbar-menu">
+          <button type="button" class="source-toolbar-menu-button"
+            aria-expanded={openSourceMenu() === "method"}
+            onClick={() => toggleSourceMenu("method")}>Метод</button>
+          <Show when={openSourceMenu() === "method"}>
+            <div class="source-toolbar-menu-panel">
+              <For each={Object.entries(STREAMLINE_METHODS)}>{([key, label]) =>
+                <label class="source-toolbar-option">
+                  <input type="radio" name="source-streamline-method"
+                    checked={streamlineMethod() === key} disabled={props.movieBusy}
+                    onChange={() => !props.movieBusy && setStreamlineMethod(key)} />
+                  <span>{label}</span>
+                </label>}
+              </For>
+            </div>
+          </Show>
+        </div>
+      </div>
       <div class="embedded-geometry">
         <ResultsGeometryViewport open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           cameraRequest={cameraRequest()}
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={timeIndex()}
           selections={selections()} resultLayers={resultLayers()}
           resultStreamlines={streamlines()} selectedStreamline={selectedStreamline()}
-          streamlineWidth={streamlineWidth()} streamlineColorMap={streamlineColorMap()}
+          streamlineWidth={streamlineWidth()} streamlineColorMap={true}
           onSelectStreamline={setSelectedStreamline} onResultNodeDoubleClick={addStreamline}
           captureFrameKey={displayed()} onCaptureReady={movie.onCaptureReady}
           resultVectorScale={scale()} resultPickingOnly={true}
-          resultVectorColorMap={effectiveColorMap()} resultPalette={palette()} />
+          resultVectorColorMap={effectiveColorMap()} />
       </div>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
     </section>

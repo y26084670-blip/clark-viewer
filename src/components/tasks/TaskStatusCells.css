@@ -1,0 +1,36 @@
+.task-status-row {
+    --task-status-columns: 42px 30px 18px;
+    align-items: center;
+    column-gap: 4px;
+}
+
+.task-status-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 22px;
+    gap: 2px;
+}
+
+.task-status-state { justify-content: flex-start; }
+.task-status-solution, .task-status-missing { display: inline-flex; flex: 0 0 20px; }
+.task-status-solution { color: #62df87; }
+.task-status-missing { color: #ff7178; }
+.task-status-cell svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 3.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.task-status-gif {
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    padding: 1px 2px;
+    color: #f4cf72;
+    font: 700 10px/1.2 Arial, sans-serif;
+}
+.task-status-comparison { color: #86d6ff; font: 800 16px/1 Arial, sans-serif; }
+.task-status-name { min-width: 0; }

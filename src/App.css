@@ -20,7 +20,7 @@ input[type=range] { accent-color: #2077b5; cursor: pointer; }
 .tabs-header .viewer-tools-trigger::after { content: " ▾"; }
 .tabs-header .viewer-tools-trigger[aria-expanded="true"] { background: #d4e2ed; }
 .tabs-body, .task-tab { display: flex; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
-.tasks-layout { display: grid; grid-template-columns: minmax(260px, .9fr) minmax(300px, 1fr) minmax(300px, 1fr); width: 100%; height: 100%; min-height: 0; gap: 10px; overflow: auto; background: #141a20; }
+.tasks-layout { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(300px, 1fr) minmax(260px, .9fr); width: 100%; height: 100%; min-height: 0; gap: 10px; overflow: auto; background: #141a20; }
 .task-browser-panel, .task-summary-panel, .task-results-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; border: 3px solid #596773; background: #202932; color: #eef3f7; color-scheme: dark; }
 .task-browser-panel { border-width: 3px; }
 .task-browser-content { padding: 17px; display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: auto; flex: 1; }

@@ -167,6 +167,11 @@ export function SourcesFields3D(props) {
           return <div class="source-toolbar-menu">
             <button type="button" class="source-toolbar-menu-button"
               aria-expanded={openSourceMenu() === key} aria-label={label}
+              title={{
+                elements: "Выбрать величину для объемных элементов",
+                regions: "Выбрать величину для областей интересов",
+                virtual: "Выбрать величину для виртуальных элементов",
+              }[key]}
               onClick={() => toggleSourceMenu(key)}>{label}</button>
             <Show when={openSourceMenu() === key}>
               <div class="source-toolbar-menu-panel">
@@ -186,6 +191,7 @@ export function SourcesFields3D(props) {
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
             aria-expanded={openSourceMenu() === "presentation"} aria-label="Представление"
+            title="Настроить размер, карту, минимакс и толщину линий"
             onClick={() => toggleSourceMenu("presentation")}>Представление</button>
           <Show when={openSourceMenu() === "presentation"}>
             <div class="source-toolbar-menu-panel source-presentation-panel">
@@ -215,6 +221,7 @@ export function SourcesFields3D(props) {
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
             aria-expanded={openSourceMenu() === "lines"} aria-label="Векторные линии"
+            title="Выбрать или удалить построенные векторные линии"
             onClick={() => toggleSourceMenu("lines")}>Векторные линии</button>
           <Show when={openSourceMenu() === "lines"}>
             <div class="source-toolbar-menu-panel source-lines-panel">
@@ -240,6 +247,7 @@ export function SourcesFields3D(props) {
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
             aria-expanded={openSourceMenu() === "method"} aria-label="Метод построения"
+            title="Выбрать метод построения векторных линий"
             onClick={() => toggleSourceMenu("method")}>Метод построения</button>
           <Show when={openSourceMenu() === "method"}>
             <div class="source-toolbar-menu-panel">

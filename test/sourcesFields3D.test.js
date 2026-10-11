@@ -251,6 +251,18 @@ test("all six compact toolbar buttons share the maximum label width",()=>{
   assert.match(css,/\.source-toolbar-menu-button\s*\{[\s\S]*width:\s*100%;/);
 });
 
+test("compact 3D toolbar buttons expose concise explanatory tooltips",()=>{
+  const source=readFileSync(new URL("../src/tabs/SourcesFields3D.jsx",import.meta.url),"utf8");
+  for(const text of [
+    "Выбрать величину для объемных элементов",
+    "Выбрать величину для областей интересов",
+    "Выбрать величину для виртуальных элементов",
+    "Настроить размер, карту, минимакс и толщину линий",
+    "Выбрать или удалить построенные векторные линии",
+    "Выбрать метод построения векторных линий",
+  ]) assert.ok(source.includes(text),text);
+});
+
 test("selected streamline does not add a status row that changes 3D height",()=>{
   const source=readFileSync(new URL("../src/tabs/SourcesFields3D.jsx",import.meta.url),"utf8");
   assert.doesNotMatch(source,/source-streamline-status|selectedLineStatus/);

@@ -237,3 +237,48 @@ test("streamline performance profile reports preparation, HDF5, worker and geome
   for(const key of ["prepareMs","hdf5Ms","workerMs","totalMs"]) assert.ok(Number.isFinite(profile[key])&&profile[key]>=0,key);
   assert.ok(profile.totalMs>=profile.workerMs);
 });
+
+test("double-clicking a reconstructed image reads and integrates only its saved node, then copies the complete curve", async () => {
+  for (const quantityKey of ["M", "J"]) {
+    const f = fixture({ quantityKey, copies: 1 });
+    Object.assign(f.record, { symAs: 2, symYa: 90, symKya: -1, symPs: 3, symTx: 10, symKyp: -1 });
+    Object.assign(f.task.general, { mirrorSymmetryX: 0, mirrorSymmetryY: -1 });
+    const seed = { ...f.seed, instance: { ls: 0, as: 1, ps: 2, mirrorX: 1, mirrorY: 0 } };
+    let runs = 0, received;
+    const lines = await readResultStreamlines({ task: f.task, time: 0, streamlineSeeds: [seed] }, {
+      process: async input => { runs++; received = input; return calculateStreamlines(input); },
+    });
+    const result = lines[0];
+    assert.equal(result.error, undefined); assert.equal(runs, 1); assert.equal(f.reads.length, 1);
+    assert.deepEqual(received.seeds[0].instance, { ls: 0, as: 0, ps: 0 });
+    assert.equal(received.seeds[0].node, seed.node); assert.equal(f.reads[0].every, 1);
+    assert.equal(result.starts.length, 12);
+    const clicked = result.starts.find(image => image.instance.as === 1 && image.instance.ps === 2 && image.instance.mirrorX === 1);
+    for (const [i, expected] of [-20.5, -.5, .5].entries()) assert.ok(Math.abs(clicked.start[i] - expected) < 1e-8);
+    const copies = result.paths.filter(path => path.instance.as === 1 && path.instance.ps === 2 && path.instance.mirrorX === 1);
+    assert.ok(copies.length); assert.ok(copies.every(path => path.fieldSign === (quantityKey === "M" ? -1 : 1)));
+    assert.equal(f.frames[0].values.byteLength, 24 * 9 * 8);
+  }
+});
+
+test("symmetric curves stay cached across seed changes and reanchor their images at a new time", async () => {
+  const f = fixture({ copies: 1 });
+  Object.assign(f.record, { symPs: 2, symKyp: -1, indMove: 1 });
+  f.task.moves = [{ position: [[0,0,0,0],[1,5,0,0]], angle: [[0,0,0,0],[1,0,0,0]] }];
+  for (let i=0; i<f.frames[1].count; i++) f.frames[1].values[i*9] += 5;
+  let runs = 0;
+  const reader = createResultLayerReader({ streamlineProcessorFactory: () => ({
+    process: async input => { runs++; return calculateStreamlines(input); }, close() {},
+  }) });
+  const request = { task: f.task, time: 0, layers: [], streamlineSeeds: [f.seed] };
+  try {
+    const original = (await reader.read(request)).streamlines[0];
+    assert.equal(original.starts.length, 2);
+    const added = await reader.read({ ...request, streamlineSeeds: [f.seed, { ...f.seed, id: 2, node: 6 }] });
+    assert.equal(runs, 2); assert.equal(added.streamlines[0], original);
+    const changed = (await reader.read({ ...request, time: 1 })).streamlines[0];
+    assert.equal(runs, 3);
+    for (let i=0; i<2; i++) assert.ok(Math.abs(changed.starts[i].start[0] - original.starts[i].start[0] - 5) < 1e-8);
+    assert.ok(changed.paths.some(path => path.instance.ps === 1 && path.fieldSign === -1));
+  } finally { reader.close(); }
+});

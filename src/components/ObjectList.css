@@ -1,0 +1,39 @@
+.object-list-name-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 6px;
+}
+
+.object-list-presets {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.object-list-preset {
+  box-sizing: border-box;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 3px;
+  border: 1px solid #7e8b98;
+  border-radius: 2px;
+  background: #e8edf1;
+  color: #243443;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.object-list-preset:hover {
+  background: #c9e2f5;
+}
+
+.object-list-preset:focus-visible {
+  outline: 2px solid #2184d1;
+  outline-offset: 1px;
+}

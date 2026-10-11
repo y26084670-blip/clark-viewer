@@ -275,3 +275,26 @@ test("quadratic and tricubic comparisons retain each method, seeds and fixed tol
     } finally {ui.close();}
   }
 });
+
+test("all symmetric seed diamonds share line selection, obey image filters and release their shared texture", () => {
+  const root = new THREE.Group(), original = seededLine(1);
+  const copyInstance = { ls: 0, as: 0, ps: 1, mirrorX: 1, mirrorY: 0 };
+  const expanded = { ...original, starts: [
+    { start: original.start, source: original.source, instance: original.instance },
+    { start: [10, 0, 0], source: original.source, instance: copyInstance },
+  ], paths: [...original.paths, { ...original.paths[0], instance: copyInstance,
+    positions: new Float64Array([10,0,0,11,0,0,12,1,0]), direction: -1, fieldSign: -1 }] };
+  updateStreamlineMeshes(THREE, root, [expanded], { selected: 1 });
+  const markers = startMarkers(root), texture = root.userData.startMarkerTexture;
+  assert.equal(markers.length, 2);
+  assert.ok(markers.every(marker => marker.userData.streamlineId === 1 && marker.material.color.getHex() === 0xffdd38));
+  assert.equal(markers[0].material.map, markers[1].material.map);
+  updateStreamlineMeshes(THREE, root, [expanded], { filters: { symmetry: { periodic: false } } });
+  assert.equal(markers[0].visible, true); assert.equal(markers[1].visible, false);
+  assert.equal(root.children.find(object => object.userData.streamlinePart === "1:1").visible, false);
+  updateStreamlineMeshes(THREE, root, [expanded], { filters: { symmetry: { mirror: false } } });
+  assert.equal(markers[1].visible, false);
+  let disposed = 0; texture.addEventListener("dispose", () => disposed++);
+  updateStreamlineMeshes(THREE, root, []);
+  assert.equal(root.children.length, 0); assert.equal(disposed, 1);
+});

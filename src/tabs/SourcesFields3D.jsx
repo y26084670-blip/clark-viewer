@@ -2,6 +2,7 @@ import { createGeometryViewSetting } from "../services/visualization/geometryVie
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { installSourcesFieldsKeyboard } from "../services/sourcesFieldsKeyboard.js";
 import { ObjectList } from "../components/ObjectList.jsx";
+import { ELEMENT_SELECTION_PRESETS, selectElementPreset } from "../services/elementSelectionPresets.js";
 import { ResultsGeometryViewport } from "../components/geometry/ResultsGeometryViewport.jsx";
 import { GeometryMaterialLegend } from "../components/geometry/GeometryMaterialLegend.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
@@ -154,7 +155,9 @@ export function SourcesFields3D(props) {
 
   return <div class="results-layout">
     <aside class="split-list-column">
-      <ObjectList title="Элементы" records={props.task?.elements} selected={props.elements} onSelect={props.setElements} />
+      <ObjectList title="Элементы" records={props.task?.elements} selected={props.elements} onSelect={props.setElements}
+        selectionPresets={ELEMENT_SELECTION_PRESETS}
+        presetSelection={key => selectElementPreset(props.task?.elements, props.task?.general, key)} />
       <ObjectList title="Области" records={props.task?.regions} selected={props.regions} onSelect={props.setRegions} />
     </aside>
     <section class="plot-panel">
@@ -231,6 +234,7 @@ export function SourcesFields3D(props) {
                 <For each={streamlineSeeds()}>{seed =>
                   <div class="source-line-row" classList={{ selected: selectedStreamline() === seed.id }}>
                     <button type="button" class="source-line-select"
+                      title={streamlines().find(line => line.id === seed.id)?.notice || "Выбрать линию и её симметричные образы"}
                       onClick={() => setSelectedStreamline(seed.id)}>
                       №{seed.id} · {QUANTITIES[seed.quantityKey]?.label} · Элемент №{seed.source.recordIndex + 1}
                     </button>

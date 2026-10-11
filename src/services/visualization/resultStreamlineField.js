@@ -312,7 +312,7 @@ export function calculateStreamlines({domains:inputs,seeds,tolerance=STREAMLINE_
     const forward=traceDirection(domains,domain,start,1,tolerance,maxSteps);
     const backward=forward.reason==="closed"?null:traceDirection(domains,domain,start,-1,tolerance,maxSteps);
     const paths=[];
-    for(const branch of [backward,forward].filter(Boolean)) for(let i=0;i<branch.pieces.length;i++) {
+    for(const [branch,direction] of [[backward,-1],[forward,1]].filter(([branch])=>branch)) for(let i=0;i<branch.pieces.length;i++) {
       const piece=branch.pieces[i],end=branch.pieces[i+1]?.start??branch.points.length-1;
       const points=branch.points.slice(piece.start,end+1);
       if(points.length>1) {
@@ -320,7 +320,7 @@ export function calculateStreamlines({domains:inputs,seeds,tolerance=STREAMLINE_
         // integration direction. Shared seam endpoints use each side's field.
         const owner=domains.find(item=>item.key===piece.key);
         const magnitudes=Float64Array.from(points,point=>sampleStreamlineVector(owner,point)?.magnitude??NaN);
-        paths.push({...piece,positions:Float64Array.from(points.flat()),magnitudes});
+        paths.push({...piece,direction,positions:Float64Array.from(points.flat()),magnitudes});
       }
     }
     return {...base,paths,start,length:forward.length+(backward?.length??0),closed:forward.reason==="closed",

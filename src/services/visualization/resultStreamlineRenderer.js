@@ -190,9 +190,9 @@ export function updateStreamlineMeshes(THREE,root,lines=[],{
     }
   }
   let hasMarkers=false;
-  for(const line of lines) {
-    if(line.error || line.start?.length!==3 || !line.start.every(Number.isFinite))continue;
-    const key=`start:${line.id}`;
+  for(const line of lines)for(const [index,image] of (line.starts ?? [line]).entries()) {
+    if(line.error || image.start?.length!==3 || !image.start.every(Number.isFinite))continue;
+    const key=index===0?`start:${line.id}`:`start:${line.id}:${index}`;
     let marker=old.get(key);old.delete(key);
     if(!marker) {
       root.userData.startMarkerTexture ??= startMarkerTexture(THREE);
@@ -200,10 +200,11 @@ export function updateStreamlineMeshes(THREE,root,lines=[],{
       marker.userData.streamlinePart=key;root.add(marker);
     }
     hasMarkers=true;
-    marker.position.fromArray(line.start);
+    marker.position.fromArray(image.start);
     marker.userData.streamlineId=line.id;
+    marker.userData.streamlineInstance=image.instance;
     marker.material.color.setHex(selected===line.id?0xffdd38:0xffffff);
-    marker.visible=pathVisible(line,filters);
+    marker.visible=pathVisible(image,filters);
   }
   for(const object of old.values()) {
     root.remove(object);object.geometry.dispose();object.material.dispose();

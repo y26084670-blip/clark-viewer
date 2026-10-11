@@ -1,5 +1,6 @@
 import { QUANTITIES, elementLayout } from "./resultMappings.js";
 import { resultObjects } from "./resultRequests.js";
+import { savedStreamlineSeed, expandResultStreamline } from "./resultStreamlineSymmetry.js";
 import { toStorage } from "../model/arrayShape.js";
 import { unpackKvVertices } from "../solver/geometryKv.js";
 import { expandElementSymmetry } from "../solver/symmetryExpansion.js";
@@ -16,10 +17,10 @@ export function streamlineVertexOrder(record, full) {
   return ({1:[4,0,6,2,5,1,7,3],2:[0,4,1,5,2,6,3,7],3:[2,0,3,1,6,4,7,5]})[record.indAmp] ?? [0,1,2,3,4,5,6,7];
 }
 
-function descriptors(task, quantityKey, time) {
+function descriptors(task, quantityKey, projected) {
   const q=QUANTITIES[quantityKey];
   if(!q||q.components!==3||q.group!=="elements")throw new Error("Линия доступна для векторного поля в объёмном элементе");
-  const full=q.file==="HV"||q.file==="AV", projected=buildGeometryTimeModel(task,task.moves,time);
+  const full=q.file==="HV"||q.file==="AV";
   const result=[];
   for(const object of resultObjects(task,quantityKey)) {
     const record=projected.model.elements[object.record.recordIndex], layout=elementLayout(record,full);
@@ -78,7 +79,10 @@ export async function readResultStreamlines(request,processor) {
     const timing = request.onPerformance ? { totalStart: performance.now(), prepareMs: 0, hdf5Ms: 0, workerMs: 0 } : null;
     try {
       const prepareStart = timing ? performance.now() : 0;
-      const selected=connectedCandidates(descriptors(request.task,quantityKey,request.time),group);
+      const projected=buildGeometryTimeModel(request.task,request.task.moves,request.time);
+      const saved=group.map(seed=>savedStreamlineSeed(request.task,seed))
+        .map(seed=>({...seed,domainKey:streamlineDomainKey(seed.source,seed.instance)}));
+      const selected=connectedCandidates(descriptors(request.task,quantityKey,projected),saved);
       if (timing) timing.prepareMs = performance.now() - prepareStart;
       const nodeCount=selected.reduce((n,d)=>n+d.nodeCount,0);
       if(nodeCount>STREAMLINE_LIMITS.nodes)throw new Error("Для линий поля связная группа превышает 200 000 узлов");
@@ -98,16 +102,17 @@ export async function readResultStreamlines(request,processor) {
         domains.push({...d,positions,vectors,coordinateBytes:frame.values.BYTES_PER_ELEMENT});
       }
       const workerStart = timing ? performance.now() : 0;
-      const calculated = await processor.process({domains,seeds:group,tolerance:request.streamlineTolerance,method:request.streamlineMethod??"trilinear"});
+      const calculated = await processor.process({domains,seeds:saved,tolerance:request.streamlineTolerance,method:request.streamlineMethod??"trilinear"});
+      if (timing) timing.workerMs = performance.now() - workerStart;
+      const expanded = calculated.map(line => expandResultStreamline(projected.model, line));
       if (timing) {
-        timing.workerMs = performance.now() - workerStart;
         request.onPerformance({ kind: "line", quantityKey, lines: group.length,
           domains: selected.length, nodes: nodeCount,
-          points: calculated.reduce((sum,line)=>sum+(line.paths??[]).reduce((n,path)=>n+path.positions.length/3,0),0),
+          points: expanded.reduce((sum,line)=>sum+(line.paths??[]).reduce((n,path)=>n+path.positions.length/3,0),0),
           prepareMs: timing.prepareMs, hdf5Ms: timing.hdf5Ms, workerMs: timing.workerMs,
           totalMs: performance.now() - timing.totalStart });
       }
-      output.push(...calculated);
+      output.push(...expanded);
     } catch(error) {
       if(error.name==="AbortError")throw error;
       output.push(...group.map(seed=>({...seed,paths:[],error:error.message??String(error)})));

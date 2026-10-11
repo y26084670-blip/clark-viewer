@@ -1,6 +1,7 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { TabulatorFull } from "tabulator-tables";
 import { isListShortcutTarget, selectAllListItems } from "../services/listKeyboard.js";
+import "./ObjectList.css";
 
 export function ObjectList(props) {
   let host, table, applying = false, revision = 0;
@@ -14,6 +15,35 @@ export function ObjectList(props) {
     applying = true;
     try { table.deselectRow(); table.selectRow(wanted); }
     finally { applying = false; }
+  }
+  function nameHeading() {
+    if (!props.selectionPresets?.length) return "Название";
+    const heading = document.createElement("div");
+    heading.className = "object-list-name-heading";
+    const label = document.createElement("span");
+    label.textContent = "Название"; heading.append(label);
+    const controls = document.createElement("div");
+    controls.className = "object-list-presets";
+    // Keep Tabulator's sort action and list focus handler off header controls.
+    controls.addEventListener("pointerdown", event => event.stopPropagation());
+    controls.addEventListener("mousedown", event => event.stopPropagation());
+    controls.addEventListener("keydown", event => event.stopPropagation());
+    for (const preset of props.selectionPresets) {
+      const button = document.createElement("button");
+      button.type = "button"; button.className = "object-list-preset";
+      button.textContent = preset.label; button.title = preset.title;
+      button.setAttribute("aria-label", preset.title);
+      button.addEventListener("click", event => {
+        event.stopPropagation();
+        const selected = props.presetSelection?.(preset.key) ?? [];
+        if (built() && !applying) synchronizeSelection(selected);
+        // Retain the desired selection even while replaceData is pending.
+        props.onSelect?.(selected);
+      });
+      controls.append(button);
+    }
+    heading.append(controls);
+    return heading;
   }
   function handleKeyDown(event) {
     if (!built()) return;
@@ -56,7 +86,7 @@ export function ObjectList(props) {
       selectableRows: props.multiple === false ? 1 : true,
       selectableRowsRangeMode: "click", placeholder: "Нет объектов",
       columns: [{ title: "№", field: "id", width: 52, hozAlign: "right" },
-        { title: "Название", field: "name", minWidth: 130, formatter: "plaintext" }],
+        { title: "Название", titleFormatter: nameHeading, field: "name", minWidth: props.selectionPresets?.length ? 150 : 130, formatter: "plaintext" }],
     });
     table.on("tableBuilt", () => setBuilt(true));
     table.on("rowSelectionChanged", rows => {

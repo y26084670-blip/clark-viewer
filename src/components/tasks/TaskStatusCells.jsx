@@ -2,9 +2,9 @@ import { Show } from "solid-js";
 import "./TaskStatusCells.css";
 
 const labels = {
-  hasSolution: "Есть решение: output3XX/_summary_out.txt",
+  hasSolution: "Решение получено",
   missingInput: "Нет исходных данных: отсутствует каталог input3XX",
-  hasGifs: "Есть каталог GIF-картинок: output3XX/demo",
+  hasGifs: "Созданы GIF анимации",
   hasComparison: "Есть каталог протокола сравнения: comparison",
 };
 const failure = (status, keys) => keys.filter(key => status?.errors?.[key])

@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - work/viewer-flight-20261012
   workflow_dispatch:
 
 permissions:
@@ -18,7 +17,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/work/viewer-flight-20261012'
+    if: github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

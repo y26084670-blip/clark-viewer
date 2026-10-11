@@ -22,9 +22,12 @@ const streamlineSessions = new WeakMap();
 
 export function SourcesFields3D(props) {
   const [cameraRequest,setCameraRequest]=createSignal(null);
+  const [flightState, setFlightState] = createSignal("idle");
+  const flightBusy = () => flightState() !== "idle";
+  const changeTime = index => { if (!flightBusy()) props.setTime(index); };
   onMount(()=>{
-    const remove=installSourcesFieldsKeyboard(window,{blocked:()=>props.movieBusy,
-      time:()=>props.time,maxTime:()=>props.task?.general.countTimeSteps??0,setTime:props.setTime,
+    const remove=installSourcesFieldsKeyboard(window,{blocked:()=>props.movieBusy,flightBusy,
+      time:()=>props.time,maxTime:()=>props.task?.general.countTimeSteps??0,setTime:changeTime,
       view:command=>setCameraRequest(previous=>({command,sequence:(previous?.sequence??0)+1}))});
     const closeMenus = event => {
       if (!event.target?.closest?.(".source-toolbar-menu")) setOpenSourceMenu(null);
@@ -138,6 +141,9 @@ export function SourcesFields3D(props) {
   });
   const resultLayers = createMemo(() => hasRequestedResults() ? (value()?.layers ?? []).map(layerMetadata) : []);
   const timeIndex = () => hasRequestedResults() || streamlineSeeds().length ? displayed()?.request.time ?? props.time : props.time;
+  const flightDisabledReason = () => props.movieBusy ? "Дождитесь завершения создания GIF."
+    : result().loading || result().error || timeIndex() !== props.time
+      ? "Дождитесь готовности выбранного кадра." : "";
   const selections = createMemo(() => ({
     elements: props.elements.map(id => id - 1), regions: props.regions.map(id => id - 1),
   }));
@@ -274,6 +280,8 @@ export function SourcesFields3D(props) {
       </div>
       <div class="embedded-geometry">
         <ResultsGeometryViewport open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
+          allowFlight={true} flightBlocked={props.movieBusy} flightDisabledReason={flightDisabledReason()}
+          onFlightStateChange={setFlightState}
           cameraRequest={cameraRequest()}
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={timeIndex()}
           selections={selections()} resultLayers={resultLayers()}
@@ -285,7 +293,8 @@ export function SourcesFields3D(props) {
           resultVectorColorMap={effectiveColorMap()}
           performanceProfile={performanceProfile()} />
       </div>
-      <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
+      <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep}
+        disabled={flightBusy()} onChange={changeTime} />
     </section>
   </div>;
 }

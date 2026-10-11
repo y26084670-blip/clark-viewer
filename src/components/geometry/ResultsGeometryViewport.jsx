@@ -105,6 +105,15 @@ export function ResultsGeometryViewport(props) {
   const [sceneError, setSceneError] = createSignal("");
   const [viewportError, setViewportError] = createSignal("");
   const [viewRequest, setViewRequest] = createSignal(null);
+  const [flightState, setFlightState] = createSignal("idle");
+  const [flightReady, setFlightReady] = createSignal(false);
+  const [flightNotice, setFlightNotice] = createSignal("");
+  let flightControl;
+  const onFlightStateChange = state => {
+    setFlightState(state);
+    if (state === "active") setOrthographicView(false);
+    props.onFlightStateChange?.(state);
+  };
   const [geometryTransparency, setGeometryTransparency] = createGeometryViewSetting("geometryTransparency", 58);
   const [orthographicView, setOrthographicView] = createGeometryViewSetting("orthographicView", true);
   const [showEdges, setShowEdges] = createGeometryViewSetting("showEdges", true);
@@ -264,6 +273,7 @@ export function ResultsGeometryViewport(props) {
   };
 
   const handleViewerKeyDown = (event) => {
+    if (flightState() !== "idle") return;
     if (event.defaultPrevented || event.isComposing) return;
     if (event.code === "Escape") {
       event.preventDefault();
@@ -283,6 +293,7 @@ export function ResultsGeometryViewport(props) {
   });
 
   onCleanup(() => {
+    flightControl?.stop();
     viewerResizeObserver?.disconnect();
     cancelTimeSelection();
   });
@@ -419,6 +430,7 @@ export function ResultsGeometryViewport(props) {
             id={OPTIONS_PANEL_ID}
             class="geometry-viewer-options-panel"
             classList={{ "is-view-panel": openPanel() === "view" }}
+            data-flight-option={props.allowFlight === true ? "true" : undefined}
             role="dialog"
             aria-modal="false"
             aria-label={openPanel() === "view"
@@ -435,6 +447,16 @@ export function ResultsGeometryViewport(props) {
             }}
           >
             <Show when={openPanel() === "view"}>
+              <Show when={props.allowFlight === true}>
+                <button type="button" class="geometry-viewer-view-command"
+                  disabled={!flightReady() || Boolean(props.flightDisabledReason) || props.flightBlocked}
+                  title={props.flightDisabledReason || "Стрелки — перемещение; мышь — направление; PageUp/PageDown — вверх/вниз; Q/E — крен; правый Shift — ускорение; Esc — выход"}
+                  onClick={() => {
+                    setFlightNotice("");
+                    closePanel();
+                    flightControl?.start();
+                  }}>Полёт</button>
+              </Show>
               <button
                 type="button"
                 class="geometry-viewer-view-command"
@@ -703,6 +725,15 @@ export function ResultsGeometryViewport(props) {
         </Show>
 
         <div class="geometry-viewer-canvas-region">
+          <Show when={flightState() !== "idle"}>
+            <div class="geometry-flight-hint" role="status">
+              {flightState() === "starting" ? "Включение полёта…" : "Полёт · время фиксировано"}
+              <span>↑/↓ вперёд/назад · ←/→ влево/вправо · PageUp/PageDown вверх/вниз · Q/E крен · правый Shift ускорение · Esc выход</span>
+            </div>
+          </Show>
+          <Show when={flightNotice()}>
+            <div class="geometry-flight-hint" role="status">{flightNotice()}</div>
+          </Show>
           <Show when={performanceEnabled()}>
             <div class="geometry-performance-overlay" aria-live="polite">
               <Show when={props.performanceProfile?.mode === "line"} fallback={<>
@@ -723,6 +754,12 @@ export function ResultsGeometryViewport(props) {
             </div>
           </Show>
           <ThreeGeometryViewport
+            allowFlight={props.allowFlight}
+            flightBlocked={props.flightBlocked}
+            flightDisabledReason={props.flightDisabledReason}
+            onFlightReady={control => { flightControl = control; setFlightReady(Boolean(control)); }}
+            onFlightStateChange={onFlightStateChange}
+            onFlightError={setFlightNotice}
             scene={displayScene()}
             captureFrameKey={props.captureFrameKey}
             onCaptureReady={props.onCaptureReady}

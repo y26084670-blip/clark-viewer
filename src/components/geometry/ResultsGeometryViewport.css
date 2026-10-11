@@ -477,6 +477,38 @@
   overflow: hidden;
 }
 
+.geometry-viewer-options-panel.is-view-panel[data-flight-option="true"] {
+  height: 364px;
+  max-height: 364px;
+}
+
+.geometry-viewer-view-command:disabled {
+  color: #8e9aa5;
+  cursor: default;
+}
+
+.geometry-flight-hint {
+  position: absolute;
+  z-index: 4;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  padding: 7px 10px;
+  border: 1px solid #628bb1;
+  border-radius: 4px;
+  background: rgba(20, 26, 32, .92);
+  color: #e6f3ff;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.geometry-flight-hint span {
+  display: block;
+  margin-top: 3px;
+  color: #bdcbd8;
+  font-size: 11px;
+}
+
 .geometry-viewer-palette-select {
   width: 100%;
   min-height: 30px;

@@ -4,11 +4,16 @@ import { useAsyncResult } from "../services/results/resultRequests.js";
 import { buildGeometryScene } from "../services/visualization/geometrySceneModel.js";
 import { ThreeGeometryViewport } from "../components/geometry/ThreeGeometryViewport.jsx";
 import { TaskGifGallery } from "../components/tasks/TaskGifGallery.jsx";
+import { TaskStatusCells } from "../components/tasks/TaskStatusCells.jsx";
+import { useTaskStatuses } from "../services/taskStatusMonitor.js";
 import "../components/geometry/ResultsGeometryViewport.css";
 
 export function Tasks(props) {
   const [root, setRoot] = createSignal(null), [projects, setProjects] = createSignal([]);
   const [project, setProject] = createSignal(""), [tasks, setTasks] = createSignal([]);
+  const taskStatus = useTaskStatuses(
+    () => tasks().map(item => ({ key: item.handle, handle: item.handle })),
+  );
   const [candidate, setCandidate] = createSignal(null), [error, setError] = createSignal("");
   const [galleryBusy, setGalleryBusy] = createSignal(false);
   let revision = 0;
@@ -61,7 +66,12 @@ export function Tasks(props) {
         <select class="project-select" value={project()} disabled={galleryBusy()} onChange={event => pickProject(event.currentTarget.value)} aria-label="Список проектов">
           <option value="">Выберите проект</option><For each={projects()}>{item => <option value={item.name}>{item.name}</option>}</For>
         </select>
-        <div class="field-label">Список заданий</div>
+        <div class="task-list-heading">
+          <div class="field-label">Список заданий</div>
+          <button type="button" class="task-status-refresh" disabled={!tasks().length || taskStatus.busy() || galleryBusy()}
+            aria-label="Обновить признаки состояния заданий" aria-busy={taskStatus.busy()}
+            title="Обновить признаки состояния заданий" onClick={() => { void taskStatus.refresh(); }}>↻</button>
+        </div>
         <div class="task-list" role="listbox" aria-label="Список заданий" onClick={event => {
           if (galleryBusy()) return;
           const list = event.currentTarget;
@@ -72,9 +82,11 @@ export function Tasks(props) {
           if (x >= 0 && y >= 0 && x < list.clientWidth && y < list.clientHeight) setCandidate(null);
         }}>
           <For each={tasks()}>{item => <button role="option" aria-selected={candidate()?.handle === item.handle} disabled={galleryBusy()}
-            classList={{ selected: candidate()?.handle === item.handle }} onClick={() => { if (!galleryBusy()) setCandidate({ ...item }); }}
+            class="task-status-row" classList={{ selected: candidate()?.handle === item.handle }} onClick={() => { if (!galleryBusy()) setCandidate({ ...item }); }}
             onDblClick={() => { if (candidate()?.handle === item.handle) void load(); }}
-            title="Двойной щелчок — загрузить задание для просмотра">{item.name}</button>}</For>
+            title="Двойной щелчок — загрузить задание для просмотра">
+            <TaskStatusCells status={taskStatus(item.handle)} /><span class="task-status-name">{item.name}</span>
+          </button>}</For>
         </div>
         <button class="load-button" disabled={!candidate() || props.busy || galleryBusy()} onClick={load}>{props.busy ? "Загрузка…" : "Загрузить для просмотра"}</button>
         <Show when={props.loadedHandle === candidate()?.handle && props.loadedHandle}><div class="loaded-note">✓ Задание загружено</div></Show>

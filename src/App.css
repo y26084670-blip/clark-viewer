@@ -28,10 +28,17 @@ input[type=range] { accent-color: #2077b5; cursor: pointer; }
 .folder-button { font-weight: bold; color: #c62828; background: #f3e9c0; }
 .folder-button:hover { background: #f3e9c0; }
 .field-label { margin-top: 9px; font-weight: bold; }
+.task-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; }
+.task-list-heading .field-label { margin: 0; }
+.task-list-heading .task-status-refresh { flex: 0 0 28px; box-sizing: border-box; width: 28px; height: 28px; padding: 0; border: 1px solid #697c8b; border-radius: 3px; background: #141a20; color: #eef3f7; font-size: 23px; line-height: 26px; }
+.task-list-heading .task-status-refresh:hover:not(:disabled) { background: #334454; }
+.task-list-heading .task-status-refresh:disabled { opacity: .5; }
+.task-list-heading .task-status-refresh[aria-busy="true"] { cursor: progress; }
 .project-select { width: 100%; color: #eef3f7; background: #141a20; border-color: #697c8b; }
 .task-list { flex: 1; min-height: 100px; overflow: auto; background: #141a20; border: 1px solid #697c8b; }
 .task-list button { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid #37434f; border-radius: 0; font-size: 1rem; font-weight: 600; line-height: 1.4; padding: 9px 10px; color: #f5f7fa; background: #141a20; }
 .task-list button:hover { background: #334454; }
+.task-list button.task-status-row { display: grid; grid-template-columns: var(--task-status-columns) minmax(0, 1fr); }
 .task-list button.selected { color: #fff; background: #254b6b; box-shadow: inset 3px 0 #73beef; }
 .load-button { margin-top: 5px; background: #f3e9c0; color: #c62828; font-weight: bold; }
 .loaded-note { color: #92e0ac; font-size: .875rem; }

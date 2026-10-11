@@ -46,24 +46,28 @@ function header(props, initialApplying = false) {
   // Exercise the actual Tabulator title formatter without a browser/Tabulator
   // layout engine; only standard DOM construction and event propagation are needed.
   const source = readFileSync(new URL("../src/components/ObjectList.jsx", import.meta.url), "utf8");
-  const body = source.slice(source.indexOf("  function nameHeading()"), source.indexOf("  function handleKeyDown("));
+  const body = source.slice(source.indexOf("  function synchronizePresetButtons()"), source.indexOf("  function handleKeyDown("));
   const document = { createElement: tagName => ({
     tagName, children: [], events: {}, attributes: {},
     append(child) { this.children.push(child); },
     addEventListener(name, handler) { this.events[name] = handler; },
     setAttribute(name, value) { this.attributes[name] = value; },
+    classList: { values: new Set(), toggle(name, enabled) { if (enabled) this.values.add(name); else this.values.delete(name); } },
   }) };
   const synchronized = [];
   const make = new Function("props", "document", "synchronizeSelection", "initialApplying",
-    `let applying = initialApplying; const built = () => true; ${body} return nameHeading();`);
-  return { heading: make(props, document, ids => synchronized.push(ids), initialApplying), synchronized };
+    `let applying = initialApplying, active = null, presetButtons = new Map();
+    const built = () => true, activePreset = () => active, setActivePreset = value => { active = value; };
+    const batch = run => run(); ${body}
+    return { heading: nameHeading(), refresh: synchronizePresetButtons };`);
+  return { ...make(props, document, ids => synchronized.push(ids), initialApplying), synchronized };
 }
 
-test("header buttons preserve subscript labels, tooltips, sorting isolation and pending selection", () => {
+test("header buttons preserve subscript labels, tooltips, event isolation and pending selection", () => {
   const selected = [];
   const props = { records, selectionPresets: ELEMENT_SELECTION_PRESETS,
     presetSelection: key => selectElementPreset(props.records, {}, key),
-    onSelect: ids => selected.push(ids) };
+    onSelect: ids => { selected.push(ids); props.selected = ids; } };
   const { heading, synchronized } = header(props);
   assert.equal(heading.children[0].textContent, "Название");
   const controls = heading.children[1];
@@ -71,6 +75,7 @@ test("header buttons preserve subscript labels, tooltips, sorting isolation and 
   for (const button of controls.children) {
     assert.equal(button.type, "button"); assert.ok(button.title);
     assert.equal(button.attributes["aria-label"], button.title);
+    assert.equal(button.attributes["aria-pressed"], "false");
   }
   let stopped = 0;
   const event = { stopPropagation() { stopped++; } };
@@ -83,4 +88,49 @@ test("header buttons preserve subscript labels, tooltips, sorting isolation and 
   pending.heading.children[1].children[3].events.click(event);
   assert.deepEqual(pending.synchronized, []); assert.deepEqual(selected.at(-1), [4001]);
   assert.equal(header({}).heading, "Название");
+});
+
+test("presets toggle off, replace each other and clearly expose the chosen selection type", () => {
+  const selected = [];
+  const props = { records, selected: [], selectionPresets: ELEMENT_SELECTION_PRESETS,
+    presetSelection: key => selectElementPreset(props.records, {}, key),
+    onSelect: ids => { selected.push(ids); props.selected = ids; } };
+  const ui = header(props), buttons = ui.heading.children[1].children;
+  const click = index => buttons[index].events.click({ stopPropagation() {} });
+  const pressed = () => buttons.filter(button => button.attributes["aria-pressed"] === "true").map(button => button.textContent);
+  for (let index = 0; index < buttons.length; index++) {
+    click(index);
+    assert.deepEqual(pressed(), [buttons[index].textContent]);
+    assert.equal(buttons[index].classList.values.has("is-active"), true);
+    assert.match(buttons[index].title, /Повторное нажатие/);
+    click(index); assert.deepEqual(props.selected, []); assert.deepEqual(pressed(), []);
+    assert.equal(buttons[index].classList.values.has("is-active"), false);
+  }
+  click(0); click(2);
+  assert.deepEqual(props.selected, [2, 3, 8]); assert.deepEqual(pressed(), ["J"]);
+  props.selected = [2]; ui.refresh(); assert.deepEqual(pressed(), []);
+  click(4); props.records = []; props.selected = []; ui.refresh();
+  assert.deepEqual(pressed(), []); assert.ok(buttons.every(button => button.disabled));
+  const before = selected.length; click(4); assert.equal(selected.length, before);
+});
+
+test("toggle-off is retained while Tabulator data replacement is pending", () => {
+  const props = { records, selected: [], selectionPresets: ELEMENT_SELECTION_PRESETS,
+    presetSelection: key => selectElementPreset(records, {}, key), onSelect: ids => { props.selected = ids; } };
+  const ui = header(props, true), button = ui.heading.children[1].children[0];
+  button.events.click({ stopPropagation() {} }); assert.deepEqual(props.selected, [1, 2, 8]);
+  assert.equal(button.attributes["aria-pressed"], "true");
+  button.events.click({ stopPropagation() {} }); assert.deepEqual(props.selected, []);
+  assert.equal(button.attributes["aria-pressed"], "false"); assert.deepEqual(ui.synchronized, []);
+});
+
+test("every object-list column disables Tabulator sorting", () => {
+  const source = readFileSync(new URL("../src/components/ObjectList.jsx", import.meta.url), "utf8");
+  const body = source.slice(source.indexOf("    table = new TabulatorFull"), source.indexOf('    table.on("tableBuilt"'));
+  let options;
+  const TabulatorFull = class { constructor(host, config) { options = config; } };
+  new Function("TabulatorFull", "host", "props", "nameHeading", `let table; ${body}`)(TabulatorFull, {}, {}, () => "Название");
+  assert.equal(options.columnDefaults.headerSort, false);
+  assert.deepEqual(options.columns.map(column => column.field), ["id", "name"]);
+  assert.ok(options.columns.every(column => column.headerSort !== true));
 });

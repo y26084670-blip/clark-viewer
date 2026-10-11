@@ -143,11 +143,16 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
     import { createRoot, createSignal, createMemo, createEffect } from "solid-js";
     import { sourcesFields3DSetup } from "./scripts/test-support/sourcesFields3DSetup.js";
     const signals = new Map(), requests = [];
-    let dispose, ui;
+    let dispose, ui, setFlightState;
     createRoot(cleanup => {
       dispose = cleanup;
       ui = sourcesFields3DSetup({ task: { elements: [{ id: 1, targ: 0 }], regions: [] }, elements: [1], regions: [], time: 0 }, {}, {
         createMemo,
+        createSignal(initial) {
+          const pair = createSignal(initial);
+          if (initial === "idle") setFlightState = pair[1];
+          return pair;
+        },
         createGeometryViewSetting(name, initial) {
           if (!signals.has(name)) signals.set(name, createSignal(initial));
           return signals.get(name);
@@ -157,6 +162,8 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
     });
     const set = (name, value) => signals.get(name)[1](value);
     assert.equal(requests.length, 1);
+    for (const state of ["starting", "active", "idle"]) setFlightState(state);
+    assert.equal(requests.length, 1, "flight lifecycle must not issue new HDF5 requests");
     set("resultVectorScale", 2);
     set("resultGlobalMinMax", true); set("resultGlobalMinMax", false);
     set("resultStreamlineWidth", 8);

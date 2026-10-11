@@ -6,6 +6,28 @@ import {
   geometryCameraCommandFromKeyboardEvent as cameraCommand,
 } from "../src/services/visualization/geometryCameraView.js";
 
+test("flight owns arrows and camera keys without advancing time, including boost chords", () => {
+  const handlers = new Map(); let flying = false, time = 2; const views = [];
+  const owner = { document: { querySelector: () => false },
+    addEventListener: (name, fn) => handlers.set(name, fn), removeEventListener: name => handlers.delete(name) };
+  const remove = installSourcesFieldsKeyboard(owner, { blocked: () => false, flightBusy: () => flying,
+    time: () => time, maxTime: () => 5, setTime: value => { time = value; }, view: value => views.push(value) });
+  const press = (code, extras = {}) => {
+    const event = { code, target: { tagName: "CANVAS" }, preventDefault() { this.defaultPrevented = true; }, ...extras };
+    handlers.get("keydown")(event); return event;
+  };
+  flying = true;
+  for (const code of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "KeyA", "KeyX", "KeyY", "KeyZ"])
+    for (const shiftKey of [false, true]) assert.equal(press(code, { shiftKey }).defaultPrevented, undefined);
+  assert.equal(time, 2); assert.deepEqual(views, []);
+  flying = false;
+  assert.equal(press("ArrowRight", { repeat: true }).defaultPrevented, true);
+  assert.equal(time, 2, "a held arrow must not switch time after exiting flight");
+  handlers.get("keyup")({ code: "ArrowRight" });
+  press("ArrowRight"); assert.equal(time, 3);
+  press("KeyX"); assert.equal(views.length, 1); remove();
+});
+
 const shortcuts = [
   ["KeyA", ["a", "A", "ф", "q"], commands.FIT_ALL, commands.RESET_OBLIQUE],
   ["KeyX", ["x", "X", "ч", "c"], commands.VIEW_POSITIVE_X, commands.VIEW_NEGATIVE_X],

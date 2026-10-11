@@ -3,6 +3,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show }
 import { installSourcesFieldsKeyboard } from "../services/sourcesFieldsKeyboard.js";
 import { ObjectList } from "../components/ObjectList.jsx";
 import { ResultsGeometryViewport } from "../components/geometry/ResultsGeometryViewport.jsx";
+import { GeometryMaterialLegend } from "../components/geometry/GeometryMaterialLegend.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
 import { QUANTITIES } from "../services/results/resultMappings.js";
 import { resultDisplaySelection, useResultFrame } from "../services/results/resultRequests.js";
@@ -158,6 +159,7 @@ export function SourcesFields3D(props) {
     </aside>
     <section class="plot-panel">
       <div class="plot-toolbar sources-fields-toolbar">
+        <div class="sources-fields-toolbar-controls">
         <For each={[
           ["elements", "Объемные элементы"],
           ["regions", "Области интересов"],
@@ -262,6 +264,9 @@ export function SourcesFields3D(props) {
             </div>
           </Show>
         </div>
+        </div>
+        <GeometryMaterialLegend buttonClass="source-toolbar-menu-button"
+          onOpen={() => setOpenSourceMenu(null)} />
       </div>
       <div class="embedded-geometry">
         <ResultsGeometryViewport open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}

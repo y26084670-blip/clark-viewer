@@ -1,5 +1,15 @@
 .sources-fields-toolbar {
   position: relative;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  gap: 8px;
+  overflow: visible;
+}
+
+.sources-fields-toolbar-controls {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
@@ -8,6 +18,10 @@
   max-width: 100%;
   gap: 6px 8px;
   overflow: visible;
+}
+
+.sources-fields-toolbar > .geometry-material-help-button {
+  margin-left: auto;
 }
 
 .source-toolbar-menu {

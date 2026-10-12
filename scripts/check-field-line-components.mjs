@@ -6,7 +6,7 @@ import { createServer } from "vite";
 import solid from "vite-plugin-solid";
 import { parseGIF, decompressFrames } from "gifuct-js";
 
-// Actual FieldLines, Chart.js, Solid, GIF controller and encoding worker in Chromium.
+// Actual FieldLines/FieldAreas, Chart.js/WebGL, Solid and GIF worker in Chromium.
 // Only the task/reader are deterministic fixtures; no user result is claimed here.
 const root = fileURLToPath(new URL("..", import.meta.url));
 const output = process.env.CHECK_OUTPUT || path.join(root, "verification-output");
@@ -54,8 +54,9 @@ function Fixture() {
         values:chart?.data.datasets.map(d=>d.data.map(p=>p.y))||[],
         range:chart?{xMin:chart.scales.x.min,xMax:chart.scales.x.max,yMin:chart.scales.y.min,yMax:chart.scales.y.max}:null,
         chartArea:chart?{left:chart.chartArea.left,right:chart.chartArea.right,top:chart.chartArea.top,bottom:chart.chartArea.bottom}:null};},
-    async exportMovie(){setBusy(true);try{const value=await controller.run({intervalMs:100});
-      return {filename:value.filename,frameCount:value.frameCount,bytes:Array.from(new Uint8Array(await value.blob.arrayBuffer()))};}finally{setBusy(false);}}
+    async exportMovie(){setBusy(true);const globalDisabledDuringExport=document.querySelector('input[aria-label="Общий минимакс"]')?.disabled;
+      try{const value=await controller.run({intervalMs:100});
+      return {filename:value.filename,frameCount:value.frameCount,globalDisabledDuringExport,bytes:Array.from(new Uint8Array(await value.blob.arrayBuffer()))};}finally{setBusy(false);}}
   };
   return <div class="app-container"><header class="task-info-bar"><strong id="fixture-heading">Проверка поля на линиях 4.19.0</strong></header>
     <main class="tabs-body"><Show when={!area()} fallback={<FieldAreas {...props}/>}><FieldLines {...props}/></Show></main></div>;
@@ -72,7 +73,8 @@ try {
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
   server = await createServer({ configFile: false, root, plugins: [solid()], server: { host: "127.0.0.1", port: 0 } });
   await server.listen();
-  browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
+  browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE || undefined,
+    args: ["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
   page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   page.on("pageerror", error => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__field_line_acceptance__/index.html`);
@@ -173,6 +175,20 @@ try {
   await page.evaluate(() => window.__acceptance.load(0, true));
   await waitCount(8);
   await page.waitForFunction(() => window.__acceptance.snapshot().range?.yMax === 107.5);
+  // Loading a static task removes the time slider; let Chart.js finish its
+  // responsive resize before freezing the capture dimensions.
+  await page.evaluate(() => new Promise((resolve, reject) => {
+    let previous, stable = 0, frames = 0;
+    function check() {
+      const canvas = document.querySelector(".line-chart canvas"), box = canvas.getBoundingClientRect();
+      const size = [canvas.width, canvas.height, box.width, box.height].join(",");
+      stable = size === previous ? stable + 1 : 0; previous = size;
+      if (stable >= 4) resolve();
+      else if (++frames > 120) reject(new Error("Chart size did not settle before static capture"));
+      else requestAnimationFrame(check);
+    }
+    requestAnimationFrame(check);
+  }));
   const single = await page.evaluate(() => window.__acceptance.exportMovie());
   const singleBytes = Buffer.from(single.bytes);
   const singleFrames = decompressFrames(parseGIF(singleBytes.buffer.slice(singleBytes.byteOffset, singleBytes.byteOffset + singleBytes.byteLength)), true);
@@ -202,6 +218,50 @@ try {
   assert.equal(await page.getByRole("button", { name: "Компоненты", exact: true }).count(), 0);
   await page.locator('select:has(option[value="norm"])').selectOption("2");
   passed("FieldAreas still has the unmodified single-component selector");
+  const areaGlobal = page.getByRole("checkbox", { name: "Общий минимакс", exact: true });
+  const surfaceLimits = () => page.locator(".surface-legend span").evaluateAll(nodes => nodes.map(node => parseFloat(node.textContent)));
+  const waitSurface = index => page.waitForFunction(index => {
+    const text = document.querySelector(".plot-status")?.textContent || "";
+    return text.includes("показан шаг " + index) && !text.includes("Чтение");
+  }, index);
+  await waitSurface(0); assert.equal(await areaGlobal.isChecked(), true);
+  assert.deepEqual(await surfaceLimits(), [-50, 50]);
+  const areaReads = (await snapshot()).readCount;
+  await areaGlobal.uncheck(); assert.deepEqual(await surfaceLimits(), [-12, -12]);
+  assert.equal((await snapshot()).readCount, areaReads);
+  passed("Areas default to full-cycle signed bounds and toggling changes the surface without rereading HDF5");
+  await page.evaluate(() => window.__acceptance.area(false));
+  assert.equal(await global.isChecked(), false);
+  await page.evaluate(() => window.__acceptance.area(true)); await waitSurface(0);
+  assert.equal(await areaGlobal.isChecked(), false);
+  await areaGlobal.check(); assert.deepEqual(await surfaceLimits(), [0, 100]);
+  passed("Area and line checkboxes share the page preference across tab remounts");
+  await page.evaluate(() => window.__acceptance.load(2, true)); await waitSurface(0);
+  const fullCycle = await surfaceLimits(); const beforeAreaTime = (await snapshot()).readCount;
+  await page.evaluate(() => window.__acceptance.setTime(2)); await waitSurface(2);
+  assert.deepEqual(await surfaceLimits(), fullCycle); assert.equal((await snapshot()).readCount, beforeAreaTime + 1);
+  await page.screenshot({ path: path.join(output, "area-global-minmax.png"), fullPage: true });
+  passed("Surface legend stays fixed through time while one selected LS plane is read per frame");
+  const areaMovie = await page.evaluate(() => window.__acceptance.exportMovie());
+  const areaBytes = Buffer.from(areaMovie.bytes);
+  const areaFrames = decompressFrames(parseGIF(areaBytes.buffer.slice(areaBytes.byteOffset, areaBytes.byteOffset + areaBytes.byteLength)), true);
+  assert.equal(areaMovie.frameCount, 3); assert.equal(areaFrames.length, 3);
+  assert.equal(areaMovie.globalDisabledDuringExport, true);
+  assert.equal(await areaGlobal.isDisabled(), false); assert.deepEqual(await surfaceLimits(), fullCycle);
+  assert.equal((await snapshot()).time, 2);
+  await writeFile(path.join(output, "areas-global-minmax.gif"), areaBytes);
+  passed("Real surface GIF keeps the selected global scale, locks the checkbox and restores time");
+  await page.locator('select:has(option[value="As"])').selectOption("As"); await waitSurface(2);
+  const areaA = await surfaceLimits(); assert.equal(areaA[0], 0); assert.ok(Math.abs(areaA[1] - 100 * mu0) < 5e-10);
+  await page.locator('select:has(option[value="norm"])').selectOption("0"); await waitSurface(2);
+  const signedA = await surfaceLimits(); assert.ok(Math.abs(signedA[0] + 30 * mu0) < 5e-10); assert.ok(Math.abs(signedA[1] - 30 * mu0) < 5e-10);
+  passed("Area A/norm/X use the selected HDF5 channel in display units without applying mu0 twice");
+  await page.evaluate(() => window.__acceptance.load(2, false)); await waitSurface(0);
+  assert.equal(await areaGlobal.isDisabled(), true); assert.equal(await areaGlobal.isChecked(), false);
+  const localA = await surfaceLimits(); assert.ok(Math.abs(localA[0] - 3 * mu0) < 5e-11); assert.deepEqual(localA, [localA[0], localA[0]]);
+  await page.evaluate(() => window.__acceptance.load(2, true)); await waitSurface(0);
+  assert.equal(await areaGlobal.isDisabled(), false); assert.equal(await areaGlobal.isChecked(), true);
+  passed("Areas with old HDF5 stay viewable on local limits; valid data re-enable the saved global preference");
   assert.deepEqual(errors, []);
   await writeFile(path.join(output, "browser.json"), JSON.stringify({ passed: checks.length, checks, errors }, null, 2));
   console.log(`BROWSER_OK ${checks.length}/${checks.length}`);
@@ -211,6 +271,12 @@ try {
   console.error(error);
   process.exitCode = 1;
 } finally {
-  await browser?.close(); await server?.close();
   await rm(fixturePath, { recursive: true, force: true });
+  // Headless browser/Vite shutdown must not leave the fixture behind.
+  for (const resource of [browser, server]) {
+    let closeTimeout;
+    try {
+      await Promise.race([resource?.close(), new Promise(resolve => { closeTimeout = setTimeout(resolve, 5000); })]);
+    } finally { clearTimeout(closeTimeout); }
+  }
 }

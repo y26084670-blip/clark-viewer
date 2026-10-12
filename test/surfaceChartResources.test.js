@@ -5,6 +5,40 @@ import { disposeSurfaceObject, updateSurfaceLabel, updateSurfaceMesh } from "../
 
 const grid = (values, width = 2, height = 2) => ({ width, height, values: new Float64Array(values) });
 
+test("full-cycle display bounds keep a saved value at the same height and colour across frames", () => {
+  const bounds = { minimum: 0, maximum: 100 }, first = grid([0, 25, 50, 100]);
+  const before = first.values.slice(); first.displayRange = bounds;
+  const mesh = updateSurfaceMesh(null, first), geometry = mesh.geometry;
+  const position = geometry.getAttribute("position"), color = geometry.getAttribute("color");
+  const savedColor = Array.from(color.array.slice(3, 6));
+  assert.equal(position.getZ(1), .375);
+  const next = { ...grid([25, 25, 25, 25]), displayRange: bounds };
+  updateSurfaceMesh(mesh, next);
+  assert.equal(mesh.geometry, geometry); assert.equal(geometry.getAttribute("position"), position);
+  assert.equal(geometry.getAttribute("color"), color); assert.equal(position.getZ(1), .375);
+  assert.deepEqual(Array.from(color.array.slice(3, 6)), savedColor);
+  assert.deepEqual(mesh.userData.limits, { min: 0, max: 100 }); assert.deepEqual(first.values, before);
+  updateSurfaceMesh(mesh, grid([25, 25, 25, 25]));
+  assert.equal(position.getZ(1), 0); assert.deepEqual(mesh.userData.limits, { min: 25, max: 25 });
+  disposeSurfaceObject(mesh);
+});
+
+test("signed and constant global ranges are finite; invalid display bounds fall back to the frame", () => {
+  const mesh = updateSurfaceMesh(null, { ...grid([-50, 0, 25, 50]), displayRange: { minimum: -50, maximum: 50 } });
+  assert.equal(mesh.geometry.getAttribute("position").getZ(1), .75);
+  for (const value of [0, 17, -7]) {
+    updateSurfaceMesh(mesh, { ...grid([value, value, value, value]), displayRange: { minimum: value, maximum: value } });
+    assert.deepEqual(mesh.userData.limits, { min: value, max: value });
+    assert.ok([...mesh.geometry.getAttribute("position").array, ...mesh.geometry.getAttribute("color").array].every(Number.isFinite));
+  }
+  for (const displayRange of [{ minimum: NaN, maximum: 50 }, { minimum: 0, maximum: Infinity }, { minimum: 50, maximum: 0 }]) {
+    updateSurfaceMesh(mesh, { ...grid([2, 4, 6, 8]), displayRange });
+    assert.deepEqual(mesh.userData.limits, { min: 2, max: 8 });
+  }
+  assert.throws(() => updateSurfaceMesh(mesh, { ...grid([1, NaN, 3, 4]), displayRange: { minimum: 0, maximum: 100 } }), /нечисловые/);
+  disposeSurfaceObject(mesh);
+});
+
 test("surface time frames reuse the mesh, material, topology and GPU buffers", () => {
   const surface = updateSurfaceMesh(null, grid([1, 2, 3, 5]));
   const geometry = surface.geometry, material = surface.material;

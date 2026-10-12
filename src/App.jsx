@@ -58,13 +58,13 @@ export default function App() {
     let reader;
     try {
       const data = await loadTask(handle);
-      if (revision !== loadRevision) return;
+      if (revision !== loadRevision) return false;
       let metadata = {};
       if (Object.keys(data.files).length) {
         reader = new ResultService();
         metadata = await reader.open(data.files);
       }
-      if (revision !== loadRevision) { reader?.close(); return; }
+      if (revision !== loadRevision) { reader?.close(); return false; }
       for (const [name, info] of Object.entries(metadata)) {
         if (!info.error && ["MH", "JE", "HS", "AS", "HV", "AV", "Q"].includes(name)) {
           try { mapResultObjects(data, name, info.header); }
@@ -75,8 +75,10 @@ export default function App() {
       setTime(0); setElements(data.elements.map(row => row.id)); setRegions(data.regions.map(row => row.id)); setCoils(null);
       setTask({ ...data, reader, metadata }); setPath(newPath);
       setActive(1);
+      return true;
     } catch (error) {
       reader?.close(); if (revision === loadRevision) setError(`Не удалось загрузить задание: ${error.message}`);
+      return false;
     } finally { if (revision === loadRevision) setBusy(false); }
   }
   async function backfillRanges(options) {

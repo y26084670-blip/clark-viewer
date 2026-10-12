@@ -1,4 +1,5 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show, onCleanup } from "solid-js";
+import { createLastOpenedTaskHistory, sortTaskDirectories } from "../services/taskLastOpenedService.js";
 import { loadTaskInput, readTaskSummaries } from "../services/taskLoadService.js";
 import { useAsyncResult } from "../services/results/resultRequests.js";
 import { buildGeometryScene } from "../services/visualization/geometrySceneModel.js";
@@ -16,11 +17,16 @@ export function Tasks(props) {
   );
   const [candidate, setCandidate] = createSignal(null), [error, setError] = createSignal("");
   const [galleryBusy, setGalleryBusy] = createSignal(false);
-  let revision = 0;
+  const [lastTask, setLastTask] = createSignal(null), [lastTaskNotice, setLastTaskNotice] = createSignal("");
+  const lastTaskHistory = createLastOpenedTaskHistory({ app: "viewer", onChange: setLastTask, onNotice: setLastTaskNotice });
+  const lastProjectName = () => projects()[lastTask()?.projectIndex - 1]?.name;
+  const isLastTask = item => project() === lastProjectName() && tasks().indexOf(item) + 1 === lastTask()?.taskIndex;
+  let revision = 0, pickRevision = 0, loadRequest = 0, disposed = false;
+  onCleanup(() => { disposed = true; revision++; pickRevision++; loadRequest++; lastTaskHistory.dispose(); });
   async function subdirectories(handle) {
     const result = [];
     for await (const [name, item] of handle.entries()) if (item.kind === "directory") result.push({ name, handle: item });
-    return result.sort((a, b) => a.name.localeCompare(b.name, "ru", { numeric: true }));
+    return sortTaskDirectories(result);
   }
   async function pickRoot() {
     if (galleryBusy()) return;
@@ -28,13 +34,19 @@ export function Tasks(props) {
     if (!window.isSecureContext || typeof window.showDirectoryPicker !== "function") {
       setError("Выбор каталога недоступен. Откройте приложение по HTTPS или localhost в Chrome либо Edge."); return;
     }
+    const request = ++pickRevision;
     try {
-      const handle = await window.showDirectoryPicker({ mode: "read" });
+      const picked = await window.showDirectoryPicker({ mode: "readwrite" });
+      const previous = root();
+      const sameDirectory = previous ? await previous.isSameEntry(picked) : false;
+      const handle = sameDirectory ? previous : picked;
+      if (disposed || request !== pickRevision) return;
       const current = ++revision;
       const entries = await subdirectories(handle);
-      if (current !== revision) return;
+      if (disposed || current !== revision || request !== pickRevision) return;
       setRoot(handle); setProjects(entries); setProject(""); setTasks([]); setCandidate(null);
-    } catch (error) { if (error.name !== "AbortError") setError(error.message); }
+      await lastTaskHistory.open(handle);
+    } catch (error) { if (!disposed && request === pickRevision && error.name !== "AbortError") setError(error.message); }
   }
   async function pickProject(name) {
     if (galleryBusy()) return;
@@ -55,7 +67,16 @@ export function Tasks(props) {
   async function load() {
     if (props.busy || galleryBusy()) return;
     const item = candidate();
-    if (item) props.onLoad(item.handle, `${root().name}/${project()}/${item.name}`);
+    if (!item) return;
+    const request = ++loadRequest;
+    const snapshot = lastTaskHistory.capture(projects(), project(), tasks(), item);
+    const handle = root();
+    try {
+      const loaded = await props.onLoad(item.handle, `${handle.name}/${project()}/${item.name}`);
+      if (loaded === true && !disposed && request === loadRequest) await lastTaskHistory.remember(snapshot);
+    } catch (error) {
+      if (!disposed && request === loadRequest && root() === handle) setError(error.message);
+    }
   }
   return <div class="tasks-layout">
     <section class="task-browser-panel">
@@ -64,7 +85,7 @@ export function Tasks(props) {
         <div class="root-name">{root() ? `Корневой каталог: ${root().name}` : "Каталог не выбран"}</div>
         <label class="field-label">Список проектов</label>
         <select class="project-select" value={project()} disabled={galleryBusy()} onChange={event => pickProject(event.currentTarget.value)} aria-label="Список проектов">
-          <option value="">Выберите проект</option><For each={projects()}>{item => <option value={item.name}>{item.name}</option>}</For>
+          <option value="">Выберите проект</option><For each={projects()}>{item => <option value={item.name}>{item.name === lastProjectName() ? "✓ " : ""}{item.name}</option>}</For>
         </select>
         <div class="task-list-heading">
           <div class="field-label">Список заданий</div>
@@ -85,11 +106,12 @@ export function Tasks(props) {
             class="task-status-row" classList={{ selected: candidate()?.handle === item.handle }} onClick={() => { if (!galleryBusy()) setCandidate({ ...item }); }}
             onDblClick={() => { if (candidate()?.handle === item.handle) void load(); }}
             title="Двойной щелчок — загрузить задание для просмотра">
-            <TaskStatusCells status={taskStatus(item.handle)} /><span class="task-status-name">{item.name}</span>
+            <TaskStatusCells status={taskStatus(item.handle)} /><span class="task-status-name"><Show when={isLastTask(item)}><span class="task-last-opened-check" aria-label="Последнее открытое задание" title="Последнее открытое задание">✓ </span></Show>{item.name}</span>
           </button>}</For>
         </div>
         <button class="load-button" disabled={!candidate() || props.busy || galleryBusy()} onClick={load}>{props.busy ? "Загрузка…" : "Загрузить для просмотра"}</button>
         <Show when={props.loadedHandle === candidate()?.handle && props.loadedHandle}><div class="loaded-note">✓ Задание загружено</div></Show>
+        <Show when={lastTaskNotice()}><div class="task-last-opened-notice" role="status">{lastTaskNotice()}</div></Show>
         <Show when={error() || props.error || info.value()?.error}><div class="task-error" role="alert">{error() || props.error || info.value()?.error}</div></Show>
       </div>
       <footer>выбор задания</footer>

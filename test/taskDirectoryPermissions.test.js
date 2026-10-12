@@ -1,27 +1,28 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { sortTaskDirectories } from "../src/services/taskLastOpenedService.js";
 
 const source = await readFile(new URL("../src/tabs/Tasks.jsx", import.meta.url), "utf8");
-const start = source.indexOf("  let revision = 0;");
+const start = source.indexOf("  let revision = 0,");
 const end = source.indexOf("  async function pickProject(name)", start);
 assert.ok(start >= 0 && end > start);
 
 // Run the actual picker and directory enumeration without mounting unrelated JSX.
 const createPicker = new Function("dependencies", `
-    const { window, setError, setRoot, setProjects, setProject, setTasks, setCandidate, galleryBusy } = dependencies;
+    const { window, root, setError, setRoot, setProjects, setProject, setTasks, setCandidate, galleryBusy, onCleanup, lastTaskHistory, sortTaskDirectories } = dependencies;
     ${source.slice(start, end)}
     return pickRoot;
 `);
 
 function directory(name, items = []) {
-    return { name, kind: "directory", async *entries() {
+    return { name, kind: "directory", async isSameEntry(other) { return this === other; }, async *entries() {
         for (const item of items) yield [item.name, item];
     } };
 }
 
 function runtime(picker, windowOverrides = {}) {
-    const state = { root: null, projects: [], project: "Previous", tasks: [1], candidate: 1, error: "", permissions: [], galleryBusy: false };
+    const state = { root: null, projects: [], project: "Previous", tasks: [1], candidate: 1, error: "", permissions: [], galleryBusy: false, historyRoots: [] };
     const pick = createPicker({
         window: {
             isSecureContext: true,
@@ -33,27 +34,31 @@ function runtime(picker, windowOverrides = {}) {
         },
         setError: value => { state.error = value; },
         setRoot: value => { state.root = value; },
+        root: () => state.root,
         setProjects: value => { state.projects = value; },
         setProject: value => { state.project = value; },
         setTasks: value => { state.tasks = value; },
         setCandidate: value => { state.candidate = value; },
         galleryBusy: () => state.galleryBusy,
+        onCleanup() {}, sortTaskDirectories,
+        lastTaskHistory: { async open(handle) { state.historyRoots.push(handle); } },
     });
     return { state, pick };
 }
 
-test("viewer accepts any root name, lists sorted projects and requests only read access", async () => {
+test("viewer accepts any root name, lists sorted projects and requests read-write access for the service JSON", async () => {
     for (const name of ["clark.projects", "Расчёты 2026", "custom-projects"]) {
         const handle = directory(name, [directory("Project 10"), { name: "note.txt", kind: "file" }, directory("Project 2")]);
         const { state, pick } = runtime(() => handle);
         await pick();
         assert.equal(state.root, handle);
         assert.deepEqual(state.projects.map(item => item.name), ["Project 2", "Project 10"]);
-        assert.deepEqual(state.permissions, [{ mode: "read" }]);
+        assert.deepEqual(state.permissions, [{ mode: "readwrite" }]);
         assert.equal(state.project, "");
         assert.deepEqual(state.tasks, []);
         assert.equal(state.candidate, null);
         assert.equal(state.error, "");
+        assert.deepEqual(state.historyRoots, [handle]);
     }
 });
 
@@ -154,7 +159,7 @@ test("viewer opens 3D only after the task and HDF5 metadata finish loading", asy
     const loading = h.load({}, "Projects/New");
     await ready;
     assert.equal(h.state.active, 0); assert.equal(h.state.task, null);
-    finish({}); await loading;
+    finish({}); assert.equal(await loading, true);
     assert.equal(h.state.active, 1); assert.equal(h.state.opened.length, 1);
     assert.equal(h.state.opened[0].task.name, "New"); assert.equal(h.state.opened[0].path, "Projects/New");
     assert.equal(h.state.busy, false);
@@ -165,7 +170,7 @@ test("viewer load errors preserve the current tab and previously loaded task", a
     const h = viewerLoadingRuntime(async () => { throw new Error("Unreadable task"); });
     const previous = viewerTaskData("Previous");
     h.state.active = 4; h.state.task = previous; h.state.path = "Projects/Previous";
-    await h.load({}, "Projects/Broken");
+    assert.equal(await h.load({}, "Projects/Broken"), false);
     assert.equal(h.state.active, 4); assert.equal(h.state.task, previous);
     assert.equal(h.state.path, "Projects/Previous"); assert.deepEqual(h.state.opened, []);
     assert.match(h.state.error, /Unreadable task/u);
@@ -180,8 +185,69 @@ test("stale viewer metadata cannot reopen 3D after the user chooses another tab"
     const old = h.load("Old", "Projects/Old"); await ready;
     await h.load("Latest", "Projects/Latest");
     h.state.active = 5;
-    finish({}); await old;
+    finish({}); assert.equal(await old, false);
     assert.equal(h.state.active, 5); assert.equal(h.state.task.name, "Latest");
     assert.equal(h.state.path, "Projects/Latest"); assert.equal(h.state.opened.length, 1);
     assert.equal(h.state.closedReaders, 1);
+});
+
+const taskLoadStart = source.indexOf("  async function load() {");
+const taskLoadEnd = source.indexOf("  return <div", taskLoadStart);
+const createTaskLoad = new Function("dependencies", `
+    const { props, galleryBusy, candidate, projects, project, tasks, root, lastTaskHistory, setError } = dependencies;
+    let loadRequest = 0, disposed = false;
+    ${source.slice(taskLoadStart, taskLoadEnd)}
+    return load;
+`);
+function taskLoadRuntime(onLoad) {
+    const first = { name: "First", handle: {} }, second = { name: "Second", handle: {} };
+    const state = { candidate: first, saved: [], error: "" };
+    const rootHandle = { name: "Root" };
+    const load = createTaskLoad({ props: { busy: false, onLoad }, galleryBusy: () => false,
+        candidate: () => state.candidate, projects: () => [{ name: "Project" }], project: () => "Project",
+        tasks: () => [first, second], root: () => rootHandle, setError: value => { state.error = value; },
+        lastTaskHistory: {
+            capture(_projects, _project, tasks, item) { return { projectIndex: 1, taskIndex: tasks.indexOf(item) + 1 }; },
+            async remember(snapshot) { state.saved.push(snapshot); },
+        },
+    });
+    return { state, load, first, second };
+}
+
+test("viewer saves the requested task's position only after successful loading, even if the preview changes", async () => {
+    let finish;
+    const h = taskLoadRuntime(() => new Promise(resolve => { finish = resolve; }));
+    const loading = h.load(); assert.deepEqual(h.state.saved, []);
+    h.state.candidate = h.second; finish(true); await loading;
+    assert.deepEqual(h.state.saved, [{ projectIndex: 1, taskIndex: 1 }]);
+});
+
+test("viewer does not save failed, blocked or superseded loads", async () => {
+    for (const result of [false, undefined]) {
+        const h = taskLoadRuntime(async () => result); await h.load(); assert.deepEqual(h.state.saved, []);
+    }
+    const failed = taskLoadRuntime(async () => { throw new Error("Load failed"); });
+    await failed.load(); assert.deepEqual(failed.state.saved, []); assert.equal(failed.state.error, "Load failed");
+    let finish;
+    const h = taskLoadRuntime(handle => handle === h.first.handle ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(true));
+    const old = h.load(); h.state.candidate = h.second; await h.load(); finish(true); await old;
+    assert.deepEqual(h.state.saved, [{ projectIndex: 1, taskIndex: 2 }]);
+});
+
+test("a delayed system picker result cannot replace the most recent root", async () => {
+    let finish;
+    const latest = directory("Latest");
+    const results = [new Promise(resolve => { finish = resolve; }), latest];
+    const h = runtime(() => results.shift());
+    const old = h.pick(); await h.pick(); finish(directory("Old")); await old;
+    assert.equal(h.state.root, latest); assert.deepEqual(h.state.historyRoots, [latest]);
+});
+
+test("reselecting the same physical root keeps its handle to serialize file writes", async () => {
+    const previous = directory("Base", [directory("Project")]);
+    previous.isSameEntry = async () => true;
+    const h = runtime(() => directory("Base")); h.state.root = previous;
+    await h.pick();
+    assert.equal(h.state.root, previous);
+    assert.deepEqual(h.state.historyRoots, [previous]);
 });

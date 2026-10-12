@@ -487,6 +487,11 @@
   cursor: default;
 }
 
+.geometry-viewer-view-command.geometry-flight-command {
+  color: #ffdc55;
+  font-weight: 700;
+}
+
 .geometry-flight-hint {
   position: absolute;
   z-index: 4;

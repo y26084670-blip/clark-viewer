@@ -25,6 +25,8 @@ import {
   geometryAxisRotationFromKeyboardEvent,
   geometryOriginAxisRotationFromKeyboardEvent,
   orientGeometryCamera,
+  snapshotGeometryCamera,
+  restoreGeometryCamera,
   normalizeGeometryCameraCommand,
   rotateGeometryCameraAroundAxis,
 } from "../../services/visualization/geometryCameraView.js";
@@ -1478,7 +1480,7 @@ function worldUnitsPerPixel(camera, target, viewportHeight) {
 
   const distance = Math.max(camera.position.distanceTo(target), 1e-9);
   const verticalFov = camera.fov * Math.PI / 180;
-  return 2 * distance * Math.tan(verticalFov / 2) / height;
+  return 2 * distance * Math.tan(verticalFov / 2) / Math.max(camera.zoom * height, 1e-9);
 }
 
 function createCamera(THREE, projection, aspect) {
@@ -1523,6 +1525,8 @@ export function ThreeGeometryViewport(props) {
   let axesRoot;
   let camera;
   let controls;
+  let cameraTaskKey = props.taskKey;
+  let pendingCameraState = props.cameraState;
   let geometryRoot;
   let helperRoot;
   let resultLayers = [];
@@ -1650,6 +1654,12 @@ export function ThreeGeometryViewport(props) {
     });
   };
 
+  const rememberCamera = () => {
+    if (camera && controls && hasFramedGeometry && !movieSnapshot) {
+      props.onCameraStateChange?.(snapshotGeometryCamera(camera, controls, activeProjection), cameraTaskKey);
+    }
+  };
+
   const renderNow = (timestamp) => {
     if (!renderer || !threeScene || !camera || disposed || contextLost || rendering) return;
     if (renderFrame) { cancelAnimationFrame(renderFrame); renderFrame = 0; }
@@ -1666,6 +1676,10 @@ export function ThreeGeometryViewport(props) {
       }
       if (sourcesDirty) { sourcesDirty = false; replacePrescribedSources(); }
       if (vectorsDirty) { vectorsDirty = false; replaceResultLayers(); }
+      if (pendingCameraState && currentBounds && !currentBounds.isEmpty()) {
+        if (restoreGeometryCamera(camera, controls, pendingCameraState)) hasFramedGeometry = true;
+        pendingCameraState = null;
+      }
       if (!movieSnapshot && !flightController?.active && (!hasFramedGeometry || props.autoFit === true)) hasFramedGeometry = fitVisibleObjects();
       if (flightController?.active) {
         flightController.update(timestamp ?? performance.now());
@@ -1684,6 +1698,7 @@ export function ThreeGeometryViewport(props) {
       renderer.setViewport(0, 0, viewportWidth, viewportHeight);
       renderer.clear(true, true, true);
       renderer.render(threeScene, camera);
+      rememberCamera();
 
       if (axesScene && axesCamera && axesRoot && controls) {
         const size = axesGizmoSize();
@@ -2613,7 +2628,7 @@ export function ThreeGeometryViewport(props) {
       );
       axesRoot = createAxesGizmo(THREE);
       axesScene.add(axesRoot);
-      activeProjection = normalizeProjection(props.projection);
+      activeProjection = normalizeProjection(pendingCameraState?.projection ?? props.projection);
       camera = createCamera(THREE, activeProjection, 1);
       raycaster = new THREE.Raycaster();
       pointerNdc = new THREE.Vector2();
@@ -2649,7 +2664,6 @@ export function ThreeGeometryViewport(props) {
           renderNow();
           if (error()) throw new Error(error());
           setFixedAxisRotation(null);
-          switchProjection("perspective", { fit: false });
           flightSceneScale = Math.max(currentBounds.getSize(new THREE.Vector3()).length(), 1e-6);
           flightBoundsCenter = currentBounds.getCenter(new THREE.Vector3());
           camera.near = Math.max(flightSceneScale * 1e-5, 1e-8);
@@ -2855,8 +2869,22 @@ export function ThreeGeometryViewport(props) {
 
   createEffect(() => {
     const projection = props.projection;
-    if (flightController?.active && projection !== "perspective") flightController.stop();
+    if (flightController?.active && projection !== activeProjection) flightController.stop();
     if (ready()) switchProjection(projection);
+  });
+
+  createEffect(() => {
+    const key = props.taskKey;
+    if (key === cameraTaskKey) return;
+    rememberCamera();
+    flightController?.stop();
+    cameraTaskKey = key;
+    pendingCameraState = props.cameraState;
+    hasFramedGeometry = false;
+    if (ready()) {
+      switchProjection(pendingCameraState?.projection ?? props.projection, { fit: false });
+      requestRender();
+    }
   });
 
   createEffect(() => {
@@ -2877,6 +2905,7 @@ export function ThreeGeometryViewport(props) {
   });
 
   onCleanup(() => {
+    rememberCamera();
     disposed = true;
     flightController?.dispose();
     props.onFlightReady?.(null);

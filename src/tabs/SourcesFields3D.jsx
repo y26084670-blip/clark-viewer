@@ -19,8 +19,11 @@ import "./SourcesFields3D.css";
 // Switching tabs unmounts this component. Retain only small seed descriptors,
 // not HDF5 buffers or worker/GPU resources, for the lifetime of the loaded task.
 const streamlineSessions = new WeakMap();
+const cameraSessions = new WeakMap();
 
 export function SourcesFields3D(props) {
+  const cameraState = () => props.task && cameraSessions.get(props.task);
+  const rememberCamera = (state, task) => { if (task) cameraSessions.set(task, state); };
   const [cameraRequest,setCameraRequest]=createSignal(null);
   const [flightState, setFlightState] = createSignal("idle");
   const flightBusy = () => flightState() !== "idle";
@@ -279,7 +282,7 @@ export function SourcesFields3D(props) {
           onOpen={() => setOpenSourceMenu(null)} />
       </div>
       <div class="embedded-geometry">
-        <ResultsGeometryViewport open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
+        <ResultsGeometryViewport cameraState={cameraState()} onCameraStateChange={rememberCamera} open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           allowFlight={true} flightBlocked={props.movieBusy} flightDisabledReason={flightDisabledReason()}
           onFlightStateChange={setFlightState}
           cameraRequest={cameraRequest()}

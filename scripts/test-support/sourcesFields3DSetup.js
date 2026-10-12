@@ -8,6 +8,7 @@ import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS } f
 import { applyResultGlobalRange, resultGlobalScale } from "../../src/services/results/resultGlobalScale.js";
 
 const streamlineSessions = new WeakMap();
+const cameraSessions = new WeakMap();
 
 // Execute the actual component setup, excluding JSX. Memo reads are evaluated on
 // demand and only lifecycle/frame-hook adapters are replaced; this verifies the
@@ -44,10 +45,10 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
   let requestSource, load;
   let state = { frame: null, requested: null, error: "", loading: false };
   const run = new Function("props", "createGeometryViewSetting", "createMemo", "onCleanup", "createSignal", "createEffect",
-    "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_METHODS", "streamlineSessions",
+    "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_METHODS", "streamlineSessions", "cameraSessions",
     "QUANTITIES", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
     "createMovieTabAdapter", "completedMovieFrame", "onMount", "applyResultGlobalRange", "resultGlobalScale",
-    `${setup} return { quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
+    `${setup} return { cameraState, rememberCamera, quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
       colorMap, effectiveColorMap, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
       addStreamline, deleteStreamline, streamlineMethod, changeStreamlineMethod, streamlines,
       controls: ${controlBindings},
@@ -57,7 +58,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     options.createMemo ?? (compute => compute), callback => cleanup.push(callback),
     options.createSignal ?? (initial => { let value = initial; return [() => value, next => { value = typeof next === "function" ? next(value) : next; }]; }),
     options.createEffect ?? (callback => { effects.push(callback); callback(); }),
-    STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS, streamlineSessions, QUANTITIES, resultDisplaySelection,
+    STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS, streamlineSessions, cameraSessions, QUANTITIES, resultDisplaySelection,
     RESULT_LAYER_GROUPS, options.readerFactory ?? createResultLayerReader,
     (source, reader) => { requestSource = source; load = reader; options.observeRequest?.(source); return () => state; },
     options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame, () => {}, applyResultGlobalRange, resultGlobalScale);

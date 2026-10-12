@@ -6,11 +6,42 @@ import {
   geometryAxisRotationFromKeyboardEvent,
   geometryOriginAxisRotationFromKeyboardEvent,
   rotateGeometryCameraAroundAxis,
+  snapshotGeometryCamera,
+  restoreGeometryCamera,
 } from "../src/services/visualization/geometryCameraView.js";
 
 const key = (code, extras = {}) => ({
   code, altKey: true, ctrlKey: false, metaKey: false, shiftKey: false,
   defaultPrevented: false, isComposing: false, target: { tagName: "DIV" }, ...extras,
+});
+
+test("numeric camera state restores pose, roll, scale and projection at a new canvas aspect", () => {
+  for (const projection of ["perspective", "orthographic"]) {
+    const camera = projection === "orthographic"
+      ? new THREE.OrthographicCamera(-12, 12, 6, -6, 0.001, 1000)
+      : new THREE.PerspectiveCamera(45, 2, 0.001, 1000);
+    camera.position.set(9, -8, 7); camera.rotateY(0.6); camera.rotateX(-0.8); camera.rotateZ(1.1);
+    camera.up.set(0, 1, 0).applyQuaternion(camera.quaternion); camera.zoom = 3.7;
+    const target = camera.position.clone().addScaledVector(camera.getWorldDirection(new THREE.Vector3()), 4);
+    const state = snapshotGeometryCamera(camera, { target }, projection);
+    assert.deepEqual(JSON.parse(JSON.stringify(state)), state, "cache contains only numeric values");
+    const restored = projection === "orthographic"
+      ? new THREE.OrthographicCamera(-3, 3, 1, -1)
+      : new THREE.PerspectiveCamera(60, 3);
+    const controls = { target: new THREE.Vector3() };
+    assert.equal(restoreGeometryCamera(restored, controls, state), true);
+    assert.deepEqual(restored.position, camera.position); assert.deepEqual(restored.up, camera.up);
+    assert.ok(restored.quaternion.angleTo(camera.quaternion) < 1e-7);
+    assert.equal(restored.zoom, 3.7); assert.equal(restored.near, 0.001); assert.equal(restored.far, 1000);
+    assert.deepEqual(controls.target, target);
+    if (projection === "orthographic") {
+      assert.equal(restored.top, 6); assert.equal(restored.bottom, -6);
+      assert.equal(restored.right, 18); assert.equal(restored.left, -18);
+    } else { assert.equal(restored.fov, 45); assert.equal(restored.aspect, 3); }
+    assert.equal(restoreGeometryCamera(restored, controls, { ...state, zoom: NaN }), false);
+    assert.equal(restoreGeometryCamera(restored, controls, { ...state, target: [1, Infinity, 3] }), false);
+    assert.equal(restoreGeometryCamera(restored, controls, { ...state, projection: projection === "orthographic" ? "perspective" : "orthographic" }), false);
+  }
 });
 
 test("Alt+X/Y/Z selects a fixed world rotation axis only on valid targets", () => {

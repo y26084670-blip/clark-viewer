@@ -10,6 +10,20 @@ function fixture() {
     regions: [{ id: 1 }, { id: 2 }] };
   return { task, elements: [1, 2, 3], regions: [1, 2], time: 9 };
 }
+
+test("3D camera state survives tab disposal and remains scoped to the loaded task", () => {
+  const props = fixture(), task = props.task;
+  const camera = { projection: "orthographic", position: [9, 8, 7], target: [3, 2, 1], zoom: 4 };
+  let ui = sourcesFields3DSetup(props);
+  const request = ui.request();
+  ui.rememberCamera(camera, task); assert.deepEqual(ui.request(), request);
+  ui.close(); ui = sourcesFields3DSetup(props);
+  assert.equal(ui.cameraState(), camera);
+  props.task = fixture().task; ui.flushEffects(); assert.equal(ui.cameraState(), undefined);
+  ui.rememberCamera({ ...camera, zoom: 5 }, task);
+  assert.equal(ui.cameraState(), undefined, "late old-task callback cannot overwrite the new task view");
+  ui.close();
+});
 const selections = layers => Object.fromEntries(layers.map(layer => [layer.key, layer.selected]));
 
 // These tests execute the production setup and its real request/display functions.

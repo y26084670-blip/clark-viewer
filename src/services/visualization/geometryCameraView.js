@@ -97,6 +97,41 @@ export function orientGeometryCamera(camera, controls, command) {
     return true;
 }
 
+/** Small numeric view state only: no retained scene, renderer or result buffers. */
+export function snapshotGeometryCamera(camera, controls, projection) {
+    return {
+        projection, position: camera.position.toArray(), quaternion: camera.quaternion.toArray(),
+        up: camera.up.toArray(), target: controls.target.toArray(), zoom: camera.zoom,
+        near: camera.near, far: camera.far,
+        ...(camera.isOrthographicCamera ? { halfHeight: (camera.top - camera.bottom) / 2 }
+            : { fov: camera.fov }),
+    };
+}
+
+export function restoreGeometryCamera(camera, controls, state) {
+    const finiteArray = (value, size) => Array.isArray(value) && value.length === size && value.every(Number.isFinite);
+    if (!state || (state.projection === "orthographic") !== Boolean(camera.isOrthographicCamera)
+        || !finiteArray(state.position, 3) || !finiteArray(state.quaternion, 4)
+        || !finiteArray(state.up, 3) || !finiteArray(state.target, 3)
+        || !(state.zoom > 0) || !Number.isFinite(state.zoom)
+        || !(state.far > state.near) || !Number.isFinite(state.near) || !Number.isFinite(state.far)
+        || (camera.isOrthographicCamera ? !(state.halfHeight > 0) || !Number.isFinite(state.halfHeight)
+            : !(state.fov > 0 && state.fov < 180))) return false;
+    camera.position.fromArray(state.position);
+    camera.quaternion.fromArray(state.quaternion).normalize();
+    camera.up.fromArray(state.up);
+    controls.target.fromArray(state.target);
+    camera.zoom = state.zoom; camera.near = state.near; camera.far = state.far;
+    if (camera.isOrthographicCamera) {
+        const aspect = Math.abs((camera.right - camera.left) / (camera.top - camera.bottom));
+        camera.top = state.halfHeight; camera.bottom = -state.halfHeight;
+        camera.left = -state.halfHeight * aspect; camera.right = state.halfHeight * aspect;
+    } else camera.fov = state.fov;
+    camera.updateProjectionMatrix();
+    controls.update?.();
+    return true;
+}
+
 export function geometryCameraCommandFromKeyboardEvent(event, options) {
     if (!event || event.defaultPrevented || event.isComposing
         || event.altKey || event.metaKey || event.shiftKey

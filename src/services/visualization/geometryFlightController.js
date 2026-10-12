@@ -1,7 +1,11 @@
 const FLIGHT_KEYS = new Set([
-  "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown",
-  "KeyQ", "KeyE", "ShiftRight",
+  "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "ControlRight",
+  "KeyQ", "KeyE", "ShiftRight", "Equal", "Minus", "NumpadAdd", "NumpadSubtract",
 ]);
+const MIN_ZOOM = 0.02, MAX_ZOOM = 100, ZOOM_RATE = 1.2, ZOOM_TAP = Math.log(1.08);
+export const GEOMETRY_FLIGHT_HELP = "↑/↓ — вперёд/назад; ←/→ — влево/вправо; мышь — направление; Enter — подъём; правый Ctrl — опускание; +/− — масштаб; Q/E — крен; правый Shift — ускорение ×4; Esc — выход";
+const zoomKey = code => code === "Equal" || code === "NumpadAdd" ? 1
+  : code === "Minus" || code === "NumpadSubtract" ? -1 : 0;
 
 /** Camera-local thrust with world-space inertia. No scene or result buffers. */
 export function createGeometryFlightMotion(THREE, {
@@ -16,8 +20,12 @@ export function createGeometryFlightMotion(THREE, {
   const baseSpeed = Number.isFinite(speed) && speed > 0 ? speed : 1;
   const distance = Math.max(camera.position.distanceTo(target), baseSpeed * 0.01, 1e-8);
   const epsilon = baseSpeed * 1e-5;
-  let mouseX = 0, mouseY = 0;
+  let mouseX = 0, mouseY = 0, zoomImpulse = 0;
   const pressed = code => keys.has(code) ? 1 : 0;
+  const zoomDirection = () => Number(keys.has("Equal") || keys.has("NumpadAdd"))
+    - Number(keys.has("Minus") || keys.has("NumpadSubtract"));
+  const canZoom = () => (zoomDirection() > 0 && camera.zoom < MAX_ZOOM)
+    || (zoomDirection() < 0 && camera.zoom > MIN_ZOOM);
   const syncTarget = () => {
     forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
     up.set(0, 1, 0).applyQuaternion(camera.quaternion);
@@ -27,21 +35,24 @@ export function createGeometryFlightMotion(THREE, {
   return {
     key(code, down) {
       if (!FLIGHT_KEYS.has(code)) return false;
-      if (down) keys.add(code); else keys.delete(code);
+      if (down) {
+        if (!keys.has(code)) zoomImpulse += zoomKey(code) * ZOOM_TAP;
+        keys.add(code);
+      } else keys.delete(code);
       return true;
     },
     look(x, y) {
       if (Number.isFinite(x)) mouseX += x;
       if (Number.isFinite(y)) mouseY += y;
     },
-    releaseKeys() { keys.clear(); },
-    clear() { keys.clear(); velocity.set(0, 0, 0); mouseX = mouseY = 0; },
+    releaseKeys() { keys.clear(); zoomImpulse = 0; },
+    clear() { keys.clear(); velocity.set(0, 0, 0); mouseX = mouseY = zoomImpulse = 0; },
     get needsFrame() {
       return mouseX !== 0 || mouseY !== 0 || velocity.lengthSq() > epsilon * epsilon
         || pressed("ArrowRight") !== pressed("ArrowLeft")
-        || pressed("PageUp") !== pressed("PageDown")
+        || pressed("Enter") !== pressed("ControlRight")
         || pressed("ArrowDown") !== pressed("ArrowUp")
-        || pressed("KeyQ") !== pressed("KeyE");
+        || pressed("KeyQ") !== pressed("KeyE") || zoomImpulse !== 0 || canZoom();
     },
     step(seconds) {
       // A suspended/overloaded tab must not produce a large displacement.
@@ -55,8 +66,13 @@ export function createGeometryFlightMotion(THREE, {
         camera.quaternion.normalize();
       }
       mouseX = mouseY = 0;
+      const zoomDelta = zoomImpulse + zoomDirection() * ZOOM_RATE * dt;
+      zoomImpulse = 0;
+      const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, camera.zoom * Math.exp(zoomDelta)));
+      const zooming = nextZoom !== camera.zoom;
+      if (zooming) { camera.zoom = nextZoom; camera.updateProjectionMatrix(); }
       desired.set(pressed("ArrowRight") - pressed("ArrowLeft"),
-        pressed("PageUp") - pressed("PageDown"),
+        pressed("Enter") - pressed("ControlRight"),
         pressed("ArrowDown") - pressed("ArrowUp"));
       const thrust = desired.lengthSq() > 0;
       if (thrust) desired.normalize().applyQuaternion(camera.quaternion)
@@ -72,7 +88,7 @@ export function createGeometryFlightMotion(THREE, {
         if (!thrust && velocity.lengthSq() < epsilon * epsilon) velocity.set(0, 0, 0);
       }
       syncTarget();
-      return turning || (moving && dt > 0);
+      return turning || zooming || (moving && dt > 0);
     },
   };
 }
@@ -86,6 +102,7 @@ export function createGeometryFlightController({
   const owner = element.ownerDocument;
   const win = owner.defaultView;
   let state = "idle", motion = null, lastTime = null, disposed = false, generation = 0;
+  let rightControl = false, leftControl = false;
   const setState = value => { state = value; onStateChange(value); };
   const locked = () => owner.pointerLockElement === element;
   const controller = {
@@ -95,7 +112,7 @@ export function createGeometryFlightController({
     start() {
       if (disposed || state !== "idle") return;
       if (!canStart() || owner.hidden || owner.pointerLockElement) {
-        onError("Дождитесь готовности выбранного кадра и вернитесь в окно Viewer.");
+        onError("Дождитесь готовности выбранного кадра и вернитесь в окно 3D.");
         return;
       }
       if (typeof element.requestPointerLock !== "function") {
@@ -114,6 +131,7 @@ export function createGeometryFlightController({
     stop() {
       const wasActive = state === "active";
       generation++;
+      rightControl = leftControl = false;
       motion?.clear(); motion = null; lastTime = null;
       if (state !== "idle") setState("idle");
       if (locked()) owner.exitPointerLock();
@@ -170,13 +188,23 @@ export function createGeometryFlightController({
   }
   function keyDown(event) {
     if (state !== "active" || event.isComposing) return;
-    if (event.code === "Escape") { event.preventDefault(); controller.stop(); return; }
-    if (event.ctrlKey || event.altKey || event.metaKey) { motion.releaseKeys(); return; }
-    if (motion.key(event.code, true)) { event.preventDefault(); requestRender(); }
+    if (event.code === "Escape") { event.preventDefault(); event.stopPropagation(); controller.stop(); return; }
+    if (event.code === "ControlRight") rightControl = true;
+    if (event.code === "ControlLeft") leftControl = true;
+    // Right Ctrl is thrust, including when held together with arrows or zoom.
+    if (leftControl || (event.ctrlKey && !rightControl) || event.altKey || event.metaKey) {
+      motion.releaseKeys(); return;
+    }
+    if (motion.key(event.code, true)) { event.preventDefault(); event.stopPropagation(); requestRender(); }
   }
   function keyUp(event) {
+    if (event.code === "ControlRight") rightControl = false;
+    if (event.code === "ControlLeft") leftControl = false;
     if (state === "active" && motion.key(event.code, false)) {
-      event.preventDefault(); requestRender();
+      event.preventDefault(); event.stopPropagation(); requestRender();
+    }
+    if (state === "active" && event.code === "ControlLeft" && rightControl && !event.altKey && !event.metaKey) {
+      motion.key("ControlRight", true); requestRender();
     }
   }
   function blur() { if (state !== "idle") controller.stop(); }

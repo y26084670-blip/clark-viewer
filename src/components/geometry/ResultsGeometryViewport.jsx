@@ -1,3 +1,4 @@
+import { GEOMETRY_FLIGHT_HELP } from "../../services/visualization/geometryFlightController.js";
 import { createGeometryViewSetting } from "../../services/visualization/geometryViewSettings.js";
 import {
   For,
@@ -111,11 +112,14 @@ export function ResultsGeometryViewport(props) {
   let flightControl;
   const onFlightStateChange = state => {
     setFlightState(state);
-    if (state === "active") setOrthographicView(false);
     props.onFlightStateChange?.(state);
   };
   const [geometryTransparency, setGeometryTransparency] = createGeometryViewSetting("geometryTransparency", 58);
   const [orthographicView, setOrthographicView] = createGeometryViewSetting("orthographicView", true);
+  createEffect(() => {
+    const state = props.cameraState;
+    if (state) setOrthographicView(state.projection === "orthographic");
+  });
   const [showEdges, setShowEdges] = createGeometryViewSetting("showEdges", true);
   const [showVertices, setShowVertices] = createGeometryViewSetting("showVertices", false);
   const [showDiscretizationLines, setShowDiscretizationLines] =
@@ -448,9 +452,9 @@ export function ResultsGeometryViewport(props) {
           >
             <Show when={openPanel() === "view"}>
               <Show when={props.allowFlight === true}>
-                <button type="button" class="geometry-viewer-view-command"
+                <button type="button" class="geometry-viewer-view-command geometry-flight-command"
                   disabled={!flightReady() || Boolean(props.flightDisabledReason) || props.flightBlocked}
-                  title={props.flightDisabledReason || "Стрелки — перемещение; мышь — направление; PageUp/PageDown — вверх/вниз; Q/E — крен; правый Shift — ускорение; Esc — выход"}
+                  title={props.flightDisabledReason || GEOMETRY_FLIGHT_HELP}
                   onClick={() => {
                     setFlightNotice("");
                     closePanel();
@@ -728,7 +732,7 @@ export function ResultsGeometryViewport(props) {
           <Show when={flightState() !== "idle"}>
             <div class="geometry-flight-hint" role="status">
               {flightState() === "starting" ? "Включение полёта…" : "Полёт · время фиксировано"}
-              <span>↑/↓ вперёд/назад · ←/→ влево/вправо · PageUp/PageDown вверх/вниз · Q/E крен · правый Shift ускорение · Esc выход</span>
+              <span>{GEOMETRY_FLIGHT_HELP}</span>
             </div>
           </Show>
           <Show when={flightNotice()}>
@@ -754,6 +758,9 @@ export function ResultsGeometryViewport(props) {
             </div>
           </Show>
           <ThreeGeometryViewport
+            taskKey={props.taskKey}
+            cameraState={props.cameraState}
+            onCameraStateChange={props.onCameraStateChange}
             allowFlight={props.allowFlight}
             flightBlocked={props.flightBlocked}
             flightDisabledReason={props.flightDisabledReason}

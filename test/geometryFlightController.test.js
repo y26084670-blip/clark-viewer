@@ -54,7 +54,7 @@ test("a mouse turn leaves accumulated momentum in world space", () => {
 
 test("vertical thrust follows camera roll, and look crosses the poles without an Euler clamp", () => {
   const f = flight(); f.motion.key("KeyQ", true); run(f, 60, 60);
-  f.motion.key("KeyQ", false); f.motion.key("PageUp", true); run(f, 60, 60);
+  f.motion.key("KeyQ", false); f.motion.key("Enter", true); run(f, 60, 60);
   assert.ok(f.camera.position.x < -0.7);
   assert.ok(f.camera.up.x < -0.9);
   f.motion.look(0, Math.PI / 0.0025); f.motion.step(0);
@@ -148,4 +148,51 @@ test("modifier shortcuts release thrust and Q/E use physical codes in every layo
   const position = f.camera.position.clone(); f.control.update(300);
   assert.deepEqual(f.camera.position, position);
   f.control.dispose();
+});
+
+test("right Ctrl lowers the camera and composes with arrows and zoom without browser shortcuts", () => {
+  const f = lifecycle(); f.control.start(); f.control.update(0);
+  assert.equal(f.event("keydown", { code: "ControlRight", ctrlKey: true }).defaultPrevented, true);
+  assert.equal(f.event("keydown", { code: "ArrowUp", ctrlKey: true }).defaultPrevented, true);
+  assert.equal(f.event("keydown", { code: "Equal", ctrlKey: true, shiftKey: true }).defaultPrevented, true);
+  f.control.update(100); f.control.update(200);
+  assert.ok(f.camera.position.y < 0); assert.ok(f.camera.position.z < 3); assert.ok(f.camera.zoom > 1);
+  f.event("keyup", { code: "ControlRight", ctrlKey: false });
+  f.event("keyup", { code: "ArrowUp" }); f.event("keyup", { code: "Equal" });
+  f.control.dispose();
+  const up = flight(); up.motion.key("Enter", true); run(up, 60, 60); assert.ok(up.camera.position.y > 0.7);
+  assert.equal(up.motion.key("PageUp", true), false); assert.equal(up.motion.key("PageDown", true), false);
+});
+
+test("zoom is reversible and frame-rate independent in both projections without moving the camera", () => {
+  for (const Camera of [THREE.PerspectiveCamera, THREE.OrthographicCamera]) {
+    const zooms = [];
+    for (const fps of [30, 60, 144]) {
+      const camera = new Camera(), target = new THREE.Vector3(0, 0, -3);
+      const f = { motion: createGeometryFlightMotion(THREE, { camera, target }) };
+      const position = camera.position.clone(), quaternion = camera.quaternion.clone();
+      f.motion.key("NumpadAdd", true); run(f, fps, fps); f.motion.key("NumpadAdd", false);
+      zooms.push(camera.zoom); assert.ok(camera.zoom > 3);
+      assert.deepEqual(camera.position, position); close(camera.quaternion.angleTo(quaternion), 0);
+      f.motion.key("Minus", true); run(f, fps, fps); f.motion.key("Minus", false);
+      close(camera.zoom, 1); assert.equal(f.motion.needsFrame, false);
+      // A short tap survives key release before the next render.
+      f.motion.key("Equal", true); f.motion.key("Equal", false); f.motion.step(0);
+      close(camera.zoom, 1.08);
+      f.motion.key("NumpadSubtract", true); f.motion.key("NumpadSubtract", false); f.motion.step(0);
+      close(camera.zoom, 1);
+    }
+    close(Math.max(...zooms), Math.min(...zooms));
+  }
+});
+
+test("opposite zoom/vertical keys cancel and zoom bounds stop an idle RAF", () => {
+  const f = flight();
+  for (const code of ["Equal", "Minus", "Enter", "ControlRight"]) f.motion.key(code, true);
+  run(f, 60, 60); close(f.camera.zoom, 1); close(f.camera.position.y, 0);
+  assert.equal(f.motion.needsFrame, false);
+  f.motion.clear(); f.camera.zoom = 100; f.motion.key("Equal", true); f.motion.step(0);
+  assert.equal(f.camera.zoom, 100); assert.equal(f.motion.needsFrame, false);
+  f.motion.clear(); f.camera.zoom = 0.02; f.motion.key("Minus", true); f.motion.step(0);
+  assert.equal(f.camera.zoom, 0.02); assert.equal(f.motion.needsFrame, false);
 });

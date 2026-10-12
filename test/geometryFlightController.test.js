@@ -68,8 +68,8 @@ test("opposite keys cancel, stale large time steps are bounded, and cleared moti
   f.motion.step(0.1); assert.deepEqual(f.camera.position, position); assert.equal(f.motion.needsFrame, false);
 });
 
-function lifecycle({ pending = false, denied = false, approachTarget = null } = {}) {
-  const f = flight(), owner = new EventTarget(), win = new EventTarget();
+function lifecycle({ pending = false, denied = false, approachTarget = null, orbitTarget } = {}) {
+  const f = flight({ orbitTarget }), owner = new EventTarget(), win = new EventTarget();
   owner.defaultView = win; owner.hidden = false; owner.pointerLockElement = null;
   const states = [], errors = [];
   let permitted = true, renders = 0, exits = 0, activations = 0, deactivations = 0;
@@ -305,25 +305,74 @@ test("diagonal orbit is normalized and right Shift accelerates rotation fourfold
   }
 });
 
-test("a gesture keeps one pivot through repeats/coasting; mouse cancels it until the held key is released", () => {
+test("a gesture retains its pivot through repeats/coasting and mouse aiming refines it without cancellation", () => {
   const f=flight();let calls=0;const points=[[0,0,0],[2,1,0]];
   const motion=createGeometryFlightMotion(THREE,{camera:f.camera,target:f.target,getOrbitTarget:()=>({point:points[Math.min(calls++,1)]})});
   motion.key("ArrowRight",true);for(let i=0;i<60;i++)motion.step(1/60);motion.key("ArrowRight",true);
   assert.equal(calls,1);motion.key("ArrowRight",false);motion.step(.1);assert.deepEqual(motion.orbitTarget.point,points[0]);
-  motion.key("Enter",true);assert.equal(calls,1);motion.look(20,0);assert.equal(motion.orbiting,false);
-  motion.key("Enter",true);assert.equal(calls,1);assert.equal(motion.orbiting,false);
-  motion.key("Enter",false);motion.key("Enter",true);assert.equal(calls,2);assert.deepEqual(motion.orbitTarget.point,points[1]);
+  motion.key("Enter",true);assert.equal(calls,1);motion.look(20,0);assert.equal(motion.orbiting,true);
+  motion.step(.1);assert.equal(calls,2);assert.equal(motion.orbiting,true);assert.deepEqual(motion.orbitTarget.point,points[1]);
   points[1][0]=99;assert.equal(motion.orbitTarget.point[0],2,"retain a numeric copy of the selected pivot");
 });
 
-test("an empty reticle never invents a centre or keeps RAF running; repeats cannot retry a missed gesture", () => {
+test("an empty reticle never invents a centre or keeps RAF running; held input starts after its first hit", () => {
   for(const code of ["ArrowLeft","ArrowRight","Enter","ControlRight"]) {
     const f=flight();let calls=0,available=false;
     const motion=createGeometryFlightMotion(THREE,{camera:f.camera,target:f.target,getOrbitTarget:()=>{calls++;return available?{point:[0,0,0]}:null;}});
     const before=f.camera.position.clone();assert.equal(motion.key(code,true),true);motion.step(.1);assert.deepEqual(f.camera.position,before);
-    assert.equal(motion.needsFrame,false);available=true;motion.key(code,true);assert.equal(calls,1);assert.equal(motion.orbiting,false);
-    motion.key(code,false);motion.key(code,true);assert.equal(calls,2);assert.equal(motion.orbiting,true);
+    assert.equal(motion.needsFrame,false);assert.equal(motion.orbiting,false);assert.equal(motion.lastOrbitTarget,null);
+    available=true;motion.look(1,0);motion.step(.1);assert.equal(motion.orbiting,true);
+    assert.ok(calls>=2);assert.deepEqual(motion.orbitTarget.point,[0,0,0]);
   }
+});
+
+test("mouse misses retain the last centre, held rotation and angular inertia at every frame rate", () => {
+  for (const fps of [30,60,144]) {
+    const f=flight();let hit={point:[0,0,0],label:"remembered"};
+    const motion=createGeometryFlightMotion(THREE,{camera:f.camera,target:f.target,getOrbitTarget:()=>hit});
+    motion.key("ArrowRight",true);for(let i=0;i<fps;i++)motion.step(1/fps);
+    hit=null;motion.look(2500,400);const before=f.camera.position.clone();
+    for(let i=0;i<fps;i++)motion.step(1/fps);
+    assert.equal(motion.orbiting,true);assert.deepEqual(motion.orbitTarget.point,[0,0,0]);
+    assert.ok(f.camera.position.distanceTo(before)>1);close(f.camera.position.length(),3);
+    motion.key("ArrowRight",false);for(let i=0;i<6*fps;i++)motion.step(1/fps);
+    assert.equal(motion.orbiting,false);assert.deepEqual(motion.lastOrbitTarget.point,[0,0,0]);
+    const quaternion=f.camera.quaternion.clone();motion.key("Enter",true);
+    assert.equal(motion.orbiting,true);assert.deepEqual(f.camera.quaternion.toArray(),quaternion.toArray(),"fallback must not turn the gaze back to the old centre");
+    motion.clear();assert.equal(motion.lastOrbitTarget,null);motion.key("Enter",true);motion.step(.1);
+    assert.equal(motion.orbiting,false);assert.equal(motion.needsFrame,false);
+  }
+});
+
+test("free flight remembers a surface before the first orbit and manual interruption of approach retains it", () => {
+  const f=flight();let hit={point:[0,0,0]};
+  const motion=createGeometryFlightMotion(THREE,{camera:f.camera,target:f.target,getOrbitTarget:()=>hit});
+  motion.step(0);assert.deepEqual(motion.lastOrbitTarget.point,[0,0,0]);
+  hit=null;motion.look(1500,0);motion.step(.1);assert.equal(motion.orbiting,false);
+  const gaze=f.camera.quaternion.clone();motion.key("ArrowLeft",true);assert.equal(motion.orbiting,true);assert.deepEqual(f.camera.quaternion.toArray(),gaze.toArray());
+  motion.approach([0,0,0],.3);assert.deepEqual(motion.lastOrbitTarget.point,[0,0,0]);
+  motion.key("Enter",true);assert.equal(motion.approaching,false);assert.equal(motion.orbiting,true);
+  motion.clear();assert.equal(motion.lastOrbitTarget,null);
+});
+
+test("an off-centre gaze and forward motion do not cancel a valid orbit merely because its pivot is behind the gaze", () => {
+  const f=flight();let hit={point:[0,0,0]};
+  const motion=createGeometryFlightMotion(THREE,{camera:f.camera,target:f.target,getOrbitTarget:()=>hit});
+  motion.key("ArrowRight",true);hit=null;motion.look(Math.PI/.000625,0);
+  for(let i=0;i<240;i++)motion.step(1/60);
+  motion.key("ArrowUp",true);for(let i=0;i<60;i++)motion.step(1/60);
+  assert.equal(motion.orbiting,true);assert.deepEqual(motion.orbitTarget.point,[0,0,0]);
+  assert.ok(f.camera.position.toArray().every(Number.isFinite));close(f.camera.quaternion.length(),1);
+  assert.ok(f.camera.getWorldDirection(new THREE.Vector3()).dot(f.target.clone().sub(f.camera.position).normalize())>.999999999);
+});
+
+test("leaving flight discards its remembered centre before a new session starts", () => {
+  const selected={point:[0,0,0]},f=lifecycle({orbitTarget:selected});
+  f.control.start();f.control.update(0);assert.deepEqual(f.control.lastOrbitTarget.point,[0,0,0]);
+  f.control.stop();assert.equal(f.control.lastOrbitTarget,null);selected.point.fill(NaN);
+  f.control.start();f.control.update(0);f.event("keydown",{code:"ArrowRight"});f.control.update(16);
+  assert.equal(f.control.orbiting,false);assert.equal(f.control.lastOrbitTarget,null);assert.equal(f.control.needsFrame,false);
+  f.control.dispose();
 });
 
 test("orbit can cross both poles, adjusts its radius with forward motion, and stops at the centre without flipping", () => {

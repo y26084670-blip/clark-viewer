@@ -6,7 +6,8 @@ const ORBIT_KEYS = new Set(["ArrowLeft", "ArrowRight", "Enter", "ControlRight"])
 const MIN_ZOOM = 0.02, MAX_ZOOM = 100, ZOOM_RATE = 1.2, ZOOM_TAP = Math.log(1.08);
 const LOOK_TAU = 0.25, LOOK_EPSILON = 0.001, APPROACH_SECONDS = 0.5;
 const ORBIT_RATE = Math.PI / 6, ORBIT_EPSILON = 1e-5;
-export const GEOMETRY_FLIGHT_HELP = "Перспективный полёт; ↑/↓ — вперёд/назад; ←/→ — вращение вокруг цели по горизонтали; Enter/правый Ctrl — вращение по вертикали; центр — ближайшая поверхность под прицелом; без поверхности вращения нет; скорость 30°/с; мышь — направление и отмена вращения; +/− — масштаб; Q/E — крен; правый Shift — ускорение ×4; ЛКМ — подлёт к цели в прицеле; новый ручной ввод — отмена подлёта; Esc — прежний вид и выход";
+const ORBIT_PICK_SECONDS = 0.08;
+export const GEOMETRY_FLIGHT_HELP = "Перспективный полёт; ↑/↓ — вперёд/назад; ←/→ — вращение вокруг цели по горизонтали; Enter/правый Ctrl — вращение по вертикали; центр — ближайшая поверхность под прицелом; при промахе — последний найденный центр; до первого попадания вращения нет; скорость 30°/с; мышь — направление и уточнение центра без отмены вращения; +/− — масштаб; Q/E — крен; правый Shift — ускорение ×4; ЛКМ — подлёт к цели в прицеле; новый ручной ввод — отмена подлёта; Esc — прежний вид и выход";
 const zoomKey = code => code === "Equal" || code === "NumpadAdd" ? 1
   : code === "Minus" || code === "NumpadSubtract" ? -1 : 0;
 
@@ -19,10 +20,12 @@ export function createGeometryFlightMotion(THREE, {
   const forward = new THREE.Vector3(), up = new THREE.Vector3(), right = new THREE.Vector3(), axis = new THREE.Vector3();
   const rotation = new THREE.Quaternion();
   const angularVelocity = new THREE.Vector2(), angularDesired = new THREE.Vector2(), angles = new THREE.Vector2();
+  const movementSegment = new THREE.Line3(), closest = new THREE.Vector3();
   const baseSpeed = Number.isFinite(speed) && speed > 0 ? speed : 1;
   const distance = Math.max(camera.position.distanceTo(target), baseSpeed * 0.01, 1e-8);
   const epsilon = baseSpeed * 1e-5;
   let mouseX = 0, mouseY = 0, zoomImpulse = 0, approach = null, orbit = null;
+  let lastOrbitTarget = null, orbitPickDelay = 0;
   const cancelApproach = () => { if (approach) { approach = null; velocity.set(0, 0, 0); } };
   const cancelOrbit = (blockHeld = false) => {
     for (const code of ORBIT_KEYS) {
@@ -31,19 +34,27 @@ export function createGeometryFlightMotion(THREE, {
     }
     orbit = null; angularVelocity.set(0, 0);
   };
-  const clear = () => {
+  const clear = (forgetTarget = true) => {
     keys.clear(); blockedOrbitKeys.clear(); velocity.set(0, 0, 0); angularVelocity.set(0, 0);
     mouseX = mouseY = zoomImpulse = 0; approach = orbit = null;
+    if (forgetTarget) { lastOrbitTarget = null; orbitPickDelay = 0; }
   };
-  const beginOrbit = () => {
+  const observeOrbitTarget = () => {
     const selected = getOrbitTarget();
-    if (!Array.isArray(selected?.point) || selected.point.length !== 3 || !selected.point.every(Number.isFinite)) return false;
+    if (Array.isArray(selected?.point) && selected.point.length === 3 && selected.point.every(Number.isFinite)
+      && camera.position.distanceTo(closest.fromArray(selected.point)) > epsilon) {
+      lastOrbitTarget = { ...selected, point: [...selected.point] };
+    }
+    orbitPickDelay = ORBIT_PICK_SECONDS;
+    return lastOrbitTarget;
+  };
+  const beginOrbit = (selected = observeOrbitTarget()) => {
+    if (!selected) return false;
     const point = new THREE.Vector3().fromArray(selected.point);
     if (!(camera.position.distanceTo(point) > epsilon)) return false;
-    orbit = { point, target: { ...selected, point: [...selected.point] } };
-    // A new orbit gesture supersedes free-flight drift and the remaining mouse turn.
-    velocity.set(0, 0, 0); mouseX = mouseY = 0;
-    camera.lookAt(point); camera.quaternion.normalize();
+    orbit = { point, target: selected };
+    // Preserve the current gaze, including when the remembered centre is off-screen.
+    velocity.set(0, 0, 0);
     return true;
   };
   const pressed = code => keys.has(code) ? 1 : 0;
@@ -53,8 +64,7 @@ export function createGeometryFlightMotion(THREE, {
   const syncTarget = () => {
     forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
     up.set(0, 1, 0).applyQuaternion(camera.quaternion); camera.up.copy(up);
-    if (orbit) target.copy(orbit.point);
-    else target.copy(camera.position).addScaledVector(forward, distance);
+    target.copy(camera.position).addScaledVector(forward, orbit ? camera.position.distanceTo(orbit.point) : distance);
   };
   return {
     key(code, down) {
@@ -63,7 +73,7 @@ export function createGeometryFlightMotion(THREE, {
         cancelApproach();
         if (ORBIT_KEYS.has(code)) {
           if (blockedOrbitKeys.has(code)) return true;
-          if (!orbit && !beginOrbit()) { blockedOrbitKeys.add(code); return true; }
+          if (!orbit) beginOrbit();
         }
         if (!keys.has(code)) zoomImpulse += zoomKey(code) * ZOOM_TAP;
         keys.add(code);
@@ -74,7 +84,7 @@ export function createGeometryFlightMotion(THREE, {
       return true;
     },
     look(x, y) {
-      if ((Number.isFinite(x) && x !== 0) || (Number.isFinite(y) && y !== 0)) { cancelApproach(); cancelOrbit(true); }
+      if ((Number.isFinite(x) && x !== 0) || (Number.isFinite(y) && y !== 0)) { cancelApproach(); orbitPickDelay = 0; }
       if (Number.isFinite(x)) mouseX += x;
       if (Number.isFinite(y)) mouseY += y;
     },
@@ -83,12 +93,13 @@ export function createGeometryFlightMotion(THREE, {
           || !Number.isFinite(stopDistance) || !(stopDistance > 0)) return false;
       const destination = new THREE.Vector3().fromArray(point), length = camera.position.distanceTo(destination);
       if (!(length > epsilon)) return false;
-      clear(); if (length <= stopDistance) return true;
+      clear(false); if (length <= stopDistance) return true;
       const start = camera.position.clone(), end = start.clone().lerp(destination, 1 - stopDistance / length);
       camera.lookAt(destination); camera.quaternion.normalize(); approach = { start, end, elapsed: 0 }; syncTarget();
       return true;
     },
     get orbitTarget() { return orbit?.target ?? null; },
+    get lastOrbitTarget() { return lastOrbitTarget; },
     get orbiting() { return orbit !== null; },
     get approaching() { return approach !== null; },
     releaseKeys() { cancelApproach(); cancelOrbit(); keys.clear(); blockedOrbitKeys.clear(); zoomImpulse = 0; },
@@ -115,6 +126,16 @@ export function createGeometryFlightMotion(THREE, {
       if (turning) {
         camera.rotateY(-yaw * sensitivity); camera.rotateX(-pitch * sensitivity); camera.rotateZ(roll * 1.5 * dt); camera.quaternion.normalize();
       }
+      orbitPickDelay -= dt;
+      // Pure orbit retains one centre through its inertial tail. Mouse aiming
+      // may refine it; free flight also remembers surfaces before any orbit key.
+      if ((!orbit || yaw !== 0 || pitch !== 0) && orbitPickDelay <= 0) {
+        const selected = observeOrbitTarget();
+        if (orbit && selected && (yaw !== 0 || pitch !== 0)) {
+          orbit.point.fromArray(selected.point); orbit.target = selected;
+        }
+      }
+      if (!orbit && [...ORBIT_KEYS].some(code => keys.has(code)) && lastOrbitTarget) beginOrbit(lastOrbitTarget);
       let orbitMoved = false;
       if (orbit && dt > 0) {
         angularDesired.set(pressed("ArrowRight") - pressed("ArrowLeft"), pressed("Enter") - pressed("ControlRight"));
@@ -143,13 +164,17 @@ export function createGeometryFlightMotion(THREE, {
       if (thrust) desired.applyQuaternion(camera.quaternion).multiplyScalar(baseSpeed * (keys.has("ShiftRight") ? 4 : 1));
       const moving = velocity.lengthSq() > epsilon * epsilon || thrust;
       if (moving && dt > 0) {
+        if (orbit) movementSegment.start.copy(camera.position);
         const tau = thrust ? 0.25 : 0.4, decay = Math.exp(-dt / tau);
         difference.copy(velocity).sub(desired);
         camera.position.addScaledVector(desired, dt).addScaledVector(difference, tau * (1 - decay));
         velocity.copy(desired).addScaledVector(difference, decay);
         if (!thrust && velocity.lengthSq() < epsilon * epsilon) velocity.set(0, 0, 0);
-        forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
-        if (orbit && orbit.point.clone().sub(camera.position).dot(forward) <= epsilon) cancelOrbit(true);
+        if (orbit) {
+          movementSegment.end.copy(camera.position);
+          movementSegment.closestPointToPoint(orbit.point, true, closest);
+          if (closest.distanceToSquared(orbit.point) <= epsilon * epsilon) cancelOrbit(true);
+        }
       }
       syncTarget(); return turning || orbitMoved || zooming || (moving && dt > 0);
     },
@@ -174,6 +199,7 @@ export function createGeometryFlightController({
     get state() { return state; },
     get active() { return state === "active"; },
     get orbitTarget() { return state === "active" ? motion?.orbitTarget : null; },
+    get lastOrbitTarget() { return state === "active" ? motion?.lastOrbitTarget : null; },
     get orbiting() { return state === "active" && motion?.orbiting; },
     get approaching() { return state === "active" && motion?.approaching; },
     get needsFrame() { return state === "active" && motion?.needsFrame; },
@@ -249,9 +275,9 @@ export function createGeometryFlightController({
       motion = createGeometryFlightMotion(THREE, {
         camera: getCamera(), target: getTarget(), speed: getSpeed(), getOrbitTarget,
       });
-      motion.step(0);
       lastTime = null;
       setState("active");
+      motion.step(0);
       requestRender();
     } catch { failLock(); }
   }

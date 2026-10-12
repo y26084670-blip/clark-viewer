@@ -555,8 +555,11 @@
   z-index: 4;
   display: grid;
   gap: 3px;
-  min-width: 255px;
+  min-width: min(255px, calc(100% - 16px));
   max-width: min(420px, calc(100% - 16px));
+  max-height: calc(100% - 16px);
+  box-sizing: border-box;
+  overflow: auto;
   padding: 8px 10px;
   border: 1px solid #6c7884;
   border-radius: 4px;
@@ -567,6 +570,22 @@
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
+
+.geometry-overlay-drag-handle {
+  pointer-events: auto;
+  padding: 4px 7px;
+  border: 1px solid #697683;
+  border-radius: 3px;
+  background: #303943;
+  color: #edf2f7;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.is-dragging > .geometry-overlay-drag-handle { cursor: grabbing; }
 
 .geometry-performance-overlay b {
   color: #9fd0ff;

@@ -1,8 +1,10 @@
 import { GEOMETRY_FLIGHT_HELP } from "../../services/visualization/geometryFlightController.js";
 import { createGeometryViewSetting } from "../../services/visualization/geometryViewSettings.js";
+import { installGeometryOverlayDrag } from "../../services/visualization/geometryOverlayDrag.js";
 import {
   For,
   Show,
+  batch,
   createEffect,
   createMemo,
   createSignal,
@@ -129,6 +131,16 @@ export function ResultsGeometryViewport(props) {
   const [vectorStyle, setVectorStyle] = createGeometryViewSetting("vectorStyle", "thin");
   const [resultPalette, setResultPalette] = createGeometryViewSetting("resultPalette", "Rainbow");
   const [performanceEnabled, setPerformanceEnabled] = createGeometryViewSetting("resultPerformanceOverlay", false);
+  const [performanceLeft, setPerformanceLeft] = createGeometryViewSetting("performanceOverlayLeft", null);
+  const [performanceTop, setPerformanceTop] = createGeometryViewSetting("performanceOverlayTop", null);
+  const attachPerformanceDrag = element => {
+    const drag = installGeometryOverlayDrag(element, {
+      getPosition: () => performanceLeft() === null || performanceTop() === null ? null
+        : { x: performanceLeft(), y: performanceTop() },
+      setPosition: ({ x, y }) => batch(() => { setPerformanceLeft(x); setPerformanceTop(y); }),
+    });
+    createEffect(drag.refresh); onCleanup(drag.dispose);
+  };
   const [renderPerformance, setRenderPerformance] = createSignal(null);
   const [elementsMode, setElementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode, setRegionsMode] = createGeometryViewSetting("regionsMode", "all");
@@ -741,7 +753,8 @@ export function ResultsGeometryViewport(props) {
             <div class="geometry-flight-hint" role="status">{flightNotice()}</div>
           </Show>
           <Show when={performanceEnabled()}>
-            <div class="geometry-performance-overlay" aria-live="polite">
+            <div class="geometry-performance-overlay" aria-live="polite" ref={attachPerformanceDrag}>
+              <div class="geometry-overlay-drag-handle" title="Перетащите панель за заголовок">Производительность</div>
               <Show when={props.performanceProfile?.mode === "line"} fallback={<>
                 <b>TIME</b>
                 <span>latency {Math.round(props.performanceProfile?.latencyMs ?? 0)} ms · load {Math.round(props.performanceProfile?.loadMs ?? 0)} ms</span>

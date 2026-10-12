@@ -112,9 +112,9 @@ test("opposite arrows and lone modifiers stop idle frames in every keyboard mode
 });
 
 test("flight help describes every chord without former Enter or boost assignments", () => {
-  for (const text of ["←/→ — линейное", "↑/↓ — приближение/удаление", "правый Ctrl+↑/↓", "правый Shift+←/→", "правый Shift+↑/↓", "последний найденный центр", "противоположно взгляду"])
+  for (const text of ["←/→ — линейное", "↑/↓ — приближение/удаление", "правый Ctrl+↑/↓", "правый Shift+←/→", "правый Shift+↑/↓", "последний найденный центр", "противоположно взгляду", "+/− — линейная скорость", "0 — штатная скорость ×1", "×1/64…×64"])
     assert.ok(GEOMETRY_FLIGHT_HELP.includes(text), text);
-  assert.ok(!GEOMETRY_FLIGHT_HELP.includes("Enter")); assert.ok(!GEOMETRY_FLIGHT_HELP.includes("×4"));
+  assert.ok(!GEOMETRY_FLIGHT_HELP.includes("Enter")); assert.ok(!GEOMETRY_FLIGHT_HELP.includes("×4")); assert.ok(!GEOMETRY_FLIGHT_HELP.includes("+/− — масштаб"));
 });
 
 test("a mouse turn leaves accumulated momentum in world space", () => {
@@ -225,7 +225,7 @@ test("modifier shortcuts release thrust and Q/E use physical codes in every layo
   f.control.dispose();
 });
 
-test("right Ctrl modifies vertical translation and composes with zoom without browser shortcuts", () => {
+test("right Ctrl modifies vertical translation and composes with speed controls without browser shortcuts", () => {
   const f = lifecycle(); f.control.start(); f.control.update(0);
   const gaze = f.camera.quaternion.clone();
   assert.equal(f.event("keydown", { code: "Enter" }).defaultPrevented, false);
@@ -234,7 +234,7 @@ test("right Ctrl modifies vertical translation and composes with zoom without br
   assert.equal(f.event("keydown", { code: "ArrowUp", ctrlKey: true }).defaultPrevented, true);
   assert.equal(f.event("keydown", { code: "Equal", ctrlKey: true, shiftKey: true }).defaultPrevented, true);
   f.control.update(200); f.control.update(300);
-  assert.ok(f.camera.position.y > 0); close(f.camera.position.z, 3); assert.ok(f.camera.zoom > 1);
+  assert.ok(f.camera.position.y > 0); close(f.camera.position.z, 3); close(f.camera.zoom, 1); assert.ok(f.control.speedMultiplier > 1);
   assert.deepEqual(f.camera.quaternion.toArray(), gaze.toArray()); assert.equal(f.control.orbiting, false);
   f.event("keyup", { code: "ControlRight", ctrlKey: false });
   f.event("keyup", { code: "ArrowUp" }); f.event("keyup", { code: "Equal" }); f.control.dispose();
@@ -243,41 +243,109 @@ test("right Ctrl modifies vertical translation and composes with zoom without br
   assert.equal(down.motion.key("PageUp", true), false); assert.equal(down.motion.key("PageDown", true), false);
 });
 
-test("zoom is reversible and frame-rate independent in both projections without moving the camera", () => {
+test("speed taps and holds are reversible and frame-rate independent without changing either camera projection", () => {
   for (const Camera of [THREE.PerspectiveCamera, THREE.OrthographicCamera]) {
-    const zooms = [];
+    const multipliers = [];
     for (const fps of [30, 60, 144]) {
       const camera = new Camera(), target = new THREE.Vector3(0, 0, -3);
-      const f = { motion: createGeometryFlightMotion(THREE, { camera, target }) };
-      const position = camera.position.clone(), quaternion = camera.quaternion.clone();
+      camera.zoom = 2.7; camera.updateProjectionMatrix();
+      const f = { motion: createGeometryFlightMotion(THREE, { camera, target, speed: 3 }) };
+      const position = camera.position.clone(), quaternion = camera.quaternion.clone(), projection = camera.projectionMatrix.toArray();
       f.motion.key("NumpadAdd", true); run(f, fps, fps); f.motion.key("NumpadAdd", false);
-      zooms.push(camera.zoom); assert.ok(camera.zoom > 3);
-      assert.deepEqual(camera.position, position); close(camera.quaternion.angleTo(quaternion), 0);
+      multipliers.push(f.motion.speedMultiplier); close(f.motion.speedMultiplier, 2.5); close(f.motion.linearSpeed, 7.5);
+      assert.deepEqual(camera.position, position); assert.deepEqual(camera.quaternion.toArray(), quaternion.toArray());
+      assert.deepEqual(camera.projectionMatrix.toArray(), projection); close(camera.zoom, 2.7);
       f.motion.key("Minus", true); run(f, fps, fps); f.motion.key("Minus", false);
-      close(camera.zoom, 1); assert.equal(f.motion.needsFrame, false);
-      // A short tap survives key release before the next render.
+      close(f.motion.speedMultiplier, 1); assert.equal(f.motion.needsFrame, false);
+      // A short tap changes the setting even when keyup precedes the next frame.
       f.motion.key("Equal", true); f.motion.key("Equal", false); f.motion.step(0);
-      close(camera.zoom, 1.08);
+      close(f.motion.speedMultiplier, 1.25);
       f.motion.key("NumpadSubtract", true); f.motion.key("NumpadSubtract", false); f.motion.step(0);
-      close(camera.zoom, 1);
+      close(f.motion.speedMultiplier, 1); assert.deepEqual(camera.projectionMatrix.toArray(), projection);
     }
-    close(Math.max(...zooms), Math.min(...zooms));
+    close(Math.max(...multipliers), Math.min(...multipliers));
   }
 });
 
-test("opposite zoom/vertical keys cancel and zoom bounds stop an idle RAF", () => {
+test("opposite speed keys cancel, bounds stop idle frames, and either zero restores the default", () => {
   const f = flight();
   for (const code of ["Equal", "Minus", "ArrowUp", "ArrowDown", "ControlRight"]) f.motion.key(code, true);
-  run(f, 60, 60); close(f.camera.zoom, 1); close(f.camera.position.y, 0);
-  assert.equal(f.motion.needsFrame, false);
-  f.motion.key("ArrowUp", false); f.motion.key("ArrowDown", false); f.motion.key("ControlRight", false);
-  f.motion.step(0); assert.equal(f.motion.orbiting, false, "release an idle pivot even when RAF has already stopped");
-  const next = f.camera.position.clone().addScaledVector(f.camera.getWorldDirection(new THREE.Vector3()), 3).toArray();
-  orbitKey(f.motion,"ArrowRight"); assert.deepEqual(f.motion.orbitTarget.point, next);
-  f.motion.clear(); f.camera.zoom = 100; f.motion.key("Equal", true); f.motion.step(0);
-  assert.equal(f.camera.zoom, 100); assert.equal(f.motion.needsFrame, false);
-  f.motion.clear(); f.camera.zoom = 0.02; f.motion.key("Minus", true); f.motion.step(0);
-  assert.equal(f.camera.zoom, 0.02); assert.equal(f.motion.needsFrame, false);
+  run(f, 60, 60); close(f.motion.speedMultiplier, 1); close(f.camera.position.y, 0); close(f.camera.zoom, 1);
+  assert.equal(f.motion.needsFrame, false); f.motion.releaseKeys();
+  for (const [code, bound] of [["Equal", 64], ["NumpadSubtract", 1 / 64]]) {
+    f.motion.key(code, true); run(f, 900, 60); close(f.motion.speedMultiplier, bound);
+    assert.equal(f.motion.needsFrame, false, "a clamped setting must not keep RAF alive"); f.motion.key(code, false);
+    for (const reset of ["Digit0", "Numpad0"]) {
+      f.motion.key(reset, true); close(f.motion.speedMultiplier, 1); close(f.motion.linearSpeed, 1);
+      assert.equal(f.motion.needsFrame, false); f.motion.key(reset, false);
+    }
+  }
+  assert.deepEqual(f.camera.position.toArray(), [0, 0, 3]); close(f.camera.zoom, 1);
+});
+
+test("key repeats do not add taps and held aliases use one continuous adjustment rate", () => {
+  const f = flight(); f.motion.key("Equal", true);
+  for (let repeat = 0; repeat < 40; repeat++) f.motion.key("Equal", true);
+  close(f.motion.speedMultiplier, 1.25); run(f, 60, 60); close(f.motion.speedMultiplier, 2.5);
+  f.motion.key("NumpadAdd", true); close(f.motion.speedMultiplier, 3.125);
+  run(f, 60, 60); close(f.motion.speedMultiplier, 6.25);
+  f.motion.key("Digit0", true); close(f.motion.speedMultiplier, 1); run(f, 60, 60); close(f.motion.speedMultiplier, 1);
+  f.motion.key("Minus", true); close(f.motion.speedMultiplier, 1);
+  f.motion.key("Digit0", false); run(f, 60, 60); close(f.motion.speedMultiplier, 1);
+});
+
+test("selected speed scales every linear direction and its inertia at 30/60/144 FPS", () => {
+  for (const fps of [30, 60, 144]) for (const [code, ctrl] of [
+    ["ArrowLeft", false], ["ArrowRight", false], ["ArrowUp", false], ["ArrowDown", false], ["ArrowUp", true], ["ArrowDown", true],
+  ]) {
+    const normal = flight(), fast = flight(), start = normal.camera.position.clone();
+    fast.motion.key("Equal", true); fast.motion.key("Equal", false);
+    for (const f of [normal, fast]) { if (ctrl) f.motion.key("ControlRight", true); f.motion.key(code, true); run(f, fps, fps); }
+    close(fast.camera.position.distanceTo(start), normal.camera.position.distanceTo(start) * 1.25);
+    for (const f of [normal, fast]) { f.motion.key(code, false); run(f, fps, fps); }
+    close(fast.camera.position.distanceTo(start), normal.camera.position.distanceTo(start) * 1.25);
+    assert.deepEqual(fast.camera.quaternion.toArray(), normal.camera.quaternion.toArray()); close(fast.camera.zoom, normal.camera.zoom);
+  }
+});
+
+test("speed changes and zero affect held movement smoothly without teleporting or resetting inertia", () => {
+  for (const fps of [30, 60, 144]) {
+    const f = flight(); f.motion.key("ArrowRight", true); run(f, fps, fps);
+    const start = f.camera.position.x, v1 = 1 - Math.exp(-4);
+    f.motion.key("Equal", true); f.motion.key("Equal", false); close(f.camera.position.x, start);
+    run(f, fps, fps); close(f.camera.position.x, start + 1.25 + (v1 - 1.25) * .25 * (1 - Math.exp(-4)));
+    const resetStart = f.camera.position.x, v2 = 1.25 + (v1 - 1.25) * Math.exp(-4);
+    f.motion.key("Numpad0", true); f.motion.key("Numpad0", false); close(f.camera.position.x, resetStart); close(f.motion.speedMultiplier, 1);
+    run(f, fps, fps); close(f.camera.position.x, resetStart + 1 + (v2 - 1) * .25 * (1 - Math.exp(-4)));
+    close(f.camera.position.y, 0); close(f.camera.position.z, 3); close(f.camera.zoom, 1);
+  }
+});
+
+test("linear speed settings do not alter orbital speed, its centre or radius", () => {
+  for (const code of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) for (const factor of [1 / 64, 64]) {
+    const normal = flight(), adjusted = flight();
+    adjusted.motion.key(factor < 1 ? "Minus" : "Equal", true); run(adjusted, 900, 60);
+    adjusted.motion.key(factor < 1 ? "Minus" : "Equal", false); close(adjusted.motion.speedMultiplier, factor);
+    for (const f of [normal, adjusted]) { orbitKey(f.motion, code); run(f, 120, 60); }
+    assert.deepEqual(adjusted.camera.position.toArray(), normal.camera.position.toArray());
+    assert.deepEqual(adjusted.camera.quaternion.toArray(), normal.camera.quaternion.toArray());
+    assert.deepEqual(adjusted.motion.orbitTarget.point, normal.motion.orbitTarget.point); close(adjusted.camera.position.length(), 3);
+  }
+});
+
+test("speed persists through automatic approach and key release, then a new flight restores the default", () => {
+  const f = lifecycle(); f.control.start();
+  assert.equal(f.event("keydown", { code: "NumpadAdd" }).defaultPrevented, true);
+  f.event("keyup", { code: "NumpadAdd" }); close(f.control.speedMultiplier, 1.25);
+  f.control.approach([0, 0, -10], 1); f.control.update(0);
+  for (let t = 100; t <= 600; t += 100) f.control.update(t);
+  assert.equal(f.control.approaching, false); close(f.camera.position.z, -9); close(f.control.speedMultiplier, 1.25);
+  f.event("keydown", { code: "ControlLeft", ctrlKey: true }); f.event("keyup", { code: "ControlLeft" }); close(f.control.speedMultiplier, 1.25);
+  for (const code of ["Digit0", "Numpad0"]) {
+    assert.equal(f.event("keydown", { code }).defaultPrevented, true); close(f.control.speedMultiplier, 1); f.event("keyup", { code });
+    f.event("keydown", { code: "Equal" }); f.event("keyup", { code: "Equal" }); close(f.control.speedMultiplier, 1.25);
+  }
+  f.control.stop(); close(f.control.speedMultiplier, 1); f.control.start(); close(f.control.speedMultiplier, 1); f.control.dispose();
 });
 
 test("mouse angles are smoothed with tau=0.25s, conserve the requested turn and settle at every frame rate", () => {

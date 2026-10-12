@@ -3,7 +3,8 @@ const FLIGHT_KEYS = new Set([
   "KeyQ", "KeyE", "ShiftRight", "Equal", "Minus", "NumpadAdd", "NumpadSubtract",
 ]);
 const MIN_ZOOM = 0.02, MAX_ZOOM = 100, ZOOM_RATE = 1.2, ZOOM_TAP = Math.log(1.08);
-export const GEOMETRY_FLIGHT_HELP = "↑/↓ — вперёд/назад; ←/→ — влево/вправо; мышь — направление; Enter — подъём; правый Ctrl — опускание; +/− — масштаб; Q/E — крен; правый Shift — ускорение ×4; Esc — выход";
+const LOOK_TAU = 0.2, LOOK_EPSILON = 0.001, APPROACH_SECONDS = 0.5;
+export const GEOMETRY_FLIGHT_HELP = "Перспективный полёт; ↑/↓ — вперёд/назад; ←/→ — влево/вправо (×2); мышь — плавное направление; Enter — подъём; правый Ctrl — опускание (×1,5); +/− — масштаб; Q/E — крен; правый Shift — ускорение ×4; ЛКМ — подлёт к цели в прицеле; новый ручной ввод — отмена подлёта; Esc — выход";
 const zoomKey = code => code === "Equal" || code === "NumpadAdd" ? 1
   : code === "Minus" || code === "NumpadSubtract" ? -1 : 0;
 
@@ -17,10 +18,18 @@ export function createGeometryFlightMotion(THREE, {
   const difference = new THREE.Vector3();
   const forward = new THREE.Vector3();
   const up = new THREE.Vector3();
+  const axisSpeeds = new THREE.Vector3(2, 1.5, 1);
   const baseSpeed = Number.isFinite(speed) && speed > 0 ? speed : 1;
   const distance = Math.max(camera.position.distanceTo(target), baseSpeed * 0.01, 1e-8);
   const epsilon = baseSpeed * 1e-5;
-  let mouseX = 0, mouseY = 0, zoomImpulse = 0;
+  let mouseX = 0, mouseY = 0, zoomImpulse = 0, approach = null;
+  const cancelApproach = () => {
+    if (!approach) return;
+    approach = null; velocity.set(0, 0, 0);
+  };
+  const clear = () => {
+    keys.clear(); velocity.set(0, 0, 0); mouseX = mouseY = zoomImpulse = 0; approach = null;
+  };
   const pressed = code => keys.has(code) ? 1 : 0;
   const zoomDirection = () => Number(keys.has("Equal") || keys.has("NumpadAdd"))
     - Number(keys.has("Minus") || keys.has("NumpadSubtract"));
@@ -36,19 +45,37 @@ export function createGeometryFlightMotion(THREE, {
     key(code, down) {
       if (!FLIGHT_KEYS.has(code)) return false;
       if (down) {
+        cancelApproach();
         if (!keys.has(code)) zoomImpulse += zoomKey(code) * ZOOM_TAP;
         keys.add(code);
       } else keys.delete(code);
       return true;
     },
     look(x, y) {
+      if ((Number.isFinite(x) && x !== 0) || (Number.isFinite(y) && y !== 0)) cancelApproach();
       if (Number.isFinite(x)) mouseX += x;
       if (Number.isFinite(y)) mouseY += y;
     },
-    releaseKeys() { keys.clear(); zoomImpulse = 0; },
-    clear() { keys.clear(); velocity.set(0, 0, 0); mouseX = mouseY = zoomImpulse = 0; },
+    approach(point, stopDistance) {
+      if (!Array.isArray(point) || point.length !== 3 || !point.every(Number.isFinite)
+          || !Number.isFinite(stopDistance) || !(stopDistance > 0)) return false;
+      const destination = new THREE.Vector3().fromArray(point);
+      const length = camera.position.distanceTo(destination);
+      if (!(length > epsilon)) return false;
+      clear();
+      if (length <= stopDistance) return true;
+      const start = camera.position.clone();
+      const end = start.clone().lerp(destination, 1 - stopDistance / length);
+      camera.lookAt(destination); camera.quaternion.normalize();
+      approach = { start, end, elapsed: 0 };
+      syncTarget();
+      return true;
+    },
+    get approaching() { return approach !== null; },
+    releaseKeys() { cancelApproach(); keys.clear(); zoomImpulse = 0; },
+    clear,
     get needsFrame() {
-      return mouseX !== 0 || mouseY !== 0 || velocity.lengthSq() > epsilon * epsilon
+      return approach !== null || mouseX !== 0 || mouseY !== 0 || velocity.lengthSq() > epsilon * epsilon
         || pressed("ArrowRight") !== pressed("ArrowLeft")
         || pressed("Enter") !== pressed("ControlRight")
         || pressed("ArrowDown") !== pressed("ArrowUp")
@@ -57,15 +84,28 @@ export function createGeometryFlightMotion(THREE, {
     step(seconds) {
       // A suspended/overloaded tab must not produce a large displacement.
       const dt = Number.isFinite(seconds) ? Math.max(0, Math.min(0.1, seconds)) : 0;
+      if (approach) {
+        approach.elapsed += dt;
+        const fraction = approach.elapsed >= APPROACH_SECONDS - 1e-12 ? 1 : approach.elapsed / APPROACH_SECONDS;
+        camera.position.lerpVectors(approach.start, approach.end, fraction * fraction * (3 - 2 * fraction));
+        if (fraction === 1) approach = null;
+        syncTarget();
+        return dt > 0;
+      }
       const roll = pressed("KeyQ") - pressed("KeyE");
-      const turning = mouseX !== 0 || mouseY !== 0 || (roll !== 0 && dt > 0);
+      // Drain accumulated mouse angles analytically. Preserve the final angle,
+      // including a small tail after the last mouse event, at every frame rate.
+      const decay = Math.exp(-dt / LOOK_TAU);
+      const yaw = dt > 0 ? mouseX * (Math.abs(mouseX * decay) < LOOK_EPSILON ? 1 : 1 - decay) : 0;
+      const pitch = dt > 0 ? mouseY * (Math.abs(mouseY * decay) < LOOK_EPSILON ? 1 : 1 - decay) : 0;
+      mouseX -= yaw; mouseY -= pitch;
+      const turning = yaw !== 0 || pitch !== 0 || (roll !== 0 && dt > 0);
       if (turning) {
-        camera.rotateY(-mouseX * sensitivity);
-        camera.rotateX(-mouseY * sensitivity);
+        camera.rotateY(-yaw * sensitivity);
+        camera.rotateX(-pitch * sensitivity);
         camera.rotateZ(roll * 1.5 * dt);
         camera.quaternion.normalize();
       }
-      mouseX = mouseY = 0;
       const zoomDelta = zoomImpulse + zoomDirection() * ZOOM_RATE * dt;
       zoomImpulse = 0;
       const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, camera.zoom * Math.exp(zoomDelta)));
@@ -75,7 +115,7 @@ export function createGeometryFlightMotion(THREE, {
         pressed("Enter") - pressed("ControlRight"),
         pressed("ArrowDown") - pressed("ArrowUp"));
       const thrust = desired.lengthSq() > 0;
-      if (thrust) desired.normalize().applyQuaternion(camera.quaternion)
+      if (thrust) desired.normalize().multiply(axisSpeeds).applyQuaternion(camera.quaternion)
         .multiplyScalar(baseSpeed * (keys.has("ShiftRight") ? 4 : 1));
       const moving = velocity.lengthSq() > epsilon * epsilon || thrust;
       if (moving && dt > 0) {
@@ -96,6 +136,7 @@ export function createGeometryFlightMotion(THREE, {
 /** Pointer lock owns the lifetime; RAF remains owned by the existing viewport. */
 export function createGeometryFlightController({
   THREE, element, getCamera, getTarget, getSpeed = () => 1, canStart = () => true,
+  getApproachTarget = () => null,
   onActivate = () => {}, onDeactivate = () => {}, onStateChange = () => {},
   onError = () => {}, requestRender = () => {},
 }) {
@@ -103,11 +144,13 @@ export function createGeometryFlightController({
   const win = owner.defaultView;
   let state = "idle", motion = null, lastTime = null, disposed = false, generation = 0;
   let rightControl = false, leftControl = false;
+  const heldKeys = new Set(), suppressedKeys = new Set();
   const setState = value => { state = value; onStateChange(value); };
   const locked = () => owner.pointerLockElement === element;
   const controller = {
     get state() { return state; },
     get active() { return state === "active"; },
+    get approaching() { return state === "active" && motion?.approaching; },
     get needsFrame() { return state === "active" && motion?.needsFrame; },
     start() {
       if (disposed || state !== "idle") return;
@@ -132,6 +175,7 @@ export function createGeometryFlightController({
       const wasActive = state === "active";
       generation++;
       rightControl = leftControl = false;
+      heldKeys.clear(); suppressedKeys.clear();
       motion?.clear(); motion = null; lastTime = null;
       if (state !== "idle") setState("idle");
       if (locked()) owner.exitPointerLock();
@@ -145,12 +189,18 @@ export function createGeometryFlightController({
       motion.step(dt);
       if (!motion.needsFrame) lastTime = null;
     },
+    approach(point, stopDistance) {
+      if (state !== "active" || !motion.approach(point, stopDistance)) return false;
+      for (const code of heldKeys) suppressedKeys.add(code);
+      lastTime = null; requestRender(); return true;
+    },
     dispose() {
       disposed = true;
       controller.stop();
       owner.removeEventListener("pointerlockchange", lockChange);
       owner.removeEventListener("pointerlockerror", lockError);
       owner.removeEventListener("mousemove", mouseMove);
+      owner.removeEventListener("click", click, true);
       owner.removeEventListener("keydown", keyDown, true);
       owner.removeEventListener("keyup", keyUp, true);
       owner.removeEventListener("visibilitychange", visibilityChange);
@@ -186,11 +236,19 @@ export function createGeometryFlightController({
     motion.look(event.movementX, event.movementY);
     requestRender();
   }
+  function click(event) {
+    if (state !== "active" || !locked() || event.button !== 0) return;
+    event.preventDefault(); event.stopPropagation();
+    const destination = getApproachTarget();
+    if (destination) controller.approach(destination.point, destination.stopDistance);
+  }
   function keyDown(event) {
     if (state !== "active" || event.isComposing) return;
     if (event.code === "Escape") { event.preventDefault(); event.stopPropagation(); controller.stop(); return; }
     if (event.code === "ControlRight") rightControl = true;
     if (event.code === "ControlLeft") leftControl = true;
+    if (FLIGHT_KEYS.has(event.code)) heldKeys.add(event.code);
+    if (suppressedKeys.has(event.code)) { event.preventDefault(); event.stopPropagation(); return; }
     // Right Ctrl is thrust, including when held together with arrows or zoom.
     if (leftControl || (event.ctrlKey && !rightControl) || event.altKey || event.metaKey) {
       motion.releaseKeys(); return;
@@ -198,12 +256,13 @@ export function createGeometryFlightController({
     if (motion.key(event.code, true)) { event.preventDefault(); event.stopPropagation(); requestRender(); }
   }
   function keyUp(event) {
+    heldKeys.delete(event.code); suppressedKeys.delete(event.code);
     if (event.code === "ControlRight") rightControl = false;
     if (event.code === "ControlLeft") leftControl = false;
     if (state === "active" && motion.key(event.code, false)) {
       event.preventDefault(); event.stopPropagation(); requestRender();
     }
-    if (state === "active" && event.code === "ControlLeft" && rightControl && !event.altKey && !event.metaKey) {
+    if (state === "active" && event.code === "ControlLeft" && rightControl && !suppressedKeys.has("ControlRight") && !event.altKey && !event.metaKey) {
       motion.key("ControlRight", true); requestRender();
     }
   }
@@ -212,6 +271,7 @@ export function createGeometryFlightController({
   owner.addEventListener("pointerlockchange", lockChange);
   owner.addEventListener("pointerlockerror", lockError);
   owner.addEventListener("mousemove", mouseMove);
+  owner.addEventListener("click", click, true);
   owner.addEventListener("keydown", keyDown, true);
   owner.addEventListener("keyup", keyUp, true);
   owner.addEventListener("visibilitychange", visibilityChange);

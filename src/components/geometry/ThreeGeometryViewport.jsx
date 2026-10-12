@@ -1527,6 +1527,7 @@ export function ThreeGeometryViewport(props) {
   let controls;
   const flightSourceSizes = new Map();
   let lastFlightPickTime = Number.NEGATIVE_INFINITY;
+  let flightEntryState;
   let cameraTaskKey = props.taskKey;
   let pendingCameraState = props.cameraState;
   let geometryRoot;
@@ -1718,7 +1719,7 @@ export function ThreeGeometryViewport(props) {
       if (axesScene && axesCamera && axesRoot && controls) {
         const size = axesGizmoSize();
         const direction = camera.position.clone().sub(controls.target);
-        if (direction.lengthSq() < 1e-12) direction.set(1, 1, 1);
+        if (direction.lengthSq() < 1e-6) direction.set(1, 1, 1);
         axesCamera.position.copy(direction.normalize().multiplyScalar(5));
         axesCamera.up.copy(camera.up);
         axesCamera.lookAt(0, 0, 0);
@@ -2731,6 +2732,7 @@ export function ThreeGeometryViewport(props) {
           // Materialize the ready frame once; flight itself changes only the camera.
           renderNow();
           if (error()) throw new Error(error());
+          flightEntryState = snapshotGeometryCamera(camera, controls, activeProjection);
           setFixedAxisRotation(null);
           switchProjection("perspective", { fit: false });
           flightSceneScale = Math.max(currentBounds.getSize(new THREE.Vector3()).length(), 1e-6);
@@ -2742,9 +2744,19 @@ export function ThreeGeometryViewport(props) {
           hasFramedGeometry = true;
           clearHoverTooltip();
         },
-        onDeactivate: () => {
+        onDeactivate: reason => {
           controlsInteracting = false;
-          if (!disposed) rebuildOrbitControls();
+          const saved = flightEntryState;
+          flightEntryState = null;
+          if (disposed) return;
+          if (saved && (reason === "escape" || reason === "unlock")) {
+            switchProjection(saved.projection, { fit: false });
+            camera.up.fromArray(saved.up);
+            rebuildOrbitControls();
+            restoreGeometryCamera(camera, controls, saved);
+            hasFramedGeometry = true;
+            props.onFlightProjectionRestore?.(saved.projection);
+          } else rebuildOrbitControls();
         },
         onStateChange: state => {
           setFlightActive(state === "active"); setFlightTarget(null);

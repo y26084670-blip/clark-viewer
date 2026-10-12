@@ -33,7 +33,7 @@ function sameTransform(a, b) {
   if (a.sign !== b.sign) return false;
   return a.matrix.every((value, i) => {
     const scale = Math.max(1, Math.abs(value), Math.abs(b.matrix[i]));
-    return Math.abs(value - b.matrix[i]) <= 1e-9 + 32 * Number.EPSILON * scale;
+    return Math.abs(value - b.matrix[i]) <= 1e-6 + 32 * 1e-6 * scale;
   });
 }
 

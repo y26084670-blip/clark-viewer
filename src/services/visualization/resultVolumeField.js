@@ -40,7 +40,7 @@ function boundsOf(positions) {
 function resolution(bounds, budget, maxAxis) {
   const spans = bounds.max.map((v, i) => v - bounds.min[i]);
   const largest = Math.max(...spans);
-  if (!Number.isFinite(largest) || largest <= 0 || spans.some(span => span <= largest * 1e-12)) return null;
+  if (!Number.isFinite(largest) || largest <= 0 || spans.some(span => span <= largest * 1e-6)) return null;
   const dims = spans.map(span => Math.max(2, Math.min(maxAxis, Math.round((maxAxis - 1) * span / largest) + 1)));
   while (dims.reduce((a, b) => a * b, 1) > budget) {
     let axis = -1;
@@ -72,7 +72,7 @@ function tetraTransform(p) {
   const bc = cross(b, c), ca = cross(c, a), ab = cross(a, b);
   const determinant = a.reduce((sum, v, i) => sum + v * bc[i], 0);
   const length = Math.max(...[a, b, c].map(v => Math.hypot(...v)));
-  if (!Number.isFinite(determinant) || Math.abs(determinant) <= length ** 3 * 1e-12) return null;
+  if (!Number.isFinite(determinant) || Math.abs(determinant) <= length ** 3 * 1e-6) return null;
   return { p, determinant, inverse: [...bc, ...ca, ...ab].map(v => v / determinant) };
 }
 

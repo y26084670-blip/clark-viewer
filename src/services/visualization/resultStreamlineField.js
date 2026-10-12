@@ -18,7 +18,7 @@ const norm = a => Math.hypot(...a);
 const distance = (a, b) => norm(sub(a, b));
 const cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
 const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
-const inside = (u, eps = 1e-10) => u && u.every(v => v >= -eps && v <= 1 + eps);
+const inside = (u, eps) => u && u.every(v => v >= -eps && v <= 1 + eps);
 
 function mapping(vertices, u) {
   const point = [0, 0, 0], jacobian = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
@@ -125,7 +125,7 @@ export function sampleStreamlineVector(domain, point, guess) {
 }
 function direction(domain,p,sign) {
   const s=sampleStreamlineVector(domain,p);
-  if(!s || !Number.isFinite(s.magnitude) || s.magnitude<=domain.maxMagnitude*1e-12 || s.magnitude===0) return null;
+  if(!s || !Number.isFinite(s.magnitude) || s.magnitude<=domain.maxMagnitude*1e-6 || s.magnitude===0) return null;
   return s.vector.map(v=>sign*v/s.magnitude);
 }
 function rk4(domain,p,h,sign) {
@@ -187,7 +187,7 @@ function boundaryPoint(domain,p,h,sign,next,allowed,stageOutside) {
     candidates.sort((a,b)=>a.time-b.time);
     if(candidates.length) {
       let lo=previousTime,hi=candidates[0].time,edge=previousPoint;
-      const target=Math.max(domain.extent*4e-12,allowed*.001);
+      const target=Math.max(domain.extent*1e-6,allowed*.001);
       for(let i=0;i<48;i++) {
         const t=(lo+hi)/2,middle=integratedPoint(domain,p,t,sign);
         if(!middle){hi=t;continue;}
@@ -200,6 +200,12 @@ function boundaryPoint(domain,p,h,sign,next,allowed,stageOutside) {
       let axis=0;
       for(let k=1;k<3;k++)if(Math.min(local[k],1-local[k])<Math.min(local[axis],1-local[axis]))axis=k;
       local[axis]=local[axis]<.5?0:1;
+      // A coarse boundary tolerance may leave several faces within the same
+      // localization error. Snap those together, retaining ambiguous edge exits.
+      for(let k=0;k<3;k++)if(k!==axis) {
+        const candidate=[...local];candidate[k]=local[k]<.5?0:1;
+        if(distance(physicalPoint(domain,candidate),physicalPoint(domain,local))<=target) local[k]=candidate[k];
+      }
       return {point:physicalPoint(domain,local),time:(lo+hi)/2};
     }
     if(inside(u,0)){previousTime=time;previousPoint=q;}
@@ -211,11 +217,11 @@ function neighbour(domains,current,point,tangent,sign) {
   const hits=[];
   for(const d of domains) {
     if(d===current)continue;
-    const eps=Math.min(d.cellSize,current.cellSize)*1e-7;
+    const eps=Math.min(d.cellSize,current.cellSize)*1e-6;
     if(point.some((v,k)=>v<d.min[k]-eps||v>d.max[k]+eps))continue;
     const u=streamlineCoordinates(d,point);
     // Contact at a face is required; overlapping interiors do not define a seam.
-    if(!inside(u,1e-8)||!u.some(v=>Math.min(Math.abs(v),Math.abs(1-v))<1e-8))continue;
+    if(!inside(u,1e-6)||!u.some(v=>Math.min(Math.abs(v),Math.abs(1-v))<1e-6))continue;
     if(!inside(streamlineCoordinates(d,add(point,tangent,eps)),0))continue;
     const own=direction(d,point,sign);
     if(!own || !inside(streamlineCoordinates(d,add(point,own,eps)),0))continue;
@@ -231,14 +237,15 @@ function traceDirection(domains,first,seed,sign,tolerance,maxSteps) {
   const closeDistance=first.cellSize*tolerance*2, maxLength=Math.max(...domains.map(d=>d.extent))*1000;
   const finish=(reason)=>({points,pieces,reason,length});
   while(points.length<maxSteps && attempts++<maxSteps*16 && length<maxLength) {
-    h=Math.min(h,domain.cellSize*.35);
+    const minimumStep=domain.cellSize*1e-3;
+    h=Math.max(minimumStep,Math.min(h,domain.cellSize*.35));
     domain.trialOutside=false;domain.monitorBoundaryStages=true;
     const one=rk4(domain,p,h,sign), two=integratedPoint(domain,p,h,sign);
     domain.monitorBoundaryStages=false;
     const stageOutside=domain.trialOutside;
-    if(!one||!two) { if(h>domain.cellSize*1e-6){h/=2;continue;} return finish("zero"); }
+    if(!one||!two) { if(h>minimumStep){h=Math.max(minimumStep,h/2);continue;} return finish("zero"); }
     const error=distance(one,two)/15, allowed=domain.cellSize*tolerance;
-    if(error>allowed) { if(h<=domain.cellSize*1e-6)return finish("accuracy"); h*=Math.max(.2,.8*(allowed/error)**.2);continue; }
+    if(error>allowed) { if(h<=minimumStep)return finish("accuracy"); h=Math.max(minimumStep,h*Math.max(.2,.8*(allowed/error)**.2));continue; }
     let next=two;
     const event=boundaryPoint(domain,p,h,sign,next,allowed,stageOutside);
     if(event) {
@@ -254,11 +261,14 @@ function traceDirection(domains,first,seed,sign,tolerance,maxSteps) {
     }
     const local=streamlineCoordinates(domain,next);
     if(!inside(local,0)) {
-      if(boundaryViolation(domain,next,local)>allowed){h/=2;continue;}
+      if(boundaryViolation(domain,next,local)>allowed){
+        if(h<=minimumStep)return finish("accuracy");
+        h=Math.max(minimumStep,h/2);continue;
+      }
       next=physicalPoint(domain,local);
     }
     const travelled=distance(p,next);
-    if(travelled<=domain.cellSize*1e-10)return finish("stagnation");
+    if(travelled<=domain.cellSize*1e-4)return finish("stagnation");
     length+=travelled;
     // Poincare return to the seed plane, in the same direction. Two returns
     // must agree within tolerance. Nearby turns of a drifting helix/spiral are

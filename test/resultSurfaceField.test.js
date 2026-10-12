@@ -151,3 +151,16 @@ test("surface nodes and images obey the shared 100000/128 limits before interpol
     if (spec.copies) assert.equal(new Set(result.volumeFields.fallbackPoints.map(point => point.instance.ls)).size, spec.copies);
   }
 });
+
+
+test("surface triangles use relative 1e-6 degeneracy and orientation thresholds", () => {
+  for (const size of [1,1e-9,1e9]) for (const width of [.5e-6,2e-6]) {
+    const d=domain({n2:2});d.positions.set([0,0,0, 0,width*size,0, size,0,0, size,width*size,0]);
+    const result=buildResultSurfaceField({domains:[d]});assert.equal(result.surfaces.length,width>1e-6?1:0);
+    if(width<1e-6)assert.deepEqual(result.fallbackPoints,d.points);
+  }
+  for (const cosine of [.5e-6,2e-6]) {
+    const d=domain({n2:2});d.positions.set([0,0,0, 0,-cosine,Math.sqrt(1-cosine*cosine), 0,1,0, 1,0,0]);
+    assert.equal(buildResultSurfaceField({domains:[d]}).surfaces.length,cosine>1e-6?1:0);
+  }
+});

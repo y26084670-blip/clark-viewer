@@ -100,3 +100,16 @@ test("copy limits preserve the original curve and seed and preflight huge symmet
   assert.equal(huge.starts.length, 1); assert.ok(huge.notice);
   const errored = { ...original, error: "no data" }; assert.equal(expandResultStreamline(task(), errored), errored);
 });
+
+
+test("a multi-element curve accepts transform rounding within 1e-6+32e-6*scale and rejects larger changes", () => {
+  for (const translation of [10,1e6]) for (const factor of [.9,1.1]) {
+    const delta=factor*(1e-6+32e-6*Math.max(1,translation));
+    const first={...record,symAs:1,symPs:2,symTx:translation,symKyp:-1};
+    const second={...first,id:2,recordIndex:1,symTx:translation+delta};
+    const curve=line(); curve.paths.push({...path(),source:{schemaId:"elements",recordIndex:1},key:"second"});
+    const expanded=expandResultStreamline({elements:[first,second],general:{}},curve);
+    assert.equal(expanded.starts.length,factor<1?2:1,`${translation}/${factor}`);
+    assert.equal(expanded.paths.length,factor<1?6:3);
+  }
+});

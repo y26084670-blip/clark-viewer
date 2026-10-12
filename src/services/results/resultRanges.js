@@ -76,7 +76,7 @@ export function readResultRanges(handle, { name, header, steps }) {
         || stepIds.some((id, i) => id !== i))) throw new Error("неполный временной цикл помечен полным");
     const times = array("times", stepIds.length).map(Number);
     if (times.some((time, i) => !Number.isFinite(time)
-        || Math.abs(time - stepIds[i] * timeStep) > 1e-12 * Math.max(1, Math.abs(time)))) throw new Error("неверные моменты времени");
+        || Math.abs(time - stepIds[i] * timeStep) > 1e-6 * Math.max(1, Math.abs(time)))) throw new Error("неверные моменты времени");
     const size = objectIds.length * channels.length;
     const matrix = (path, integers = false) => {
       const data = dataset(`global/${path}`);

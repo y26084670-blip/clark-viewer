@@ -132,3 +132,17 @@ for (const Type of [Float32Array,Float64Array]) test(`real ${Type.name} HDF5 hea
     } finally{f.close();}
   }} finally{await rm(dir,{recursive:true,force:true});}
 });
+
+
+test('global ranges retain REAL32 time rounding but reject a mismatch beyond 1e-6', () => {
+  for (const Type of [Float32Array, Float64Array]) {
+    const task=globalRangesTask(); const dt=task.general.timeStep;
+    task.metadata.MH.ranges.times=Array.from(new Type(task.metadata.MH.ranges.stepIds.map(i=>i*dt)));
+    assert.equal(globalResultRange(task,'M',[1]).available,true);
+  }
+  for (const dt of [.1, 1234]) for (const factor of [.9,1.1]) {
+    const task=globalRangesTask(); task.general.timeStep=dt;
+    task.metadata.MH.ranges.times=task.metadata.MH.ranges.stepIds.map(i=>i*dt+(i?factor*1e-6*Math.max(1,i*dt):0));
+    assert.equal(globalResultRange(task,'M',[1]).available,factor<1);
+  }
+});

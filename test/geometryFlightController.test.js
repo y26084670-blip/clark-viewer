@@ -179,7 +179,7 @@ test("opposite arrows and lone modifiers stop idle frames in every keyboard mode
 });
 
 test("flight help describes Enter roll chords and speed controls without former Q/E or boost assignments", () => {
-  for (const text of ["←/→ — линейное", "↑/↓ — приближение/удаление", "правый Ctrl+↑/↓", "правый Shift+←/→", "правый Shift+↑/↓", "последний найденный центр", "противоположно взгляду", "+/− — линейная скорость", "0 — штатная скорость ×1", "×1/64…×64", "Enter+←/→ — крен против/по часовой стрелке"])
+  for (const text of ["←/→ — линейное", "↑/↓ — приближение/удаление", "правый Ctrl+↑/↓", "правый Shift+←/→", "правый Shift+↑/↓", "последний найденный центр", "противоположно взгляду", "+/− — линейная скорость", "0 — штатная скорость ×1", "×1/64…×64", "Enter+←/→ — крен против/по часовой стрелке", "A — начальный вид полёта без выхода"])
     assert.ok(GEOMETRY_FLIGHT_HELP.includes(text), text);
   assert.ok(!GEOMETRY_FLIGHT_HELP.includes("Q/E")); assert.ok(!GEOMETRY_FLIGHT_HELP.includes("×4")); assert.ok(!GEOMETRY_FLIGHT_HELP.includes("+/− — масштаб"));
 });
@@ -214,7 +214,8 @@ test("opposite keys cancel, stale large time steps are bounded, and cleared moti
   f.motion.step(0.1); assert.deepEqual(f.camera.position, position); assert.equal(f.motion.needsFrame, false);
 });
 
-function lifecycle({ pending = false, denied = false, approachTarget = null, orbitTarget } = {}) {
+function lifecycle({ pending = false, denied = false, approachTarget = null, orbitTarget,
+  activate = () => {}, deactivate = () => {} } = {}) {
   const f = flight({ orbitTarget }), owner = new EventTarget(), win = new EventTarget();
   owner.defaultView = win; owner.hidden = false; owner.pointerLockElement = null;
   const states = [], errors = [], speedNotices = [];
@@ -232,10 +233,161 @@ function lifecycle({ pending = false, denied = false, approachTarget = null, orb
   const control = createGeometryFlightController({ THREE, element, getCamera: () => f.camera,
     getTarget: () => f.target, getOrbitTarget: f.getOrbitTarget, canStart: () => permitted, getApproachTarget: () => approachTarget, requestRender: () => renders++,
     onStateChange: state => states.push(state), onError: error => errors.push(error), onSpeedChange: value => speedNotices.push(value),
-    onActivate: () => activations++, onDeactivate: reason => { deactivations++; stopReasons.push(reason); } });
-  return { ...f, control, states, errors, speedNotices, owner, win, element, grant, event, stopReasons,
+    onActivate: () => { activations++; activate(f); },
+    onDeactivate: reason => { deactivations++; stopReasons.push(reason); deactivate(reason, f); } });
+  return { ...f, get camera() { return f.camera; }, set camera(value) { f.camera = value; },
+    control, states, errors, speedNotices, owner, win, element, grant, event, stopReasons,
     permit: value => { permitted = value; }, counts: () => ({ renders, exits, activations, deactivations }) };
 }
+
+
+function flightView(f) {
+  return { position: f.camera.position.toArray(), quaternion: f.camera.quaternion.toArray(),
+    up: f.camera.up.toArray(), target: f.target.toArray() };
+}
+function assertFlightView(f, expected) {
+  const actual = flightView(f);
+  for (const key of Object.keys(expected)) actual[key].forEach((value, i) => close(value, expected[key][i]));
+}
+function advanceController(f, frames, fps, start = 0) {
+  for (let i = 0; i <= frames; i++) f.control.update(start + i * 1000 / fps);
+}
+
+test("A returns the flight entry pose after translation, mouse look and roll without exiting or losing speed", () => {
+  for (const fps of [30, 60, 144]) {
+    const f = lifecycle(); f.control.start(); const home = flightView(f);
+    f.event("keydown", { code: "Equal" }); f.event("keyup", { code: "Equal" });
+    f.event("keydown", { code: "ArrowUp" }); advanceController(f, fps, fps);
+    f.event("keyup", { code: "ArrowUp" });
+    f.event("mousemove", { movementX: 200, movementY: -130 });
+    f.event("keydown", { code: "Enter" }); f.event("keydown", { code: "ArrowRight" });
+    advanceController(f, fps / 2, fps, 1000);
+    f.event("keyup", { code: "ArrowRight" }); f.event("keyup", { code: "Enter" });
+    assert.notDeepEqual(flightView(f), home); assert.equal(f.control.needsFrame, true);
+    const counts = f.counts();
+    assert.equal(f.event("keydown", { code: "KeyA", key: "ф" }).defaultPrevented, true);
+    assertFlightView(f, home); close(f.control.speedMultiplier, 1.25);
+    assert.equal(f.control.state, "active"); assert.equal(f.owner.pointerLockElement, f.element);
+    assert.equal(f.counts().activations, counts.activations); assert.equal(f.counts().deactivations, 0);
+    assert.equal(f.counts().exits, 0); assert.equal(f.control.needsFrame, false);
+    advanceController(f, fps, fps, 2000); assertFlightView(f, home);
+    assert.equal(f.control.needsFrame, false); f.event("keyup", { code: "KeyA" }); f.control.dispose();
+  }
+});
+
+test("A clears orbital inertia and the remembered pivot before restoring the flight pose", () => {
+  for (const fps of [30, 60, 144]) {
+    const f = lifecycle({ orbitTarget: { point: [0, 0, 0] } }); f.control.start();
+    const home = flightView(f);
+    f.event("keydown", { code: "ShiftRight" }); f.event("keydown", { code: "ArrowLeft" });
+    advanceController(f, fps, fps);
+    f.event("keyup", { code: "ArrowLeft" }); f.event("keyup", { code: "ShiftRight" });
+    assert.equal(f.control.orbiting, true); assert.notDeepEqual(flightView(f), home);
+    f.event("keydown", { code: "KeyA" }); assertFlightView(f, home);
+    assert.equal(f.control.orbiting, false); assert.equal(f.control.lastOrbitTarget, null);
+    assert.equal(f.control.needsFrame, false); advanceController(f, fps, fps, 1000);
+    assertFlightView(f, home); assert.equal(f.control.orbiting, false); f.control.dispose();
+  }
+});
+
+test("A cancels approach and held speed/movement, suppresses repeats, and permits fresh input", () => {
+  const f = lifecycle(); f.control.start(); const home = flightView(f);
+  f.event("keydown", { code: "Equal" }); f.event("keydown", { code: "ArrowUp" });
+  f.control.update(0); f.control.update(100); const speed = f.control.speedMultiplier;
+  assert.equal(f.control.approach([0, 0, -10], 1), true);
+  f.control.update(200); f.control.update(300); assert.equal(f.control.approaching, true);
+  f.event("keydown", { code: "KeyA" }); assertFlightView(f, home);
+  assert.equal(f.control.approaching, false); assert.equal(f.control.needsFrame, false);
+  for (const code of ["ArrowUp", "Equal", "KeyA"])
+    assert.equal(f.event("keydown", { code, repeat: true }).defaultPrevented, true);
+  advanceController(f, 60, 60, 400); assertFlightView(f, home); close(f.control.speedMultiplier, speed);
+  const notices = f.speedNotices.length;
+  f.event("keyup", { code: "Equal" }); f.event("keyup", { code: "ArrowUp" });
+  assert.equal(f.speedNotices.length, notices);
+  f.event("keydown", { code: "ArrowRight" }); advanceController(f, 30, 60, 1500);
+  assert.ok(f.camera.position.x > 0);
+  const moved = f.camera.position.x;
+  f.event("keydown", { code: "KeyA", repeat: true }); assert.ok(f.camera.position.x >= moved);
+  f.event("keyup", { code: "ArrowRight" }); f.event("keyup", { code: "KeyA" });
+  f.event("keydown", { code: "KeyA" }); assertFlightView(f, home); close(f.control.speedMultiplier, speed);
+  f.control.dispose();
+});
+
+test("flight A uses its physical code and ignores modified or composing shortcuts", () => {
+  const f = lifecycle(); f.control.start();
+  f.event("keydown", { code: "ArrowRight" }); advanceController(f, 20, 60);
+  f.event("keyup", { code: "ArrowRight" }); const moved = flightView(f);
+  for (const modifiers of [{ ctrlKey: true }, { altKey: true }, { metaKey: true },
+    { shiftKey: true }, { isComposing: true }]) {
+    assert.equal(f.event("keydown", { code: "KeyA", ...modifiers }).defaultPrevented, false);
+    assertFlightView(f, moved); f.event("keyup", { code: "KeyA" });
+  }
+  assert.equal(f.event("keydown", { code: "KeyF", key: "a" }).defaultPrevented, false);
+  assertFlightView(f, moved);
+  f.event("keydown", { code: "ControlRight" });
+  assert.equal(f.event("keydown", { code: "KeyA", ctrlKey: true }).defaultPrevented, false);
+  assertFlightView(f, moved); f.event("keyup", { code: "KeyA" }); f.event("keyup", { code: "ControlRight" });
+  f.event("keydown", { code: "ShiftRight" });
+  assert.equal(f.event("keydown", { code: "KeyA", shiftKey: true }).defaultPrevented, false);
+  assertFlightView(f, moved); f.event("keyup", { code: "KeyA" }); f.event("keyup", { code: "ShiftRight" });
+  f.event("keydown", { code: "KeyA", key: "ф" }); close(f.camera.position.x, 0); f.control.dispose();
+});
+
+test("A and Ctrl+A remain unconsumed outside active flight, including a pending lock and after exit", () => {
+  const f = lifecycle({ pending: true });
+  for (const stage of ["idle", "starting", "idle"]) {
+    if (stage === "starting") f.control.start();
+    else if (f.control.state === "starting") f.control.stop();
+    const before = flightView(f);
+    for (const ctrlKey of [false, true]) {
+      assert.equal(f.event("keydown", { code: "KeyA", ctrlKey }).defaultPrevented, false);
+      assert.equal(f.event("keyup", { code: "KeyA", ctrlKey }).defaultPrevented, false);
+      assertFlightView(f, before);
+    }
+  }
+  f.control.start(); f.grant(); f.event("keydown", { code: "Escape" });
+  assert.equal(f.event("keydown", { code: "KeyA" }).defaultPrevented, false); f.control.dispose();
+});
+
+test("A captures the post-activation perspective pose each session and keeps the pre-flight Escape/unlock view separate", () => {
+  for (const orthographic of [false, true]) for (const reason of ["escape", "unlock"]) {
+    let previous;
+    const f = lifecycle({
+      activate: scene => {
+        previous = { camera: scene.camera, target: scene.target.clone() };
+        const perspective = new THREE.PerspectiveCamera(53, 1.7, .02, 900);
+        perspective.position.copy(scene.camera.position); perspective.quaternion.copy(scene.camera.quaternion);
+        perspective.up.copy(scene.camera.up); perspective.zoom = scene.camera.zoom;
+        perspective.updateProjectionMatrix(); scene.camera = perspective;
+      },
+      deactivate: (why, scene) => {
+        if (why === "escape" || why === "unlock") {
+          scene.camera = previous.camera; scene.target.copy(previous.target);
+        }
+      },
+    });
+    if (orthographic) f.camera = new THREE.OrthographicCamera(-3, 3, 2, -2, .05, 400);
+    f.camera.position.set(4, -2, 8); f.camera.up.set(0, 0, 1); f.target.set(1, 2, 0);
+    f.camera.lookAt(f.target); f.camera.zoom = 1.8; f.camera.updateProjectionMatrix();
+    const original = f.camera, originalView = flightView(f), projection = original.projectionMatrix.toArray();
+    f.control.start(); const home = flightView(f), activeCamera = f.camera;
+    assert.equal(activeCamera.isPerspectiveCamera, true); assert.notEqual(activeCamera, original);
+    f.event("keydown", { code: "NumpadAdd" }); f.event("keyup", { code: "NumpadAdd" });
+    f.event("keydown", { code: "ArrowLeft" }); advanceController(f, 30, 60);
+    f.event("keyup", { code: "ArrowLeft" }); f.event("keydown", { code: "KeyA" });
+    assertFlightView(f, home); assert.equal(f.camera, activeCamera); close(f.control.speedMultiplier, 1.25);
+    if (reason === "escape") f.event("keydown", { code: "Escape" });
+    else { f.owner.pointerLockElement = null; f.owner.dispatchEvent(new Event("pointerlockchange")); }
+    assert.equal(f.control.state, "idle"); assert.equal(f.camera, original); assertFlightView(f, originalView);
+    assert.deepEqual(f.camera.projectionMatrix.toArray(), projection);
+    f.camera.position.set(9, 1, 6); f.target.set(2, 0, 1); f.camera.lookAt(f.target);
+    f.control.start(); const secondHome = flightView(f); assert.notDeepEqual(secondHome, home);
+    close(f.control.speedMultiplier, 1);
+    f.event("keydown", { code: "ArrowRight" }); advanceController(f, 10, 60);
+    f.event("keyup", { code: "ArrowRight" }); f.event("keydown", { code: "KeyA" });
+    assertFlightView(f, secondHome); assert.equal(f.control.active, true); f.control.dispose();
+  }
+});
 
 test("flight activates only after pointer lock and releases keyboard/momentum on Escape", () => {
   const f = lifecycle({ pending: true });

@@ -8,7 +8,7 @@ const MIN_SPEED = 1 / 64, MAX_SPEED = 64, SPEED_RATE = Math.log(2), SPEED_TAP = 
 const LOOK_TAU = 0.25, LOOK_EPSILON = 0.001, APPROACH_SECONDS = 0.5;
 const ORBIT_RATE = Math.PI / 6, ORBIT_EPSILON = 1e-5;
 const ORBIT_PICK_SECONDS = 0.08;
-export const GEOMETRY_FLIGHT_HELP = "Перспективный полёт; ←/→ — линейное перемещение вида влево/вправо; ↑/↓ — приближение/удаление вида; правый Ctrl+↑/↓ — линейное перемещение вида вверх/вниз; правый Shift+←/→ — вращение влево/вправо вокруг центра; правый Shift+↑/↓ — вращение вверх/вниз вокруг центра; направления относительно экрана, объекты перемещаются противоположно взгляду; центр — ближайшая поверхность под прицелом; при промахе — последний найденный центр; до первого попадания вращения нет; скорость вращения 30°/с; мышь — направление и уточнение центра без отмены вращения; +/− — линейная скорость: шаг ×1,25 / ÷1,25, удержание — плавная регулировка, диапазон ×1/64…×64; 0 — штатная скорость ×1; Enter+←/→ — крен против/по часовой стрелке; ЛКМ — подлёт к цели в прицеле; новый ручной ввод — отмена подлёта; Esc — прежний вид и выход";
+export const GEOMETRY_FLIGHT_HELP = "Перспективный полёт; ←/→ — линейное перемещение вида влево/вправо; ↑/↓ — приближение/удаление вида; правый Ctrl+↑/↓ — линейное перемещение вида вверх/вниз; правый Shift+←/→ — вращение влево/вправо вокруг центра; правый Shift+↑/↓ — вращение вверх/вниз вокруг центра; направления относительно экрана, объекты перемещаются противоположно взгляду; центр — ближайшая поверхность под прицелом; при промахе — последний найденный центр; до первого попадания вращения нет; скорость вращения 30°/с; мышь — направление и уточнение центра без отмены вращения; +/− — линейная скорость: шаг ×1,25 / ÷1,25, удержание — плавная регулировка, диапазон ×1/64…×64; 0 — штатная скорость ×1; Enter+←/→ — крен против/по часовой стрелке; ЛКМ — подлёт к цели в прицеле; новый ручной ввод — отмена подлёта; A — начальный вид полёта без выхода; Esc — прежний вид и выход";
 const speedKey = code => code === "Equal" || code === "NumpadAdd" ? 1
   : code === "Minus" || code === "NumpadSubtract" ? -1 : 0;
 const resetSpeedKey = code => code === "Digit0" || code === "Numpad0";
@@ -236,7 +236,7 @@ export function createGeometryFlightController({
   const win = owner.defaultView;
   let state = "idle", motion = null, lastTime = null, disposed = false, generation = 0;
   let rightControl = false, leftControl = false;
-  let lastSpeedNoticeTime = null;
+  let lastSpeedNoticeTime = null, initialView = null;
   const heldKeys = new Set(), suppressedKeys = new Set(), activeSpeedKeys = new Set();
   const setState = value => { state = value; onStateChange(value); };
   const locked = () => owner.pointerLockElement === element;
@@ -274,7 +274,7 @@ export function createGeometryFlightController({
       generation++;
       rightControl = leftControl = false;
       heldKeys.clear(); suppressedKeys.clear(); activeSpeedKeys.clear();
-      motion?.clear(); motion = null; lastTime = null;
+      motion?.clear(); motion = null; lastTime = null; initialView = null;
       lastSpeedNoticeTime = null;
       if (state !== "idle") setState("idle");
       if (locked()) owner.exitPointerLock();
@@ -337,8 +337,11 @@ export function createGeometryFlightController({
         camera: getCamera(), target: getTarget(), speed: getSpeed(), getOrbitTarget,
       });
       lastTime = null;
-      setState("active");
       motion.step(0);
+      const camera = getCamera();
+      initialView = { position: camera.position.clone(), quaternion: camera.quaternion.clone(),
+        up: camera.up.clone(), target: getTarget().clone() };
+      setState("active");
       requestRender();
     } catch { failLock(); }
   }
@@ -359,11 +362,23 @@ export function createGeometryFlightController({
     if (event.code === "Escape") { event.preventDefault(); event.stopPropagation(); controller.stop("escape"); return; }
     if (event.code === "ControlRight") rightControl = true;
     if (event.code === "ControlLeft") leftControl = true;
-    if (FLIGHT_KEYS.has(event.code)) heldKeys.add(event.code);
+    if (FLIGHT_KEYS.has(event.code) || event.code === "KeyA") heldKeys.add(event.code);
     if (suppressedKeys.has(event.code)) { event.preventDefault(); event.stopPropagation(); return; }
     // Right Ctrl modifies vertical translation; left Ctrl retains browser shortcuts.
     if (leftControl || (event.ctrlKey && !rightControl) || event.altKey || event.metaKey) {
       motion.releaseKeys(); activeSpeedKeys.clear(); return;
+    }
+    if (event.code === "KeyA") {
+      if (event.ctrlKey || event.shiftKey || rightControl || heldKeys.has("ShiftRight")) return;
+      event.preventDefault(); event.stopPropagation();
+      if (event.repeat) return;
+      motion.clear(); activeSpeedKeys.clear(); lastTime = null;
+      // Stop held input as well as inertia; only fresh input may move the restored view.
+      for (const code of heldKeys) suppressedKeys.add(code);
+      const camera = getCamera();
+      camera.position.copy(initialView.position); camera.quaternion.copy(initialView.quaternion);
+      camera.up.copy(initialView.up); getTarget().copy(initialView.target);
+      requestRender(); return;
     }
     if (motion.key(event.code, true)) {
       event.preventDefault(); event.stopPropagation();

@@ -1,6 +1,7 @@
 import {
   For,
   Show,
+  batch,
   createEffect,
   createSignal,
   onCleanup,
@@ -33,6 +34,8 @@ import {
 import { fitCameraToVisibleObjects } from "../../services/visualization/geometryCameraFit.js";
 import { createGeometryFlightController } from "../../services/visualization/geometryFlightController.js";
 import { pickGeometryFlightPivot } from "../../services/visualization/geometryFlightPivot.js";
+import { installGeometryOverlayDrag } from "../../services/visualization/geometryOverlayDrag.js";
+import { createGeometryViewSetting } from "../../services/visualization/geometryViewSettings.js";
 import { resultVectorLength } from "../../services/visualization/resultVectorScale.js";
 import {
   findPointMetadataRange,
@@ -1519,6 +1522,18 @@ function resizeCameraProjection(camera, aspect) {
 
 export function ThreeGeometryViewport(props) {
   let host;
+  let legendPanel;
+  const [legendLeft, setLegendLeft] = createGeometryViewSetting("scalarLegendLeft", null);
+  const [legendTop, setLegendTop] = createGeometryViewSetting("scalarLegendTop", null);
+  const attachLegendDrag = element => {
+    legendPanel = element;
+    const drag = installGeometryOverlayDrag(element, {
+      getPosition: () => legendLeft() === null || legendTop() === null ? null : { x: legendLeft(), y: legendTop() },
+      setPosition: ({ x, y }) => batch(() => { setLegendLeft(x); setLegendTop(y); }),
+    });
+    createEffect(drag.refresh);
+    onCleanup(() => { drag.dispose(); if (legendPanel === element) legendPanel = null; });
+  };
   let renderer;
   let threeScene;
   let axesScene;
@@ -1812,10 +1827,17 @@ export function ThreeGeometryViewport(props) {
     if (!legends.length) return;
     const boxWidth = Math.min(300, width - 16);
     const boxHeight = Math.min(86, (height - 16) / legends.length);
+    const viewport = renderer.domElement.getBoundingClientRect();
+    const panel = legendLeft() !== null && legendTop() !== null && legendPanel?.isConnected
+      ? legendPanel.getBoundingClientRect() : null;
+    const left = panel && viewport.width > 0 ? (panel.left - viewport.left) * width / viewport.width : width - boxWidth - 8;
+    const top = panel && viewport.height > 0 ? (panel.top - viewport.top) * height / viewport.height : 8;
+    const startX = Math.max(8, Math.min(width - boxWidth - 8, left));
+    const startY = Math.max(8, Math.min(height - legends.length * boxHeight - 8, top));
     context.font = "12px sans-serif";
     context.textBaseline = "top";
     legends.forEach((legend, index) => {
-      const x = width - boxWidth - 8, y = 8 + index * boxHeight;
+      const x = startX, y = startY + index * boxHeight;
       context.fillStyle = "rgba(27, 34, 41, .95)";
       context.fillRect(x, y, boxWidth, boxHeight - 4);
       context.fillStyle = "#f1f5f8";
@@ -3082,7 +3104,8 @@ export function ThreeGeometryViewport(props) {
         </div>
       </Show>
       <Show when={!error() && scalarLegends().length}>
-        <div class="geometry-scalar-legends">
+        <div class="geometry-scalar-legends" ref={attachLegendDrag}>
+          <div class="geometry-overlay-drag-handle" title="Перетащите панель за заголовок">Цветовые шкалы</div>
           <For each={scalarLegends()}>{(legend) => (
             <div class="geometry-scalar-legend" aria-label={`Цветовая шкала: ${legend.groupLabel ? `${legend.groupLabel} · ` : ""}${legend.quantity}, ${legend.unit}`}>
               <Show when={legend.groupLabel}><strong>{legend.groupLabel}</strong></Show>

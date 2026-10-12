@@ -6,6 +6,7 @@ import { buildGeometryScene } from "../services/visualization/geometrySceneModel
 import { ThreeGeometryViewport } from "../components/geometry/ThreeGeometryViewport.jsx";
 import { TaskGifGallery } from "../components/tasks/TaskGifGallery.jsx";
 import { TaskStatusCells } from "../components/tasks/TaskStatusCells.jsx";
+import { LastOpenedTaskMarker, ProjectSelectValue } from "../components/tasks/LastOpenedTaskMarker.jsx";
 import { useTaskStatuses } from "../services/taskStatusMonitor.js";
 import "../components/geometry/ResultsGeometryViewport.css";
 
@@ -84,8 +85,9 @@ export function Tasks(props) {
         <button class="folder-button" disabled={galleryBusy()} onClick={pickRoot}>Выбрать каталог с проектами</button>
         <div class="root-name">{root() ? `Корневой каталог: ${root().name}` : "Каталог не выбран"}</div>
         <label class="field-label">Список проектов</label>
-        <select class="project-select" value={project()} disabled={galleryBusy()} onChange={event => pickProject(event.currentTarget.value)} aria-label="Список проектов">
-          <option value="">Выберите проект</option><For each={projects()}>{item => <option value={item.name}>{item.name === lastProjectName() ? "✓ " : ""}{item.name}</option>}</For>
+        <select class="project-select task-project-select" value={project()} disabled={galleryBusy()} onChange={event => pickProject(event.currentTarget.value)} aria-label="Список проектов">
+          <ProjectSelectValue value={project()} placeholder="Выберите проект" marked={project() === lastProjectName()} />
+          <option value="">Выберите проект</option><For each={projects()}>{item => <option value={item.name}><Show when={item.name === lastProjectName()}><LastOpenedTaskMarker label="Последний открытый проект" /></Show>{item.name}</option>}</For>
         </select>
         <div class="task-list-heading">
           <div class="field-label">Список заданий</div>
@@ -106,7 +108,7 @@ export function Tasks(props) {
             class="task-status-row" classList={{ selected: candidate()?.handle === item.handle }} onClick={() => { if (!galleryBusy()) setCandidate({ ...item }); }}
             onDblClick={() => { if (candidate()?.handle === item.handle) void load(); }}
             title="Двойной щелчок — загрузить задание для просмотра">
-            <TaskStatusCells status={taskStatus(item.handle)} /><span class="task-status-name"><Show when={isLastTask(item)}><span class="task-last-opened-check" aria-label="Последнее открытое задание" title="Последнее открытое задание">✓ </span></Show>{item.name}</span>
+            <TaskStatusCells status={taskStatus(item.handle)} /><span class="task-status-name"><Show when={isLastTask(item)}><LastOpenedTaskMarker label="Последнее открытое задание" /></Show>{item.name}</span>
           </button>}</For>
         </div>
         <button class="load-button" disabled={!candidate() || props.busy || galleryBusy()} onClick={load}>{props.busy ? "Загрузка…" : "Загрузить для просмотра"}</button>

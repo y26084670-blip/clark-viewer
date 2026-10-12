@@ -1,4 +1,4 @@
-import { GEOMETRY_FLIGHT_HELP } from "../../services/visualization/geometryFlightController.js";
+import { GEOMETRY_FLIGHT_HELP, formatGeometryFlightSpeed } from "../../services/visualization/geometryFlightController.js";
 import { createGeometryViewSetting } from "../../services/visualization/geometryViewSettings.js";
 import { installGeometryOverlayDrag } from "../../services/visualization/geometryOverlayDrag.js";
 import {
@@ -111,9 +111,21 @@ export function ResultsGeometryViewport(props) {
   const [flightState, setFlightState] = createSignal("idle");
   const [flightReady, setFlightReady] = createSignal(false);
   const [flightNotice, setFlightNotice] = createSignal("");
+  const [flightSpeedNotice, setFlightSpeedNotice] = createSignal("");
+  let flightSpeedNoticeTimer;
+  const clearFlightSpeedNotice = () => {
+    clearTimeout(flightSpeedNoticeTimer); flightSpeedNoticeTimer = undefined;
+    setFlightSpeedNotice("");
+  };
+  const showFlightSpeedNotice = multiplier => {
+    clearTimeout(flightSpeedNoticeTimer);
+    setFlightSpeedNotice(formatGeometryFlightSpeed(multiplier));
+    flightSpeedNoticeTimer = setTimeout(clearFlightSpeedNotice, 1200);
+  };
   let flightControl;
   const onFlightStateChange = state => {
     setFlightState(state);
+    if (state !== "active") clearFlightSpeedNotice();
     if (state === "active") setOrthographicView(false);
     props.onFlightStateChange?.(state);
   };
@@ -310,6 +322,7 @@ export function ResultsGeometryViewport(props) {
   });
 
   onCleanup(() => {
+    clearFlightSpeedNotice();
     flightControl?.stop();
     viewerResizeObserver?.disconnect();
     cancelTimeSelection();
@@ -746,6 +759,7 @@ export function ResultsGeometryViewport(props) {
           <Show when={flightState() !== "idle"}>
             <div class="geometry-flight-hint" role="status">
               {flightState() === "starting" ? "Включение полёта…" : "Полёт · время фиксировано"}
+              <Show when={flightSpeedNotice()}><b data-flight-speed-notice> · {flightSpeedNotice()}</b></Show>
               <span>{GEOMETRY_FLIGHT_HELP}</span>
             </div>
           </Show>
@@ -781,6 +795,7 @@ export function ResultsGeometryViewport(props) {
             flightDisabledReason={props.flightDisabledReason}
             onFlightReady={control => { flightControl = control; setFlightReady(Boolean(control)); }}
             onFlightStateChange={onFlightStateChange}
+            onFlightSpeedChange={showFlightSpeedNotice}
             onFlightProjectionRestore={projection => setOrthographicView(projection === "orthographic")}
             onFlightError={setFlightNotice}
             scene={displayScene()}

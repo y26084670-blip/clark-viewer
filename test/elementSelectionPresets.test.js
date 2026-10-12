@@ -14,7 +14,7 @@ const records = [
   { id: 8, targ: 0, model: 2, xapName: "", rv: 0 },
 ];
 
-test("presets replace the selection by physical purpose and prescribed targets take precedence", () => {
+test("presets identify physical purpose and prescribed targets take precedence", () => {
   assert.deepEqual(selectElementPreset(records, {}, "M"), [1, 2, 8]);
   assert.deepEqual(selectElementPreset(records, {}, "M0"), [4]);
   assert.deepEqual(selectElementPreset(records, {}, "J"), [2, 3, 8]);
@@ -56,10 +56,10 @@ function header(props, initialApplying = false) {
   }) };
   const synchronized = [];
   const make = new Function("props", "document", "synchronizeSelection", "initialApplying",
-    `let applying = initialApplying, active = null, presetButtons = new Map();
-    const built = () => true, activePreset = () => active, setActivePreset = value => { active = value; };
+    `let applying = initialApplying, active = new Set(), presetButtons = new Map();
+    const built = () => true, activePresets = () => active, setActivePresets = value => { active = value; };
     const batch = run => run(); ${body}
-    return { heading: nameHeading(), refresh: synchronizePresetButtons };`);
+    return { heading: nameHeading(), refresh: synchronizePresetButtons, rebuild: nameHeading };`);
   return { ...make(props, document, ids => synchronized.push(ids), initialApplying), synchronized };
 }
 
@@ -90,7 +90,7 @@ test("header buttons preserve subscript labels, tooltips, event isolation and pe
   assert.equal(header({}).heading, "Название");
 });
 
-test("presets toggle off, replace each other and clearly expose the chosen selection type", () => {
+test("presets toggle independently and keep M/J overlaps selected while either group is enabled", () => {
   const selected = [];
   const props = { records, selected: [], selectionPresets: ELEMENT_SELECTION_PRESETS,
     presetSelection: key => selectElementPreset(props.records, {}, key),
@@ -107,7 +107,12 @@ test("presets toggle off, replace each other and clearly expose the chosen selec
     assert.equal(buttons[index].classList.values.has("is-active"), false);
   }
   click(0); click(2);
-  assert.deepEqual(props.selected, [2, 3, 8]); assert.deepEqual(pressed(), ["J"]);
+  assert.deepEqual(props.selected, [1, 2, 8, 3]); assert.deepEqual(pressed(), ["M", "J"]);
+  click(0); assert.deepEqual(props.selected, [2, 8, 3]); assert.deepEqual(pressed(), ["J"]);
+  click(2); assert.deepEqual(props.selected, []); assert.deepEqual(pressed(), []);
+  click(2); click(0);
+  assert.deepEqual(props.selected, [2, 3, 8, 1]); assert.deepEqual(pressed(), ["M", "J"]);
+  click(2); assert.deepEqual(props.selected, [2, 8, 1]); assert.deepEqual(pressed(), ["M"]);
   props.selected = [2]; ui.refresh(); assert.deepEqual(pressed(), []);
   click(4); props.records = []; props.selected = []; ui.refresh();
   assert.deepEqual(pressed(), []); assert.ok(buttons.every(button => button.disabled));
@@ -117,11 +122,61 @@ test("presets toggle off, replace each other and clearly expose the chosen selec
 test("toggle-off is retained while Tabulator data replacement is pending", () => {
   const props = { records, selected: [], selectionPresets: ELEMENT_SELECTION_PRESETS,
     presetSelection: key => selectElementPreset(records, {}, key), onSelect: ids => { props.selected = ids; } };
-  const ui = header(props, true), button = ui.heading.children[1].children[0];
+  const ui = header(props, true), buttons = ui.heading.children[1].children, button = buttons[0];
   button.events.click({ stopPropagation() {} }); assert.deepEqual(props.selected, [1, 2, 8]);
   assert.equal(button.attributes["aria-pressed"], "true");
   button.events.click({ stopPropagation() {} }); assert.deepEqual(props.selected, []);
   assert.equal(button.attributes["aria-pressed"], "false"); assert.deepEqual(ui.synchronized, []);
+  for (const index of [0, 2, 0]) buttons[index].events.click({ stopPropagation() {} });
+  assert.deepEqual(props.selected, [2, 8, 3]);
+  assert.equal(buttons[0].attributes["aria-pressed"], "false");
+  assert.equal(buttons[2].attributes["aria-pressed"], "true");
+  assert.deepEqual(ui.synchronized, []);
+});
+
+test("all five groups accumulate without duplicates and remove only their own unprotected elements", () => {
+  const props = { records, selected: [7], selectionPresets: ELEMENT_SELECTION_PRESETS,
+    presetSelection: key => selectElementPreset(records, {}, key), onSelect: ids => { props.selected = ids; } };
+  const ui = header(props), buttons = ui.heading.children[1].children;
+  const click = index => buttons[index].events.click({ stopPropagation() {} });
+  for (let index = 0; index < buttons.length; index++) click(index);
+  assert.deepEqual(new Set(props.selected), new Set(records.map(row => row.id)));
+  assert.equal(props.selected.length, 8);
+  assert.ok(buttons.every(button => button.attributes["aria-pressed"] === "true"));
+  click(0); assert.deepEqual(new Set(props.selected), new Set([2, 3, 4, 5, 6, 7, 8]));
+  assert.ok(buttons.slice(1).every(button => button.attributes["aria-pressed"] === "true"));
+  click(1); click(3); click(4); assert.deepEqual(new Set(props.selected), new Set([2, 3, 7, 8]));
+  click(2); assert.deepEqual(props.selected, [7]);
+});
+
+test("manual additions keep enabled groups; partial manual deselection releases only the affected group", () => {
+  const props = { records, selected: [], selectionPresets: ELEMENT_SELECTION_PRESETS,
+    presetSelection: key => selectElementPreset(records, {}, key), onSelect: ids => { props.selected = ids; } };
+  const ui = header(props), buttons = ui.heading.children[1].children;
+  for (const index of [0, 2]) buttons[index].events.click({ stopPropagation() {} });
+  props.selected = [...props.selected, 7]; ui.refresh();
+  assert.equal(buttons[0].attributes["aria-pressed"], "true");
+  assert.equal(buttons[2].attributes["aria-pressed"], "true");
+  props.selected = props.selected.filter(id => id !== 1); ui.refresh();
+  assert.equal(buttons[0].attributes["aria-pressed"], "false");
+  assert.equal(buttons[2].attributes["aria-pressed"], "true");
+  buttons[2].events.click({ stopPropagation() {} }); assert.deepEqual(props.selected, [7]);
+  props.selected = []; ui.refresh();
+  assert.ok(buttons.every(button => button.attributes["aria-pressed"] === "false"));
+});
+
+test("current complete selection and header rebuilds preserve independent button states", () => {
+  const props = { records, selected: records.map(row => row.id), selectionPresets: ELEMENT_SELECTION_PRESETS,
+    presetSelection: key => selectElementPreset(records, {}, key), onSelect: ids => { props.selected = ids; } };
+  const ui = header(props), buttons = ui.heading.children[1].children;
+  for (const index of [0, 2]) buttons[index].events.click({ stopPropagation() {} });
+  assert.deepEqual(props.selected, records.map(row => row.id));
+  const rebuilt = ui.rebuild().children[1].children;
+  assert.equal(rebuilt[0].attributes["aria-pressed"], "true");
+  assert.equal(rebuilt[2].attributes["aria-pressed"], "true");
+  rebuilt[0].events.click({ stopPropagation() {} });
+  assert.deepEqual(props.selected, [2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(rebuilt[2].attributes["aria-pressed"], "true");
 });
 
 test("every object-list column disables Tabulator sorting", () => {

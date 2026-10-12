@@ -6,7 +6,7 @@ import "./ObjectList.css";
 export function ObjectList(props) {
   let host, table, applying = false, revision = 0;
   const [built, setBuilt] = createSignal(false);
-  const [activePreset, setActivePreset] = createSignal(null);
+  const [activePresets, setActivePresets] = createSignal(new Set());
   let presetButtons = new Map();
   function synchronizeSelection(selected = props.selected ?? []) {
     const available = new Set((props.records ?? []).map(row => row.id));
@@ -19,20 +19,22 @@ export function ObjectList(props) {
     finally { applying = false; }
   }
   function synchronizePresetButtons() {
-    const key = activePreset();
     const selected = new Set(props.selected ?? []);
-    if (key) {
+    const active = activePresets();
+    const retained = new Set();
+    for (const key of active) {
       const expected = props.presetSelection?.(key) ?? [];
-      if (!expected.length || selected.size !== expected.length || expected.some(id => !selected.has(id))) {
-        setActivePreset(null);
-      }
+      if (expected.length && expected.every(id => selected.has(id))) retained.add(key);
     }
+    if (retained.size !== active.size) setActivePresets(retained);
     for (const [key, { button, preset }] of presetButtons) {
-      const pressed = activePreset() === key;
+      const pressed = retained.has(key);
       button.disabled = !(props.presetSelection?.(key) ?? []).length;
       button.classList.toggle("is-active", pressed);
       button.setAttribute("aria-pressed", String(pressed));
-      button.title = preset.title + (pressed ? ". Повторное нажатие — снять выделение" : "");
+      button.title = preset.title + (pressed
+        ? ". Повторное нажатие — снять выделение группы, сохранив другие включённые группы"
+        : ". Добавить к текущему выделению");
       button.setAttribute("aria-label", button.title);
     }
   }
@@ -58,10 +60,23 @@ export function ObjectList(props) {
         event.stopPropagation();
         const matching = props.presetSelection?.(preset.key) ?? [];
         if (!matching.length) return;
-        const key = activePreset() === preset.key ? null : preset.key;
-        const selected = key ? matching : [];
+        synchronizePresetButtons();
+        const active = new Set(activePresets());
+        const available = new Set((props.records ?? []).map(row => row.id));
+        const current = [...new Set(props.selected ?? [])].filter(id => available.has(id));
+        let selected;
+        if (active.delete(preset.key)) {
+          const matchingIds = new Set(matching);
+          const protectedIds = new Set([...active].flatMap(key => props.presetSelection?.(key) ?? []));
+          // M and J overlap: removing either group must retain their shared
+          // elements while the other group remains enabled.
+          selected = current.filter(id => !matchingIds.has(id) || protectedIds.has(id));
+        } else {
+          active.add(preset.key);
+          selected = [...new Set([...current, ...matching])];
+        }
         batch(() => {
-          setActivePreset(key);
+          setActivePresets(active);
           if (built() && !applying) synchronizeSelection(selected);
           // Retain the desired selection even while replaceData is pending.
           props.onSelect?.(selected);
@@ -80,7 +95,6 @@ export function ObjectList(props) {
     selectAllListItems(event, {
       records: props.records ?? [], multiple: props.multiple !== false,
       onSelect: selected => {
-        setActivePreset(null);
         if (!applying) {
           applying = true;
           // Tabulator selects its complete row collection in one batch.
@@ -106,7 +120,7 @@ export function ObjectList(props) {
     const y = event.clientY - bounds.top - holder.clientTop;
     if (x < 0 || y < 0 || x >= holder.clientWidth || y >= holder.clientHeight) return;
     const previousApplying = applying;
-    setActivePreset(null);
+    setActivePresets(new Set());
     applying = true;
     try { table.deselectRow(); } finally { applying = previousApplying; }
     // Also update the desired selection while replaceData is pending.
@@ -124,7 +138,6 @@ export function ObjectList(props) {
     table.on("tableBuilt", () => setBuilt(true));
     table.on("rowSelectionChanged", rows => {
       if (!applying) {
-        setActivePreset(null);
         props.onSelect?.(rows.map(row => row.id));
       }
     });

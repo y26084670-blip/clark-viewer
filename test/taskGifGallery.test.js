@@ -163,6 +163,10 @@ test("image decode failures release only their matching current URL", async () =
 // subcomponent's JSX is excluded; its watchCell callback is exercised directly.
 const { readFileSync } = await import("node:fs");
 const source = readFileSync(new URL("../src/components/tasks/TaskGifGallery.jsx", import.meta.url), "utf8");
+test("only the maximized player receives crossfade; gallery thumbnails stay native images",()=>{
+  assert.match(source,/<TaskGifPlayer[^>]*crossfade=\{maximized\(\)\}/);
+  assert.match(source,/<img[^>]*src=\{thumbnail\(\)\.url\}/);
+});
 const childStart = source.indexOf("  function GifCell(");
 const effectsStart = source.indexOf("  createEffect(", childStart);
 const setup = (source.slice(source.indexOf("export function TaskGifGallery"), childStart)

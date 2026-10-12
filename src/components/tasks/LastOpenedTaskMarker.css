@@ -1,0 +1,19 @@
+.task-last-opened-marker { display: inline-flex; align-items: center; flex: none; width: 12px; height: 12px; margin-right: 4px; vertical-align: -1px; }
+.task-last-opened-marker svg { display: block; width: 12px; height: 12px; }
+.task-last-opened-marker-fallback { display: none; }
+/* Older native pickers still receive a plain right-pointing triangle. */
+select .task-last-opened-marker svg { display: none; }
+select .task-last-opened-marker-fallback { display: inline; }
+
+@supports (appearance: base-select) {
+  .task-project-select, .task-project-select::picker(select) { appearance: base-select; }
+  .task-project-select { display: inline-flex; align-items: center; }
+  .task-project-select > button { all: unset; display: block; flex: 1; min-width: 0; overflow: hidden; text-align: left; }
+  .task-project-select > .task-project-value { display: flex; align-items: center; }
+  .task-project-select::picker(select) { font: inherit; color: #eef3f7; background: #141a20; border: 1px solid #697c8b; max-height: min(360px, 70vh); overflow: auto; }
+  .task-project-select option { padding: 4px 6px; white-space: nowrap; }
+  .task-project-select option:hover, .task-project-select option:focus-visible, .task-project-select option:checked { background: #254b6b; }
+  .task-project-select option::checkmark { display: none; }
+  .task-project-select .task-last-opened-marker svg { display: block; }
+  .task-project-select .task-last-opened-marker-fallback { display: none; }
+}

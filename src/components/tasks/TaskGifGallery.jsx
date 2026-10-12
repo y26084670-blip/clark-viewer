@@ -232,7 +232,7 @@ export function TaskGifGallery(props) {
           <Show when={view().preview?.url} fallback={<p role={view().preview?.error ? "alert" : "status"}>
             {view().preview?.error || "Загрузка…"}
           </p>}>
-            <TaskGifPlayer url={view().preview?.url} name={view().preview?.entry.name} />
+            <TaskGifPlayer url={view().preview?.url} name={view().preview?.entry.name} crossfade={maximized()} />
           </Show>
         </div>
       </dialog>

@@ -1,15 +1,17 @@
 const FLIGHT_KEYS = new Set([
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ControlRight",
   "KeyQ", "KeyE", "ShiftRight", "Equal", "Minus", "NumpadAdd", "NumpadSubtract",
+  "Digit0", "Numpad0",
 ]);
 const ARROW_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]);
-const MIN_ZOOM = 0.02, MAX_ZOOM = 100, ZOOM_RATE = 1.2, ZOOM_TAP = Math.log(1.08);
+const MIN_SPEED = 1 / 64, MAX_SPEED = 64, SPEED_RATE = Math.log(2), SPEED_TAP = 1.25;
 const LOOK_TAU = 0.25, LOOK_EPSILON = 0.001, APPROACH_SECONDS = 0.5;
 const ORBIT_RATE = Math.PI / 6, ORBIT_EPSILON = 1e-5;
 const ORBIT_PICK_SECONDS = 0.08;
-export const GEOMETRY_FLIGHT_HELP = "Перспективный полёт; ←/→ — линейное перемещение вида влево/вправо; ↑/↓ — приближение/удаление вида; правый Ctrl+↑/↓ — линейное перемещение вида вверх/вниз; правый Shift+←/→ — вращение влево/вправо вокруг центра; правый Shift+↑/↓ — вращение вверх/вниз вокруг центра; направления относительно экрана, объекты перемещаются противоположно взгляду; центр — ближайшая поверхность под прицелом; при промахе — последний найденный центр; до первого попадания вращения нет; скорость вращения 30°/с; мышь — направление и уточнение центра без отмены вращения; +/− — масштаб; Q/E — крен; ЛКМ — подлёт к цели в прицеле; новый ручной ввод — отмена подлёта; Esc — прежний вид и выход";
-const zoomKey = code => code === "Equal" || code === "NumpadAdd" ? 1
+export const GEOMETRY_FLIGHT_HELP = "Перспективный полёт; ←/→ — линейное перемещение вида влево/вправо; ↑/↓ — приближение/удаление вида; правый Ctrl+↑/↓ — линейное перемещение вида вверх/вниз; правый Shift+←/→ — вращение влево/вправо вокруг центра; правый Shift+↑/↓ — вращение вверх/вниз вокруг центра; направления относительно экрана, объекты перемещаются противоположно взгляду; центр — ближайшая поверхность под прицелом; при промахе — последний найденный центр; до первого попадания вращения нет; скорость вращения 30°/с; мышь — направление и уточнение центра без отмены вращения; +/− — линейная скорость: шаг ×1,25 / ÷1,25, удержание — плавная регулировка, диапазон ×1/64…×64; 0 — штатная скорость ×1; Q/E — крен; ЛКМ — подлёт к цели в прицеле; новый ручной ввод — отмена подлёта; Esc — прежний вид и выход";
+const speedKey = code => code === "Equal" || code === "NumpadAdd" ? 1
   : code === "Minus" || code === "NumpadSubtract" ? -1 : 0;
+const resetSpeedKey = code => code === "Digit0" || code === "Numpad0";
 
 /** Free flight keeps world-space inertia; orbit rotates about a retained surface point. */
 export function createGeometryFlightMotion(THREE, {
@@ -24,7 +26,7 @@ export function createGeometryFlightMotion(THREE, {
   const baseSpeed = Number.isFinite(speed) && speed > 0 ? speed : 1;
   const distance = Math.max(camera.position.distanceTo(target), baseSpeed * 0.01, 1e-8);
   const epsilon = baseSpeed * 1e-5;
-  let mouseX = 0, mouseY = 0, zoomImpulse = 0, approach = null, orbit = null;
+  let mouseX = 0, mouseY = 0, speedMultiplier = 1, approach = null, orbit = null;
   let lastOrbitTarget = null, orbitPickDelay = 0;
   const cancelApproach = () => { if (approach) { approach = null; velocity.set(0, 0, 0); } };
   const cancelOrbit = (blockHeld = false) => {
@@ -35,7 +37,7 @@ export function createGeometryFlightMotion(THREE, {
   };
   const clear = (forgetTarget = true) => {
     keys.clear(); blockedOrbitKeys.clear(); velocity.set(0, 0, 0); angularVelocity.set(0, 0);
-    mouseX = mouseY = zoomImpulse = 0; approach = orbit = null;
+    mouseX = mouseY = 0; approach = orbit = null;
     if (forgetTarget) { lastOrbitTarget = null; orbitPickDelay = 0; }
   };
   const observeOrbitTarget = () => {
@@ -63,8 +65,12 @@ export function createGeometryFlightMotion(THREE, {
   const orbitInput = () => orbit && hasOrbitInput();
   const hasLinearInput = () => !keys.has("ShiftRight") &&
     (pressed("ArrowRight") !== pressed("ArrowLeft") || pressed("ArrowUp") !== pressed("ArrowDown"));
-  const zoomDirection = () => Number(keys.has("Equal") || keys.has("NumpadAdd")) - Number(keys.has("Minus") || keys.has("NumpadSubtract"));
-  const canZoom = () => (zoomDirection() > 0 && camera.zoom < MAX_ZOOM) || (zoomDirection() < 0 && camera.zoom > MIN_ZOOM);
+  const resettingSpeed = () => keys.has("Digit0") || keys.has("Numpad0");
+  const speedDirection = () => resettingSpeed() ? 0
+    : Number(keys.has("Equal") || keys.has("NumpadAdd")) - Number(keys.has("Minus") || keys.has("NumpadSubtract"));
+  const canChangeSpeed = () => (speedDirection() > 0 && speedMultiplier < MAX_SPEED)
+    || (speedDirection() < 0 && speedMultiplier > MIN_SPEED);
+  const clampSpeed = value => Math.max(MIN_SPEED, Math.min(MAX_SPEED, value));
   const syncTarget = () => {
     forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
     up.set(0, 1, 0).applyQuaternion(camera.quaternion); camera.up.copy(up);
@@ -81,8 +87,9 @@ export function createGeometryFlightMotion(THREE, {
           // A change of keyboard mode must not carry thrust from the old axis.
           velocity.set(0, 0, 0);
         }
-        if (fresh) zoomImpulse += zoomKey(code) * ZOOM_TAP;
         keys.add(code);
+        if (resetSpeedKey(code)) speedMultiplier = 1;
+        else if (fresh && !resettingSpeed()) speedMultiplier = clampSpeed(speedMultiplier * SPEED_TAP ** speedKey(code));
         if (ARROW_KEYS.has(code) && !keys.has("ShiftRight")) cancelOrbit();
         if (!orbit && hasOrbitInput()) beginOrbit();
       } else {
@@ -115,15 +122,19 @@ export function createGeometryFlightMotion(THREE, {
     get lastOrbitTarget() { return lastOrbitTarget; },
     get orbiting() { return orbit !== null; },
     get approaching() { return approach !== null; },
-    releaseKeys() { cancelApproach(); cancelOrbit(); keys.clear(); blockedOrbitKeys.clear(); zoomImpulse = 0; },
+    get speedMultiplier() { return speedMultiplier; },
+    get linearSpeed() { return baseSpeed * speedMultiplier; },
+    releaseKeys() { cancelApproach(); cancelOrbit(); keys.clear(); blockedOrbitKeys.clear(); },
     clear,
     get needsFrame() {
       return approach !== null || mouseX !== 0 || mouseY !== 0 || velocity.lengthSq() > epsilon * epsilon
         || angularVelocity.lengthSq() > ORBIT_EPSILON * ORBIT_EPSILON || Boolean(orbitInput())
-        || hasLinearInput() || pressed("KeyQ") !== pressed("KeyE") || zoomImpulse !== 0 || canZoom();
+        || hasLinearInput() || pressed("KeyQ") !== pressed("KeyE") || canChangeSpeed();
     },
     step(seconds) {
       const dt = Number.isFinite(seconds) ? Math.max(0, Math.min(0.1, seconds)) : 0;
+      const previousSpeed = speedMultiplier;
+      speedMultiplier = clampSpeed(speedMultiplier * Math.exp(speedDirection() * SPEED_RATE * dt));
       if (approach) {
         approach.elapsed += dt;
         const fraction = approach.elapsed >= APPROACH_SECONDS - 1e-12 ? 1 : approach.elapsed / APPROACH_SECONDS;
@@ -170,15 +181,12 @@ export function createGeometryFlightMotion(THREE, {
         }
         if (!thrust && angularVelocity.lengthSq() === 0 && !hasOrbitInput()) cancelOrbit();
       }
-      const zoomDelta = zoomImpulse + zoomDirection() * ZOOM_RATE * dt; zoomImpulse = 0;
-      const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, camera.zoom * Math.exp(zoomDelta))), zooming = nextZoom !== camera.zoom;
-      if (zooming) { camera.zoom = nextZoom; camera.updateProjectionMatrix(); }
       if (keys.has("ShiftRight")) desired.set(0, 0, 0);
       else desired.set(pressed("ArrowRight") - pressed("ArrowLeft"),
         keys.has("ControlRight") ? pressed("ArrowUp") - pressed("ArrowDown") : 0,
         keys.has("ControlRight") ? 0 : pressed("ArrowDown") - pressed("ArrowUp"));
       const thrust = desired.lengthSq() > 0;
-      if (thrust) desired.normalize().applyQuaternion(camera.quaternion).multiplyScalar(baseSpeed);
+      if (thrust) desired.normalize().applyQuaternion(camera.quaternion).multiplyScalar(baseSpeed * speedMultiplier);
       const moving = velocity.lengthSq() > epsilon * epsilon || thrust;
       if (moving && dt > 0) {
         if (orbit) movementSegment.start.copy(camera.position);
@@ -193,7 +201,7 @@ export function createGeometryFlightMotion(THREE, {
           if (closest.distanceToSquared(orbit.point) <= epsilon * epsilon) cancelOrbit(true);
         }
       }
-      syncTarget(); return turning || orbitMoved || zooming || (moving && dt > 0);
+      syncTarget(); return turning || orbitMoved || speedMultiplier !== previousSpeed || (moving && dt > 0);
     },
   };
 }
@@ -219,6 +227,8 @@ export function createGeometryFlightController({
     get lastOrbitTarget() { return state === "active" ? motion?.lastOrbitTarget : null; },
     get orbiting() { return state === "active" && motion?.orbiting; },
     get approaching() { return state === "active" && motion?.approaching; },
+    get speedMultiplier() { return state === "active" ? motion?.speedMultiplier : 1; },
+    get linearSpeed() { return state === "active" ? motion?.linearSpeed : 0; },
     get needsFrame() { return state === "active" && motion?.needsFrame; },
     start() {
       if (disposed || state !== "idle") return;

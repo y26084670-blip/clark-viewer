@@ -65,13 +65,30 @@ function runtime({ initial = [0, 0, 0, 0], failInit = false } = {}) {
         captures.push({ image, texts, caption: options.caption }); return image;
       },
     });
-    Object.assign(api, { key, publish(values, frame) { batch(() => { setGrid(grid(values)); setKey(frame); }); } });
+    Object.assign(api, { key, publish(values, frame, displayRange) { batch(() => { setGrid({ ...grid(values), displayRange }); setKey(frame); }); } });
   });
   return { ...api, dispose, host, canvas, captures, drawCalls, events, get registered() { return registered; } };
 }
 const cameraState = h => ({ position: h.camera().position.toArray(), quaternion: h.camera().quaternion.toArray(),
   up: h.camera().up.toArray(), projection: [...h.camera().projectionMatrix.elements], zoom: h.camera().zoom,
   target: h.controls().target.toArray() });
+
+test("surface movie uses fixed full-cycle heights and legends, then restores the selected scale", async () => {
+  const h = runtime(), bounds = { minimum: 0, maximum: 100 }, firstKey = { step: 0 };
+  try {
+    h.publish([0, 25, 50, 100], firstKey, bounds); await h.captureAdapter.renderReady(firstKey);
+    const camera = cameraState(h), geometry = h.surface().geometry;
+    h.captureAdapter.prepare(); const nextKey = { step: 1 };
+    h.publish([25, 25, 25, 25], nextKey, bounds); await h.captureAdapter.renderReady(nextKey);
+    assert.deepEqual(h.limits(), { min: 0, max: 100 });
+    assert.equal(h.surface().geometry, geometry); assert.equal(geometry.getAttribute("position").getZ(1), .375);
+    h.captureAdapter.capture(nextKey); const text = h.captures.at(-1).texts;
+    assert.ok(text.includes((0).toPrecision(6))); assert.ok(text.includes((100).toPrecision(6)));
+    h.captureAdapter.restore(); assert.deepEqual(cameraState(h), camera);
+    assert.deepEqual(h.limits(), { min: 0, max: 100 });
+    h.publish([25, 25, 25, 25], { step: 2 }); assert.deepEqual(h.limits(), { min: 25, max: 25 });
+  } finally { h.dispose(); }
+});
 
 function assertAutomaticSurface(h, values) {
   const expected = updateSurfaceMesh(null, grid(values)), actual = h.surface();

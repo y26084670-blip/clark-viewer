@@ -11,6 +11,11 @@ export function updateSurfaceMesh(surface, grid) {
     if (!Number.isFinite(value)) throw new Error("Поверхность содержит нечисловые значения");
     min = Math.min(min, value); max = Math.max(max, value);
   }
+  // Display limits affect height/colour and the legend, never the saved values.
+  const range = grid.displayRange;
+  if (range && Number.isFinite(range.minimum) && Number.isFinite(range.maximum) && range.minimum <= range.maximum) {
+    min = range.minimum; max = range.maximum;
+  }
   if (!surface) surface = new THREE.Mesh(new THREE.BufferGeometry(),
     new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
   if (surface.userData.width !== width || surface.userData.height !== height) {

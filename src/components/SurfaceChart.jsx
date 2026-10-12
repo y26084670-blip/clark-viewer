@@ -70,7 +70,7 @@ export function SurfaceChart(props) {
       draw();
       if (error()) throw new Error(error());
       setHover("");
-      // Lock the camera and canvas; each frame keeps the normal automatic field scale.
+      // Lock the camera and canvas; each frame respects the selected range mode.
       movieSnapshot = snapshotMovieCamera(camera, controls);
     },
     renderReady(expectedKey, { signal } = {}) {

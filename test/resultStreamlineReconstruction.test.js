@@ -153,3 +153,14 @@ test("domain caches stay separate and reconstruction does not change saved posit
   assert.deepEqual(Array.from(a.domain.vectors), before);
   assert.deepEqual(Array.from(a.domain.positions), coordinates);
 });
+
+
+test("reconstruction accepts the 1e-6 boundary fringe and rejects points beyond it", () => {
+  for (const method of ["quadratic","tricubic"]) {
+    const setup=grid(); prepareStreamlineReconstruction(setup.domain,method);
+    for (const edge of [-.9e-6,1+.9e-6]) {
+      const result=evaluate(setup,method,[edge,.5,.5]); close(result.vector,[1,2,3]);
+    }
+    for (const edge of [-1.1e-6,1+1.1e-6]) assert.equal(evaluate(setup,method,[edge,.5,.5]).vector,null);
+  }
+});

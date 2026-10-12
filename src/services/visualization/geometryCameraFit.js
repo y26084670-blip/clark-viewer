@@ -72,10 +72,10 @@ export function fitCameraToVisibleObjects(THREE, camera, controls, roots, option
     ? options.padding : DEFAULT_FRAME_PADDING;
   const origin = options.target?.clone?.() ?? controls.target.clone();
   const backward = camera.position.clone().sub(controls.target);
-  if (backward.lengthSq() < 1e-12) backward.set(1, 1, 1);
+  if (backward.lengthSq() < 1e-6) backward.set(1, 1, 1);
   backward.normalize();
   const right = new THREE.Vector3().crossVectors(camera.up, backward);
-  if (right.lengthSq() < 1e-12) {
+  if (right.lengthSq() < 1e-6) {
     right.crossVectors(Math.abs(backward.z) < 0.9
       ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0), backward);
   }

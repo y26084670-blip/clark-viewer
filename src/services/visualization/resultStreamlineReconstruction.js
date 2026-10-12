@@ -287,7 +287,7 @@ export function prepareStreamlineReconstruction(domain, method) {
  * explicitly by the caller. Components remain in physical Cartesian axes. */
 export function sampleReconstructedVector(domain, u, point, method) {
   if (!["quadratic", "tricubic"].includes(method)) throw new Error("Неизвестный метод реконструкции поля");
-  if (!u || u.length !== 3 || !u.every(Number.isFinite) || u.some(value => value < -1e-10 || value > 1 + 1e-10)
+  if (!u || u.length !== 3 || !u.every(Number.isFinite) || u.some(value => value < -1e-6 || value > 1 + 1e-6)
     || !point || !finiteVector(point)) return { vector: null, fallback: "Реконструкция: точка вне доступной области" };
   const bounded = u.map(value => clamp(value, 0, 1));
   return method === "quadratic" ? sampleQuadratic(domain, bounded, point) : sampleCubic(domain, bounded);

@@ -156,3 +156,16 @@ test("FieldAreas retains the original single-component surface contract", async 
   assert.equal(reads.length, 1); assert.deepEqual([...grid.values], [-3, -3, -3, -3]);
   assert.equal(grid.width, 2); assert.equal(grid.height, 2);
 });
+
+
+test("field-line global scale uses the same 1e-6 time tolerance without reading fields", () => {
+  for (const Type of [Float32Array, Float64Array]) {
+    const { task, reads }=fixture(); task.metadata.HS.ranges.times=Array.from(new Type([0,.1,.2]));
+    assert.equal(fieldLineCycleRange(task,"Bs",[1],["norm"]).available,true); assert.equal(reads.length,0);
+  }
+  for (const dt of [.1,1234]) for (const factor of [.9,1.1]) {
+    const { task, reads }=fixture(); task.general.timeStep=dt;
+    task.metadata.HS.ranges.times=[0,1,2].map(i=>i*dt+(i?factor*1e-6*Math.max(1,i*dt):0));
+    assert.equal(fieldLineCycleRange(task,"Bs",[1],["norm"]).available,factor<1); assert.equal(reads.length,0);
+  }
+});

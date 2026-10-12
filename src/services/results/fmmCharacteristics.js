@@ -9,7 +9,7 @@ export function isFmm(record) {
 
 function characteristicStartsAtOrigin(points, doubleFloat) {
   const real = doubleFloat ? value => value : Math.fround;
-  const epsilon = doubleFloat ? Number.EPSILON : 2 ** -23;
+  const epsilon = 1e-6;
   return Math.abs(real(points[0].x)) <= epsilon && Math.abs(real(points[0].y)) <= epsilon;
 }
 

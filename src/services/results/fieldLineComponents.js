@@ -64,7 +64,7 @@ export function fieldLineCycleRange(task, quantityKey, selected, components) {
       || (intervals > 0 && timeStep === 0) || ranges.stepIds.length !== intervals + 1
       || ranges.times.length !== ranges.stepIds.length
       || ranges.stepIds.some((step, i) => step !== i || !Number.isFinite(ranges.times[i])
-        || Math.abs(ranges.times[i] - i * timeStep) > 1e-12 * Math.max(1, Math.abs(i * timeStep)))) {
+        || Math.abs(ranges.times[i] - i * timeStep) > 1e-6 * Math.max(1, Math.abs(i * timeStep)))) {
       return unavailable("Временная сетка диапазонов не совпадает с заданием");
     }
     const channels = choices.map(component => resultCycleRange(ranges, quantityKey, selected, { component }));

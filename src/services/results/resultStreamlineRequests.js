@@ -56,7 +56,7 @@ function connectedCandidates(all,seeds) {
     const a=queue.pop();
     for(const b of all)if(!kept.has(b.key)) {
       const size=Math.min(Math.hypot(...a.max.map((v,k)=>v-a.min[k])),Math.hypot(...b.max.map((v,k)=>v-b.min[k])));
-      if(a.min.every((v,k)=>v<=b.max[k]+size*1e-10&&a.max[k]>=b.min[k]-size*1e-10)) {
+      if(a.min.every((v,k)=>v<=b.max[k]+size*1e-6&&a.max[k]>=b.min[k]-size*1e-6)) {
         kept.set(b.key,b);queue.push(b);
         if(kept.size>STREAMLINE_LIMITS.domains)throw new Error("Связная группа линий превышает 128 образов ШГ");
       }

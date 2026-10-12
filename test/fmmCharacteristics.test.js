@@ -27,27 +27,21 @@ test("Negative characteristic branch follows solver threshold and anisotropy", (
   assert.equal(characteristicCurve([{x:.001,y:-.001},...p.slice(1)], true).reflected, false);
 });
 
-test("Original first H/M point uses solver REAL epsilon, including Float32 rounding", () => {
+test("First H/M point uses a common 1e-6 origin tolerance for REAL32 and REAL64", () => {
   for (const doubleFloat of [false, true]) {
-    const epsilon = doubleFloat ? Number.EPSILON : 2 ** -23;
-    const above = epsilon + 2 ** (doubleFloat ? -104 : -46);
-    const origin = [{ x: -epsilon, y: epsilon }, { x: 1, y: 2 }];
-    assert.equal(isAnisotropic(base, origin, doubleFloat), false);
-    assert.equal(characteristicCurve(origin, true, doubleFloat).reflected, true);
-    for (const first of [{ x: above, y: 0 }, { x: 0, y: -above }]) {
-      const points = [first, origin[1]];
+    for (const value of [0, .9e-6, 1e-6]) {
+      const points = [{ x: -value, y: value }, { x: 1, y: 2 }];
+      assert.equal(isAnisotropic(base, points, doubleFloat), false);
+      assert.equal(characteristicCurve(points, true, doubleFloat).reflected, true);
+    }
+    for (const first of [{ x: 1.01e-6, y: 0 }, { x: 0, y: -1.01e-6 }]) {
+      const points = [first, { x: 1, y: 2 }];
       assert.equal(isAnisotropic(base, points, doubleFloat), true);
       assert.equal(characteristicCurve(points, true, doubleFloat).reflected, false);
       assert.deepEqual(characteristicCurve(points, true, doubleFloat).points, points);
     }
-    assert.equal(isAnisotropic({ ...base, vkan: [[0],[0],[0]] }, origin, doubleFloat), false);
-    assert.equal(isAnisotropic({ ...base, vkan: [Number.MIN_VALUE,0,0] }, origin, doubleFloat), true);
+    assert.equal(isAnisotropic({ ...base, vkan: [Number.MIN_VALUE, 0, 0] }, [], doubleFloat), true);
   }
-  const singleEpsilon = 2 ** -23;
-  const rounded = [{ x: singleEpsilon * (1 + Number.EPSILON), y: 0 }, { x: 1, y: 2 }];
-  assert.ok(rounded[0].x > singleEpsilon);
-  assert.equal(isAnisotropic(base, rounded, false), false);
-  assert.equal(characteristicCurve(rounded, true, false).reflected, true);
 });
 
 test("Zero and both 180-degree anisotropy orientations preserve signed H and M", () => {
@@ -74,17 +68,19 @@ test("Zero and both 180-degree anisotropy orientations preserve signed H and M",
   assert.deepEqual(characteristic, original);
 });
 
-test("Task precision selects projection or modulus at the epsilon boundary", () => {
+test("Working points use the common origin tolerance for both task precisions", () => {
   const frame = { stride: 9, count: 1, values: new Float64Array([0,0,0, -3,4,0, -2,1,0]) };
   const origin = [{ x: 0, y: 0 }, { x: 1, y: 2 }];
-  const nearOrigin = [{ x: 0, y: 1e-8 }, origin[1]];
+  const nearOrigin = [{ x: 0, y: .9e-6 }, origin[1]];
   for (const doubleFloat of [false, true]) {
     const isotropic = workingPointSeries(frame, base, base, { characteristic: origin, doubleFloat });
     close(isotropic.points.map(p => p.x), [Math.hypot(-2,1)]);
     close(isotropic.points.map(p => p.y), [5]);
     const near = workingPointSeries(frame, base, base, { characteristic: nearOrigin, doubleFloat });
-    close(near.points.map(p => p.x), [doubleFloat ? -2 : Math.hypot(-2,1)]);
-    close(near.points.map(p => p.y), [doubleFloat ? -3 : 5]);
+    close(near.points.map(p => p.x), [Math.hypot(-2,1)]);
+    close(near.points.map(p => p.y), [5]);
+    const outside = workingPointSeries(frame, base, base, { characteristic: [{ x: 0, y: 1.01e-6 }, origin[1]], doubleFloat });
+    close(outside.points.map(p => p.x), [-2]); close(outside.points.map(p => p.y), [-3]);
   }
 });
 

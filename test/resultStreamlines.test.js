@@ -281,7 +281,7 @@ test("a zero on the physical face terminates without inventing a seam crossing",
   const line=trace([a,b],4,{method:"trilinear-boundary",tolerance:1e-6});
   assert.equal(line.error,undefined);assert.ok(line.reasons.includes("zero"));
   assert.ok(line.paths.every(path=>path.key==="a"));
-  closeVector(Array.from(line.paths.at(-1).positions.slice(-3)),[1,.5,.5],1e-6);
+  closeVector(Array.from(line.paths.at(-1).positions.slice(-3)),[1,.5,.5],1e-3/8);
   assert.ok(xyz(line).every(p=>p.every(Number.isFinite)&&p[0]<=1));
 });
 
@@ -313,4 +313,30 @@ test("all four methods are compared on the same nonpolynomial data and converge 
     assert.ok(current.quadratic<current.trilinear);
     assert.ok(current.tricubic<current.quadratic);
   }
+});
+
+
+test("neighbours separated within 1e-6*h continue across the tolerance fringe while larger gaps stop", () => {
+  const first=grid({dims:[1,1,1],lo:[0,0,0],hi:[1,1,1]});
+  for(const gap of [.8e-6,1.2e-6]) {
+    const second=grid({key:"b",dims:[1,1,1],lo:[1+gap,0,0],hi:[2+gap,1,1]});
+    const line=trace([first,second]); assert.equal(line.error,undefined);
+    assert.equal(line.paths.some(path=>path.key==="b"),gap<1e-6);
+  }
+});
+
+test("field direction stops below one millionth of the local maximum, independently of field units", () => {
+  for(const scale of [1e-9,1,1e9]) for(const ratio of [.5e-6,2e-6]) {
+    const d=grid({dims:[2,1,1],lo:[0,0,0],hi:[2,1,1],field:x=>[scale*(x<1?ratio:1),0,0]});
+    const line=trace([d]); assert.equal(line.error,undefined);
+    if(ratio<1e-6){assert.deepEqual(line.reasons,["zero"]);assert.equal(line.paths.length,0);}
+    else assert.ok(line.paths.length>0);
+  }
+});
+
+test("an unresolved tight turn stops at the 1e-3*h minimum step instead of exhausting attempts", () => {
+  const r=.25*1e-4;
+  const d=grid({dims:[4,4,1],lo:[0,0,0],hi:[1,1,1],field:(x,y)=>[-(y-.125),x-(.125-r),0]});
+  const line=trace([d],0,{method:"trilinear-boundary",tolerance:1e-7,maxSteps:32});
+  assert.equal(line.error,undefined);assert.ok(line.reasons.includes("accuracy"));assert.ok(!line.reasons.includes("limit"));
 });

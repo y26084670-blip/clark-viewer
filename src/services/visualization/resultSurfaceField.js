@@ -30,7 +30,7 @@ function triangulate(domain) {
     const second = cross(ac.map(value => value / scale), ad.map(value => value / scale));
     const firstArea = Math.hypot(...first), secondArea = Math.hypot(...second);
     const alignment = first.reduce((sum, value, axis) => sum + value * second[axis], 0);
-    if (firstArea <= 1e-12 || secondArea <= 1e-12 || alignment <= firstArea * secondArea * 1e-12) return null;
+    if (firstArea <= 1e-6 || secondArea <= 1e-6 || alignment <= firstArea * secondArea * 1e-6) return null;
     indices.set([a, b, c, a, c, d], offset); offset += 6;
   }
   return { key: domain.key, source: domain.source, instance: domain.instance, points: domain.points ?? [],

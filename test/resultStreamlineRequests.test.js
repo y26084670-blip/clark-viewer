@@ -282,3 +282,20 @@ test("symmetric curves stay cached across seed changes and reanchor their images
     assert.ok(changed.paths.some(path => path.instance.ps === 1 && path.fieldSign === -1));
   } finally { reader.close(); }
 });
+
+
+test("neighbour reading uses a 1e-6 relative bounding-box expansion", async () => {
+  for (const factor of [.5,1.5]) {
+    const f=fixture(),gap=factor*1e-6*Math.hypot(2,3,4);
+    f.task.elements.push({...f.record,id:2,recordIndex:1,dr:[[2+gap],[0],[0]]});
+    f.task.metadata.MH.header={inds1:[1,49],numbs:[48,48]};
+    for (const frame of f.frames) {
+      const values=new Float64Array(frame.values.length*2); values.set(frame.values); values.set(frame.values,frame.values.length);
+      for(let row=48;row<96;row++)values[row*9]+=2+gap;
+      frame.values=values;frame.count=96;
+    }
+    let domains;
+    await readResultStreamlines({task:f.task,time:0,streamlineSeeds:[f.seed]}, {process:async input=>{domains=input.domains;return [];}});
+    assert.equal(domains.length,factor<1?2:1); assert.equal(f.reads.length,domains.length);
+  }
+});

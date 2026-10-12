@@ -168,3 +168,17 @@ test("metadata reads each global dataset value only once and never accesses by-s
   assert.deepEqual([...calls.values()], [1, 1, 1, 1]);
   assert.equal(f.fieldReads(), 0);
 });
+
+
+test("RANGES accepts REAL32 time rounding and only discrepancies within 1e-6 of the time scale", () => {
+  for (const Type of [Float32Array, Float64Array]) {
+    const f = fixture(); f.set("time_step", .1); f.set("times", new Type([0, .1]), [2]);
+    assert.equal(f.read().available, true); assert.equal(f.fieldReads(), 0);
+  }
+  for (const step of [.1, 1234]) for (const sign of [-1, 1]) for (const factor of [.9, 1.1]) {
+    const f = fixture(); f.set("time_step", step);
+    f.set("times", new Float64Array([0, step + sign * factor * 1e-6 * Math.max(1, step)]), [2]);
+    assert.equal(f.read().available, factor < 1, `${step}/${sign}/${factor}`);
+    assert.equal(f.fieldReads(), 0);
+  }
+});

@@ -3,14 +3,14 @@ const FLIGHT_KEYS = new Set([
   "KeyQ", "KeyE", "ShiftRight", "Equal", "Minus", "NumpadAdd", "NumpadSubtract",
 ]);
 const MIN_ZOOM = 0.02, MAX_ZOOM = 100, ZOOM_RATE = 1.2, ZOOM_TAP = Math.log(1.08);
-const LOOK_TAU = 0.2, LOOK_EPSILON = 0.001, APPROACH_SECONDS = 0.5;
-export const GEOMETRY_FLIGHT_HELP = "Перспективный полёт; ↑/↓ — вперёд/назад; ←/→ — влево/вправо (×2); мышь — плавное направление; Enter — подъём; правый Ctrl — опускание (×1,5); +/− — масштаб; Q/E — крен; правый Shift — ускорение ×4; ЛКМ — подлёт к цели в прицеле; новый ручной ввод — отмена подлёта; Esc — выход";
+const LOOK_TAU = 0.25, LOOK_EPSILON = 0.001, APPROACH_SECONDS = 0.5;
+export const GEOMETRY_FLIGHT_HELP = "Перспективный полёт; ↑/↓ — вперёд/назад; ←/→ — влево/вправо (×2); мышь — плавное направление; Enter — подъём; правый Ctrl — опускание (×1,5); +/− — масштаб; Q/E — крен; правый Shift — ускорение ×4; ЛКМ — подлёт к цели в прицеле; новый ручной ввод — отмена подлёта; Esc — прежний вид и выход";
 const zoomKey = code => code === "Equal" || code === "NumpadAdd" ? 1
   : code === "Minus" || code === "NumpadSubtract" ? -1 : 0;
 
 /** Camera-local thrust with world-space inertia. No scene or result buffers. */
 export function createGeometryFlightMotion(THREE, {
-  camera, target, speed = 1, sensitivity = 0.0025,
+  camera, target, speed = 1, sensitivity = 0.000625,
 }) {
   const keys = new Set();
   const velocity = new THREE.Vector3();
@@ -171,7 +171,7 @@ export function createGeometryFlightController({
         });
       } catch { failLock(); }
     },
-    stop() {
+    stop(reason = "stop") {
       const wasActive = state === "active";
       generation++;
       rightControl = leftControl = false;
@@ -179,7 +179,7 @@ export function createGeometryFlightController({
       motion?.clear(); motion = null; lastTime = null;
       if (state !== "idle") setState("idle");
       if (locked()) owner.exitPointerLock();
-      if (wasActive) onDeactivate();
+      if (wasActive) onDeactivate(reason);
       requestRender();
     },
     update(timestamp) {
@@ -213,7 +213,7 @@ export function createGeometryFlightController({
   }
   function lockChange() {
     if (!locked()) {
-      if (state !== "idle") controller.stop();
+      if (state !== "idle") controller.stop("unlock");
       return;
     }
     if (disposed || state !== "starting" || !canStart() || owner.hidden) {
@@ -244,7 +244,7 @@ export function createGeometryFlightController({
   }
   function keyDown(event) {
     if (state !== "active" || event.isComposing) return;
-    if (event.code === "Escape") { event.preventDefault(); event.stopPropagation(); controller.stop(); return; }
+    if (event.code === "Escape") { event.preventDefault(); event.stopPropagation(); controller.stop("escape"); return; }
     if (event.code === "ControlRight") rightControl = true;
     if (event.code === "ControlLeft") leftControl = true;
     if (FLIGHT_KEYS.has(event.code)) heldKeys.add(event.code);
@@ -266,7 +266,7 @@ export function createGeometryFlightController({
       motion.key("ControlRight", true); requestRender();
     }
   }
-  function blur() { if (state !== "idle") controller.stop(); }
+  function blur() { if (state !== "idle") controller.stop("blur"); }
   function visibilityChange() { if (owner.hidden) blur(); }
   owner.addEventListener("pointerlockchange", lockChange);
   owner.addEventListener("pointerlockerror", lockError);

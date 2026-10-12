@@ -48,7 +48,7 @@ test("a mouse turn leaves accumulated momentum in world space", () => {
   const f = flight(); f.motion.key("ArrowUp", true); run(f, 60, 60);
   f.motion.key("ArrowUp", false);
   const position = f.camera.position.clone();
-  f.motion.look(Math.PI / 2 / 0.0025, 0); f.motion.step(0);
+  f.motion.look(Math.PI / 2 / 0.000625, 0); f.motion.step(0);
   f.motion.step(0.1);
   close(f.camera.position.x, position.x);
   assert.ok(f.camera.position.z < position.z);
@@ -61,7 +61,7 @@ test("vertical thrust follows camera roll, and look crosses the poles without an
   f.motion.key("KeyQ", false); f.motion.key("Enter", true); run(f, 60, 60);
   assert.ok(f.camera.position.x < -0.7);
   assert.ok(f.camera.up.x < -0.9);
-  f.motion.look(0, Math.PI / 0.0025); run(f, 240, 60);
+  f.motion.look(0, Math.PI / 0.000625); run(f, 240, 60);
   const forward = f.camera.getWorldDirection(new THREE.Vector3());
   assert.ok(forward.z > 0.99);
   close(f.camera.quaternion.length(), 1);
@@ -82,6 +82,7 @@ function lifecycle({ pending = false, denied = false, approachTarget = null } = 
   owner.defaultView = win; owner.hidden = false; owner.pointerLockElement = null;
   const states = [], errors = [];
   let permitted = true, renders = 0, exits = 0, activations = 0, deactivations = 0;
+  const stopReasons = [];
   const element = { ownerDocument: owner, requestPointerLock() {
     if (denied) return Promise.reject(new Error("denied"));
     if (!pending) grant();
@@ -94,8 +95,8 @@ function lifecycle({ pending = false, denied = false, approachTarget = null } = 
   const control = createGeometryFlightController({ THREE, element, getCamera: () => f.camera,
     getTarget: () => f.target, canStart: () => permitted, getApproachTarget: () => approachTarget, requestRender: () => renders++,
     onStateChange: state => states.push(state), onError: error => errors.push(error),
-    onActivate: () => activations++, onDeactivate: () => deactivations++ });
-  return { ...f, control, states, errors, owner, win, element, grant, event,
+    onActivate: () => activations++, onDeactivate: reason => { deactivations++; stopReasons.push(reason); } });
+  return { ...f, control, states, errors, owner, win, element, grant, event, stopReasons,
     permit: value => { permitted = value; }, counts: () => ({ renders, exits, activations, deactivations }) };
 }
 
@@ -201,17 +202,17 @@ test("opposite zoom/vertical keys cancel and zoom bounds stop an idle RAF", () =
   assert.equal(f.camera.zoom, 0.02); assert.equal(f.motion.needsFrame, false);
 });
 
-test("mouse angles are smoothed with tau=0.2s, conserve the requested turn and settle at every frame rate", () => {
+test("mouse angles are smoothed with tau=0.25s, conserve the requested turn and settle at every frame rate", () => {
   for (const fps of [30, 60, 144]) {
     const f = flight(); f.motion.look(200, 0); f.motion.step(0);
     assert.deepEqual(f.camera.quaternion.toArray(), [0, 0, 0, 1]);
     run(f, fps, fps);
-    const expected = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -0.5 * (1 - Math.exp(-5)));
+    const expected = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -0.125 * (1 - Math.exp(-4)));
     f.camera.quaternion.toArray().forEach((value, i) => close(value, expected.toArray()[i]));
     const moving = f.camera.quaternion.clone(); run(f, fps, fps);
     assert.notDeepEqual(f.camera.quaternion.toArray(), moving.toArray(), "rotation continues after the last mouse event");
     run(f, 2 * fps, fps); assert.equal(f.motion.needsFrame, false);
-    const final = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -0.5);
+    const final = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -0.125);
     f.camera.quaternion.toArray().forEach((value, i) => close(value, final.toArray()[i]));
     const settled = f.camera.quaternion.toArray(); run(f, fps, fps); assert.deepEqual(f.camera.quaternion.toArray(), settled);
   }
@@ -269,4 +270,16 @@ test("left click approaches the retained target; held repeats are suppressed and
   f.control.update(1200); assert.deepEqual(f.camera.position, stopped);
   f.control.dispose(); const before = f.counts().renders;
   f.event("click", { button: 0 }); assert.equal(f.counts().renders, before);
+});
+
+
+test("Escape/browser unlock request view restoration, while blur and programmatic stops keep their separate lifecycle", () => {
+  for(const reason of ["escape","unlock","blur","stop"]) {
+    const f=lifecycle();f.control.start();
+    if(reason==="escape")f.event("keydown",{code:"Escape"});
+    if(reason==="unlock"){f.owner.pointerLockElement=null;f.owner.dispatchEvent(new Event("pointerlockchange"));}
+    if(reason==="blur")f.event("blur",{},f.win);
+    if(reason==="stop")f.control.stop();
+    assert.deepEqual(f.stopReasons,[reason]);f.control.stop();f.control.dispose();assert.deepEqual(f.stopReasons,[reason]);
+  }
 });

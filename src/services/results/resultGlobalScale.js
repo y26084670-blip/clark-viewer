@@ -31,7 +31,7 @@ export function globalResultRange(task, quantityKey, selected) {
     if (!Number.isSafeInteger(count) || count < 0 || !Number.isFinite(dt) || dt < 0 || (count > 0 && dt === 0)
       || ranges.stepIds.length !== count + 1 || ranges.times.length !== count + 1
       || ranges.stepIds.some((step, i) => step !== i || !Number.isFinite(ranges.times[i])
-        || Math.abs(ranges.times[i] - i * dt) > 1e-12 * Math.max(1, Math.abs(i * dt)))) {
+        || Math.abs(ranges.times[i] - i * dt) > 1e-6 * Math.max(1, Math.abs(i * dt)))) {
       return unavailable(`${quantity.file}.h5: временная сетка не соответствует заданию`, "stale");
     }
     const operands = products[quantityKey];

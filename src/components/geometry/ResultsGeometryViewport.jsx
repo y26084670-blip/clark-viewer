@@ -768,6 +768,7 @@ export function ResultsGeometryViewport(props) {
             flightDisabledReason={props.flightDisabledReason}
             onFlightReady={control => { flightControl = control; setFlightReady(Boolean(control)); }}
             onFlightStateChange={onFlightStateChange}
+            onFlightProjectionRestore={projection => setOrthographicView(projection === "orthographic")}
             onFlightError={setFlightNotice}
             scene={displayScene()}
             captureFrameKey={props.captureFrameKey}

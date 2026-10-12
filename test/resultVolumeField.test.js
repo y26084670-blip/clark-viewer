@@ -175,3 +175,16 @@ test("volume reader announces the full-node limit and reads only bounded point s
   assert.match(result.volumeNotice, /предел/);
   assert.match(result.volumeNotice, /выборка/);
 });
+
+
+test("volume support rejects relative spans and sliver tetrahedra below 1e-6 at different scales", () => {
+  for (const scale of [1e-9,1,1e9]) for (const ratio of [.5e-6,1e-4]) {
+    const thin=grid({transform:(x,y,z)=>[scale*x,scale*y,scale*ratio*z]});
+    const skew=grid({transform:(x,y,z)=>[scale*x,scale*y,scale*(x+ratio*z)]});
+    for(const domain of [thin,skew]) {
+      const result=buildResultVolumeField({domains:[domain],maxAxis:8});
+      assert.equal(result.domains.length,ratio>1e-6?1:0,`${scale}/${ratio}`);
+      if(ratio<1e-6)assert.deepEqual(result.fallbackPoints,domain.points);
+    }
+  }
+});

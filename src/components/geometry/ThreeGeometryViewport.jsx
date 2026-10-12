@@ -1525,6 +1525,8 @@ export function ThreeGeometryViewport(props) {
   let axesRoot;
   let camera;
   let controls;
+  const flightSourceSizes = new Map();
+  let lastFlightPickTime = Number.NEGATIVE_INFINITY;
   let cameraTaskKey = props.taskKey;
   let pendingCameraState = props.cameraState;
   let geometryRoot;
@@ -1627,6 +1629,8 @@ export function ThreeGeometryViewport(props) {
   const [error, setError] = createSignal("");
   const [renderedCount, setRenderedCount] = createSignal(0);
   const [hoverTooltip, setHoverTooltip] = createSignal(null);
+  const [flightActive, setFlightActive] = createSignal(false);
+  const [flightTarget, setFlightTarget] = createSignal(null);
   const [scalarLegends, setScalarLegends] = createSignal([]);
 
   const reportError = (value) => {
@@ -1677,6 +1681,13 @@ export function ThreeGeometryViewport(props) {
       if (sourcesDirty) { sourcesDirty = false; replacePrescribedSources(); }
       if (vectorsDirty) { vectorsDirty = false; replaceResultLayers(); }
       if (pendingCameraState && currentBounds && !currentBounds.isEmpty()) {
+        // OrbitControls caches its up-axis transform in the constructor. Restore
+        // that basis before applying a flight pose, including axial approaches.
+        const up = pendingCameraState.up;
+        if (Array.isArray(up) && up.length === 3 && up.every(Number.isFinite)) {
+          camera.up.fromArray(up);
+          rebuildOrbitControls();
+        }
         if (restoreGeometryCamera(camera, controls, pendingCameraState)) hasFramedGeometry = true;
         pendingCameraState = null;
       }
@@ -1698,6 +1709,10 @@ export function ThreeGeometryViewport(props) {
       renderer.setViewport(0, 0, viewportWidth, viewportHeight);
       renderer.clear(true, true, true);
       renderer.render(threeScene, camera);
+      const pickTime = timestamp ?? performance.now();
+      if (flightController?.active && !flightController.approaching && pickTime - lastFlightPickTime >= PICK_INTERVAL_MS) {
+        lastFlightPickTime = pickTime; pickFlightTarget();
+      }
       rememberCamera();
 
       if (axesScene && axesCamera && axesRoot && controls) {
@@ -1902,6 +1917,7 @@ export function ThreeGeometryViewport(props) {
   };
 
   const clearHoverTooltip = () => {
+    setFlightTarget(null);
     cancelPendingPick();
     setHoverTooltip(null);
   };
@@ -1951,7 +1967,41 @@ export function ThreeGeometryViewport(props) {
     setHoverTooltip({ left, text, top });
   };
 
+  const rememberFlightSourceSize = primitive => {
+    const source = primitive.source, key = `${source.schemaId}:${source.recordIndex}`;
+    if (flightSourceSizes.has(key)) return;
+    const low = [Infinity, Infinity, Infinity], high = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < primitive.vertices.length; i++) {
+      low[i % 3] = Math.min(low[i % 3], primitive.vertices[i]);
+      high[i % 3] = Math.max(high[i % 3], primitive.vertices[i]);
+    }
+    const size = Math.hypot(...high.map((value, i) => value - low[i]));
+    const divisions = Math.max(1, ...(primitive.discretization?.counts ?? []));
+    flightSourceSizes.set(key, { element: size, node: size / divisions });
+  };
+  const makeFlightTarget = (source, point, label, node = false, characteristicSize) => {
+    if (!source || !point || point.length !== 3 || !Array.from(point).every(Number.isFinite)) return null;
+    const sizes = flightSourceSizes.get(`${source.schemaId}:${source.recordIndex}`);
+    const size = Number.isFinite(characteristicSize) && characteristicSize > 0
+      ? characteristicSize : sizes?.[node ? "node" : "element"];
+    return {
+      point: Array.from(point), label: label.split("\n")[0],
+      stopDistance: Math.max((Number.isFinite(size) && size > 0 ? size : flightSceneScale * 0.001) * 0.3,
+        camera.near * 8, flightSceneScale * 1e-5),
+    };
+  };
+  const pickFlightTarget = () => {
+    if (!renderer || !camera || !flightController?.active) return null;
+    const bounds = renderer.domElement.getBoundingClientRect();
+    camera.updateMatrixWorld();
+    const target = pickAtPointer({ clientX: bounds.left + bounds.width / 2,
+      clientY: bounds.top + bounds.height / 2 }, "flight") ?? null;
+    setFlightTarget(target);
+    return target;
+  };
+
   const pickAtPointer = (pointer, action = "hover") => {
+    const flightPicking = action === "flight";
     if (typeof fixedAxisRotation !== "undefined" && fixedAxisRotation) {
       clearHoverTooltip();
       return;
@@ -2003,11 +2053,13 @@ export function ThreeGeometryViewport(props) {
     raycaster.params.Line2 = { threshold: 10 }; // Full width grows by 5 CSS px on either side.
     raycaster.params.Points.threshold = unitsPerPixel * 9;
 
+    let flightGeometryHit;
     if (props.resultPickingOnly) {
       // Report saved nodes, including for an intersection on a scaled vector.
       const hits = intersectResultLayers(raycaster, resultLayerStates, unitsPerPixel);
-      const geometryHit = activeRenderMode === "solid" && (geometryOpacity ?? 1) >= 1
-        ? raycaster.intersectObjects(geometryPickTargets, false)[0] : null;
+      const surfaceHit = geometryOpacity !== 0 ? raycaster.intersectObjects(geometryPickTargets, false)[0] : null;
+      flightGeometryHit = surfaceHit;
+      const geometryHit = activeRenderMode === "solid" && (geometryOpacity ?? 1) >= 1 ? surfaceHit : null;
       const hit = hits.find(candidate => !geometryHit || candidate.distance <= geometryHit.distance + unitsPerPixel * 5);
       const scalar = resultHitScalar(hit);
       const vector = resultHitVector(hit);
@@ -2024,15 +2076,21 @@ export function ThreeGeometryViewport(props) {
         props.onSelectStreamline?.(lineHit?.object.userData.streamlineId ?? null);
         return;
       }
-      if (scalar) showTooltip(formatResultScalarTooltip(scalar), x, y);
-      else if (vector) showTooltip(formatResultVectorTooltip(vector, { showMagnitude: resultVectorColorMap }), x, y);
-      else setHoverTooltip(null);
-      return;
+      if (flightPicking) {
+        const node = scalar ?? vector;
+        if (node) return makeFlightTarget(node.source, node.origin,
+          `Узел${Number.isSafeInteger(node.node) ? ` №${node.node + 1}` : ""} · ${formatGeometryTooltip(node.source, node.instance)}`,
+          true, node.characteristicSize);
+      } else {
+        if (scalar) showTooltip(formatResultScalarTooltip(scalar), x, y);
+        else if (vector) showTooltip(formatResultVectorTooltip(vector, { showMagnitude: resultVectorColorMap }), x, y);
+        else setHoverTooltip(null);
+        return;
+      }
     }
 
-    const geometryHit = geometryOpacity !== 0
-      ? raycaster.intersectObjects(geometryPickTargets, false)[0] ?? null
-      : null;
+    const geometryHit = flightPicking && props.resultPickingOnly ? flightGeometryHit
+      : geometryOpacity !== 0 ? raycaster.intersectObjects(geometryPickTargets, false)[0] ?? null : null;
     const discretizationHit =
       discretizationPoints?.visible
         ? raycaster.intersectObject(discretizationPoints, false)[0] ?? null
@@ -2062,6 +2120,8 @@ export function ThreeGeometryViewport(props) {
       if (range && coordinates) {
         const metadata = pointHitMetadata(range, discretizationHit.index);
         if (metadata) {
+          if (flightPicking) return makeFlightTarget(range.source, coordinates,
+            formatDiscretizationPointTooltip(range.source, metadata, coordinates), true);
           showTooltip(
             formatDiscretizationPointTooltip(
               range.source,
@@ -2089,6 +2149,8 @@ export function ThreeGeometryViewport(props) {
       if (range && coordinates) {
         const metadata = vertexHitMetadata(range, vertexHit.index);
         if (metadata) {
+          if (flightPicking) return makeFlightTarget(range.source, coordinates,
+            formatVertexTooltip(range.source, metadata.vertexIndex, coordinates, metadata.instance), true);
           showTooltip(
             formatVertexTooltip(
               range.source,
@@ -2106,6 +2168,8 @@ export function ThreeGeometryViewport(props) {
 
     if (geometryHit?.object?.userData?.source) {
       const hitPoint = geometryHit.point;
+      if (flightPicking) return makeFlightTarget(geometryHit.object.userData.source, hitPoint?.toArray(),
+        formatGeometryTooltip(geometryHit.object.userData.source, geometryHitInstance(geometryHit)));
       showTooltip(
         formatGeometryTooltip(
           geometryHit.object.userData.source,
@@ -2382,6 +2446,8 @@ export function ThreeGeometryViewport(props) {
     nextCamera.position.copy(camera.position);
     nextCamera.up.copy(camera.up);
     nextCamera.quaternion.copy(camera.quaternion);
+    nextCamera.zoom = camera.zoom;
+    nextCamera.updateProjectionMatrix();
     camera = nextCamera;
     activeProjection = projection;
     controls.object = camera;
@@ -2508,6 +2574,7 @@ export function ThreeGeometryViewport(props) {
       if (layer) helperRoot.add(layer);
     }
     geometryPickTargets = [];
+    flightSourceSizes.clear();
     vertexBatches = [];
     vertexRanges = [];
     vertexPoints = null;
@@ -2535,6 +2602,7 @@ export function ThreeGeometryViewport(props) {
     );
     const stats = createGeometryObjects(THREE, sceneModel, filters, mode, showEdges,
       budget, (object, primitive, accepted) => {
+        rememberFlightSourceSize(primitive);
         geometryRoot.add(object);
         geometryPickTargets.push(object);
         object.traverse(child => {
@@ -2664,6 +2732,7 @@ export function ThreeGeometryViewport(props) {
           renderNow();
           if (error()) throw new Error(error());
           setFixedAxisRotation(null);
+          switchProjection("perspective", { fit: false });
           flightSceneScale = Math.max(currentBounds.getSize(new THREE.Vector3()).length(), 1e-6);
           flightBoundsCenter = currentBounds.getCenter(new THREE.Vector3());
           camera.near = Math.max(flightSceneScale * 1e-5, 1e-8);
@@ -2677,7 +2746,11 @@ export function ThreeGeometryViewport(props) {
           controlsInteracting = false;
           if (!disposed) rebuildOrbitControls();
         },
-        onStateChange: state => props.onFlightStateChange?.(state),
+        onStateChange: state => {
+          setFlightActive(state === "active"); setFlightTarget(null);
+          lastFlightPickTime = Number.NEGATIVE_INFINITY; props.onFlightStateChange?.(state);
+        },
+        getApproachTarget: pickFlightTarget,
         onError: message => props.onFlightError?.(message),
         requestRender,
       });
@@ -2968,6 +3041,11 @@ export function ThreeGeometryViewport(props) {
       aria-label="Трёхмерная геометрия элементов и областей"
       aria-busy={loading()}
     >
+      <Show when={flightActive()}>
+        <div class="geometry-flight-reticle" classList={{ "has-target": Boolean(flightTarget()) }} role="status">
+          <span>{flightTarget()?.label ?? "Наведите прицел на узел или элемент"}</span>
+        </div>
+      </Show>
       <Show when={loading()}>
         <div class="geometry-viewport-overlay">Загрузка 3D-модуля…</div>
       </Show>

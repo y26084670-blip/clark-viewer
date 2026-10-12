@@ -112,6 +112,7 @@ export function ResultsGeometryViewport(props) {
   let flightControl;
   const onFlightStateChange = state => {
     setFlightState(state);
+    if (state === "active") setOrthographicView(false);
     props.onFlightStateChange?.(state);
   };
   const [geometryTransparency, setGeometryTransparency] = createGeometryViewSetting("geometryTransparency", 58);
@@ -676,6 +677,7 @@ export function ResultsGeometryViewport(props) {
                 <input
                   type="checkbox"
                   checked={orthographicView()}
+                  disabled={flightState() !== "idle"}
                   onChange={(event) =>
                     setOrthographicView(event.currentTarget.checked)}
                 />

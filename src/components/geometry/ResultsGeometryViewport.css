@@ -572,3 +572,33 @@
   color: #9fd0ff;
   font-size: 11px;
 }
+
+.geometry-flight-reticle {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: #edf2f7;
+  pointer-events: none;
+}
+.geometry-flight-reticle.has-target { color: #ffdc55; }
+.geometry-flight-reticle::before, .geometry-flight-reticle::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+  box-shadow: 0 0 2px #141a20;
+}
+.geometry-flight-reticle::before { width: 17px; height: 1px; left: -8px; }
+.geometry-flight-reticle::after { width: 1px; height: 17px; top: -8px; }
+.geometry-flight-reticle span {
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  width: max-content;
+  max-width: 320px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  background: rgba(20, 26, 32, .88);
+  font-size: 11px;
+}

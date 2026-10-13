@@ -41,6 +41,11 @@ input[type=range] { accent-color: #2077b5; cursor: pointer; }
 .task-list button.task-status-row { display: grid; grid-template-columns: var(--task-status-columns) minmax(0, 1fr); }
 .task-list button.selected { color: #fff; background: #254b6b; box-shadow: inset 3px 0 #73beef; }
 .load-button { margin-top: 5px; background: #f3e9c0; color: #c62828; font-weight: bold; }
+.task-cross-open-button { background: #dae8f3; color: #185f96; font-weight: bold; }
+.task-cross-open-button:hover:not(:disabled) { background: #bed6e8; }
+.task-selection-notice, .task-selection-error { font-size: .875rem; overflow-wrap: anywhere; }
+.task-selection-notice { color: #92e0ac; }
+.task-selection-error { color: #ffc4c0; }
 .loaded-note { color: #92e0ac; font-size: .875rem; }
 .task-last-opened-notice { font-size: .875rem; overflow-wrap: anywhere; }
 .task-error { color: #9c2924; padding: 8px; background: #fff0ef; border: 1px solid #d99994; font-size: .875rem; overflow-wrap: anywhere; }

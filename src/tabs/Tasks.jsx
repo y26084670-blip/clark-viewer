@@ -1,5 +1,6 @@
-import { createSignal, For, Show, onCleanup } from "solid-js";
+import { batch, createSignal, For, Show, onCleanup } from "solid-js";
 import { createLastOpenedTaskHistory, sortTaskDirectories } from "../services/taskLastOpenedService.js";
+import { createTaskSelectionChannel, readTaskSelection } from "../services/taskSelectionChannel.js";
 import { loadTaskInput, readTaskSummaries } from "../services/taskLoadService.js";
 import { useAsyncResult } from "../services/results/resultRequests.js";
 import { buildGeometryScene } from "../services/visualization/geometrySceneModel.js";
@@ -18,19 +19,63 @@ export function Tasks(props) {
   );
   const [candidate, setCandidate] = createSignal(null), [error, setError] = createSignal("");
   const [galleryBusy, setGalleryBusy] = createSignal(false);
+  const [selectionReceiving, setSelectionReceiving] = createSignal(false);
+  const [selectionSending, setSelectionSending] = createSignal(false);
+  const [selectionNotice, setSelectionNotice] = createSignal("");
+  const [selectionError, setSelectionError] = createSignal("");
+  const browserBusy = () => galleryBusy() || selectionReceiving();
+  let taskListElement;
   const [lastTask, setLastTask] = createSignal(null), [lastTaskNotice, setLastTaskNotice] = createSignal("");
   const lastTaskHistory = createLastOpenedTaskHistory({ app: "viewer", onChange: setLastTask, onNotice: setLastTaskNotice });
   const lastProjectName = () => projects()[lastTask()?.projectIndex - 1]?.name;
   const isLastTask = item => project() === lastProjectName() && tasks().indexOf(item) + 1 === lastTask()?.taskIndex;
   let revision = 0, pickRevision = 0, loadRequest = 0, disposed = false;
+  const selectionChannel = createTaskSelectionChannel({ app: "viewer", onSelection: receiveTaskSelection });
+  onCleanup(() => selectionChannel.dispose());
   onCleanup(() => { disposed = true; revision++; pickRevision++; loadRequest++; lastTaskHistory.dispose(); });
+  async function receiveTaskSelection(request) {
+    if (props.busy || browserBusy() || document.querySelector("dialog[open]")) {
+      throw new Error("Viewer занят. Завершите текущую операцию и повторите переход.");
+    }
+    const handle = root(), current = ++revision;
+    pickRevision++; loadRequest++;
+    setSelectionReceiving(true);
+    setSelectionNotice(""); setSelectionError("");
+    try {
+      const selected = await readTaskSelection(handle, request, {
+        isCurrent: () => !disposed && handle === root() && current === revision && !props.busy,
+      });
+      batch(() => {
+        setProjects(selected.projects); setProject(selected.project.name);
+        setTasks(selected.tasks); setCandidate({ ...selected.task }); setError("");
+      });
+      props.onShowTasks?.();
+      setSelectionNotice(`Выбрано задание из Editor: ${selected.project.name}/${selected.task.name}`);
+      queueMicrotask(() => {
+        if (!disposed && current === revision) {
+          const row = taskListElement?.querySelector(".selected");
+          row?.scrollIntoView({ block: "nearest" }); row?.focus({ preventScroll: true });
+        }
+      });
+    } finally { setSelectionReceiving(false); }
+  }
+  async function showInEditor() {
+    if (!candidate() || props.busy || browserBusy() || selectionSending()) return;
+    const item = candidate(), name = project(), handle = root();
+    setSelectionSending(true); setSelectionNotice(""); setSelectionError("");
+    try {
+      await selectionChannel.select({ baseHandle: handle, projectName: name, taskName: item.name });
+      if (!disposed) setSelectionNotice(`В Editor выделено задание: ${name}/${item.name}`);
+    } catch (error) { if (!disposed) setSelectionError(error.message); }
+    finally { if (!disposed) setSelectionSending(false); }
+  }
   async function subdirectories(handle) {
     const result = [];
     for await (const [name, item] of handle.entries()) if (item.kind === "directory") result.push({ name, handle: item });
     return sortTaskDirectories(result);
   }
   async function pickRoot() {
-    if (galleryBusy()) return;
+    if (browserBusy()) return;
     setError("");
     if (!window.isSecureContext || typeof window.showDirectoryPicker !== "function") {
       setError("Выбор каталога недоступен. Откройте приложение по HTTPS или localhost в Chrome либо Edge."); return;
@@ -50,7 +95,7 @@ export function Tasks(props) {
     } catch (error) { if (!disposed && request === pickRevision && error.name !== "AbortError") setError(error.message); }
   }
   async function pickProject(name) {
-    if (galleryBusy()) return;
+    if (browserBusy()) return;
     const current = ++revision;
     setProject(name); setTasks([]); setCandidate(null); setError("");
     if (!name) return;
@@ -66,7 +111,7 @@ export function Tasks(props) {
       error: model.status === "rejected" ? model.reason.message : "" };
   });
   async function load() {
-    if (props.busy || galleryBusy()) return;
+    if (props.busy || browserBusy()) return;
     const item = candidate();
     if (!item) return;
     const request = ++loadRequest;
@@ -82,10 +127,10 @@ export function Tasks(props) {
   return <div class="tasks-layout">
     <section class="task-browser-panel">
       <div class="task-browser-content">
-        <button class="folder-button" disabled={galleryBusy()} onClick={pickRoot}>Выбрать каталог с проектами</button>
+        <button class="folder-button" disabled={browserBusy()} onClick={pickRoot}>Выбрать каталог с проектами</button>
         <div class="root-name">{root() ? `Корневой каталог: ${root().name}` : "Каталог не выбран"}</div>
         <label class="field-label">Список проектов</label>
-        <select class="project-select task-project-select" value={project()} disabled={galleryBusy()} onChange={event => pickProject(event.currentTarget.value)} aria-label="Список проектов">
+        <select class="project-select task-project-select" value={project()} disabled={browserBusy()} onChange={event => pickProject(event.currentTarget.value)} aria-label="Список проектов">
           <ProjectSelectValue value={project()} placeholder="Выберите проект" marked={project() === lastProjectName()} />
           <option value="">Выберите проект</option><For each={projects()}>{item => <option value={item.name}><Show when={item.name === lastProjectName()}><LastOpenedTaskMarker label="Последний открытый проект" /></Show>{item.name}</option>}</For>
         </select>
@@ -95,8 +140,8 @@ export function Tasks(props) {
             aria-label="Обновить признаки состояния заданий" aria-busy={taskStatus.busy()}
             title="Обновить признаки состояния заданий" onClick={() => { void taskStatus.refresh(); }}>↻</button>
         </div>
-        <div class="task-list" role="listbox" aria-label="Список заданий" onClick={event => {
-          if (galleryBusy()) return;
+        <div class="task-list" ref={taskListElement} role="listbox" aria-label="Список заданий" onClick={event => {
+          if (browserBusy()) return;
           const list = event.currentTarget;
           if (event.target !== list) return;
           const bounds = list.getBoundingClientRect();
@@ -104,16 +149,23 @@ export function Tasks(props) {
           const y = event.clientY - bounds.top - list.clientTop;
           if (x >= 0 && y >= 0 && x < list.clientWidth && y < list.clientHeight) setCandidate(null);
         }}>
-          <For each={tasks()}>{item => <button role="option" aria-selected={candidate()?.handle === item.handle} disabled={galleryBusy()}
-            class="task-status-row" classList={{ selected: candidate()?.handle === item.handle }} onClick={() => { if (!galleryBusy()) setCandidate({ ...item }); }}
+          <For each={tasks()}>{item => <button role="option" aria-selected={candidate()?.handle === item.handle} disabled={browserBusy()}
+            class="task-status-row" classList={{ selected: candidate()?.handle === item.handle }} onClick={() => { if (!browserBusy()) setCandidate({ ...item }); }}
             onDblClick={() => { if (candidate()?.handle === item.handle) void load(); }}
             title="Двойной щелчок — загрузить задание для просмотра">
             <TaskStatusCells status={taskStatus(item.handle)} /><span class="task-status-name"><Show when={isLastTask(item)}><LastOpenedTaskMarker label="Последнее открытое задание" /></Show>{item.name}</span>
           </button>}</For>
         </div>
-        <button class="load-button" disabled={!candidate() || props.busy || galleryBusy()} onClick={load}>{props.busy ? "Загрузка…" : "Загрузить для просмотра"}</button>
+        <button class="load-button" disabled={!candidate() || props.busy || browserBusy()} onClick={load}>{props.busy ? "Загрузка…" : "Загрузить для просмотра"}</button>
+        <button type="button" class="task-cross-open-button"
+          disabled={!candidate() || !selectionChannel.supported || props.busy || browserBusy() || selectionSending()}
+          aria-busy={selectionSending()}
+          title="Выбрать проект и выделить это задание в открытом Editor с тем же базовым каталогом"
+          onClick={showInEditor}>Показать в Editor</button>
         <Show when={props.loadedHandle === candidate()?.handle && props.loadedHandle}><div class="loaded-note">✓ Задание загружено</div></Show>
         <Show when={lastTaskNotice()}><div class="task-last-opened-notice" role="status">{lastTaskNotice()}</div></Show>
+        <Show when={selectionNotice()}><div class="task-selection-notice" role="status">{selectionNotice()}</div></Show>
+        <Show when={selectionError()}><div class="task-selection-error" role="alert">{selectionError()}</div></Show>
         <Show when={error() || props.error || info.value()?.error}><div class="task-error" role="alert">{error() || props.error || info.value()?.error}</div></Show>
       </div>
       <footer>выбор задания</footer>
@@ -129,7 +181,7 @@ export function Tasks(props) {
       <footer>исходные данные</footer>
     </section>
     <section class="task-results-panel">
-      <TaskGifGallery taskHandle={candidate()?.handle} active={props.active} disabled={props.busy}
+      <TaskGifGallery taskHandle={candidate()?.handle} active={props.active} disabled={props.busy || selectionReceiving()}
         onBusyChange={setGalleryBusy} />
       <textarea readOnly aria-label="Сводка результатов расчёта" value={info.value()?.summary.output ?? ""} />
       <footer>результаты</footer>

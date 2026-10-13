@@ -10,7 +10,7 @@ assert.ok(start >= 0 && end > start);
 
 // Run the actual picker and directory enumeration without mounting unrelated JSX.
 const createPicker = new Function("dependencies", `
-    const { window, root, setError, setRoot, setProjects, setProject, setTasks, setCandidate, galleryBusy, onCleanup, lastTaskHistory, sortTaskDirectories } = dependencies;
+    const { window, root, setError, setRoot, setProjects, setProject, setTasks, setCandidate, browserBusy, onCleanup, lastTaskHistory, sortTaskDirectories, createTaskSelectionChannel } = dependencies;
     ${source.slice(start, end)}
     return pickRoot;
 `);
@@ -39,7 +39,8 @@ function runtime(picker, windowOverrides = {}) {
         setProject: value => { state.project = value; },
         setTasks: value => { state.tasks = value; },
         setCandidate: value => { state.candidate = value; },
-        galleryBusy: () => state.galleryBusy,
+        browserBusy: () => state.galleryBusy,
+        createTaskSelectionChannel: () => ({ dispose() {} }),
         onCleanup() {}, sortTaskDirectories,
         lastTaskHistory: { async open(handle) { state.historyRoots.push(handle); } },
     });
@@ -163,7 +164,7 @@ test("viewer opens 3D only after the task and HDF5 metadata finish loading", asy
     assert.equal(h.state.active, 1); assert.equal(h.state.opened.length, 1);
     assert.equal(h.state.opened[0].task.name, "New"); assert.equal(h.state.opened[0].path, "Projects/New");
     assert.equal(h.state.busy, false);
-    assert.match(source, /onClick=\{\(\) => \{ if \(!galleryBusy\(\)\) setCandidate\(\{ \.\.\.item \}\); \}\}/u);
+    assert.match(source, /onClick=\{\(\) => \{ if \(!browserBusy\(\)\) setCandidate\(\{ \.\.\.item \}\); \}\}/u);
 });
 
 test("viewer load errors preserve the current tab and previously loaded task", async () => {
@@ -194,7 +195,7 @@ test("stale viewer metadata cannot reopen 3D after the user chooses another tab"
 const taskLoadStart = source.indexOf("  async function load() {");
 const taskLoadEnd = source.indexOf("  return <div", taskLoadStart);
 const createTaskLoad = new Function("dependencies", `
-    const { props, galleryBusy, candidate, projects, project, tasks, root, lastTaskHistory, setError } = dependencies;
+    const { props, browserBusy, candidate, projects, project, tasks, root, lastTaskHistory, setError } = dependencies;
     let loadRequest = 0, disposed = false;
     ${source.slice(taskLoadStart, taskLoadEnd)}
     return load;
@@ -203,7 +204,7 @@ function taskLoadRuntime(onLoad) {
     const first = { name: "First", handle: {} }, second = { name: "Second", handle: {} };
     const state = { candidate: first, saved: [], error: "" };
     const rootHandle = { name: "Root" };
-    const load = createTaskLoad({ props: { busy: false, onLoad }, galleryBusy: () => false,
+    const load = createTaskLoad({ props: { busy: false, onLoad }, browserBusy: () => false,
         candidate: () => state.candidate, projects: () => [{ name: "Project" }], project: () => "Project",
         tasks: () => [first, second], root: () => rootHandle, setError: value => { state.error = value; },
         lastTaskHistory: {

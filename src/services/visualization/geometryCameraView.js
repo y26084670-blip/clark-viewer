@@ -177,9 +177,102 @@ export function geometryOriginAxisRotationFromKeyboardEvent(event, options) {
     return axisFromModifiedKeyboardEvent(event, "shift", options);
 }
 
+/** Own one viewport's axis gesture, using CSS coordinates outside pointer lock. */
+export function createGeometryAxisRotationController({
+    element, getCamera, getControls, canStart = () => true,
+    onStateChange = () => {}, onRotate = () => {},
+    onPointerMove = () => {}, onPointerLeave = () => {},
+}) {
+    const owner = element.ownerDocument, win = owner.defaultView;
+    let axis = null, pivot = "target", inside = false, previous = null, dragAxis = null;
+    let ownedControls = null, previousEnabled = true, disposed = false;
+    const point = event => Number.isFinite(event.clientX) && Number.isFinite(event.clientY)
+        ? { x: event.clientX, y: event.clientY, id: event.pointerId } : null;
+    const available = () => !disposed && !owner.hidden && !owner.querySelector("dialog[open]") && canStart();
+    const modifierHeld = event => !event.metaKey && (pivot === "origin"
+        ? event.shiftKey && !event.altKey && !event.ctrlKey
+        : (event.altKey || event.ctrlKey) && !event.shiftKey && !(event.altKey && event.ctrlKey));
+    function stop() {
+        if (!axis) return;
+        axis = null; dragAxis = null;
+        if (getControls() === ownedControls) ownedControls.enabled = previousEnabled;
+        ownedControls = null;
+        if (!disposed) onStateChange(false);
+    }
+    function keyDown(event) {
+        if (!inside || !available()) { stop(); return; }
+        const targetAxis = geometryAxisRotationFromKeyboardEvent(event, { allowControls: true });
+        const originAxis = geometryOriginAxisRotationFromKeyboardEvent(event, { allowControls: true });
+        const nextAxis = targetAxis ?? originAxis, nextPivot = originAxis ? "origin" : "target";
+        if (!nextAxis) {
+            if (axis && !modifierHeld(event)) stop();
+            return;
+        }
+        const controls = getControls();
+        if (!controls || !getCamera()) return;
+        event.preventDefault();
+        if (axis === nextAxis && pivot === nextPivot) return;
+        const wasActive = Boolean(axis);
+        if (!wasActive) {
+            ownedControls = controls; previousEnabled = controls.enabled;
+            controls.enabled = false;
+        }
+        axis = nextAxis; pivot = nextPivot; dragAxis = null;
+        if (!wasActive) onStateChange(true);
+    }
+    function keyUp(event) { if (axis && !modifierHeld(event)) stop(); }
+    function pointerEnter(event) { inside = true; previous = point(event); dragAxis = null; }
+    function pointerMove(event) {
+        inside = true;
+        const before = previous;
+        previous = point(event);
+        if (!available()) { stop(); previous = null; return; }
+        if (axis && !modifierHeld(event)) stop();
+        if (!axis) { onPointerMove(event); return; }
+        event.preventDefault();
+        if (!before || !previous || before.id !== previous.id) { dragAxis = null; return; }
+        const dx = previous.x - before.x, dy = previous.y - before.y;
+        if (dx === 0 && dy === 0) return;
+        // Keep the first dominant direction for this gesture. Subtracting dx-dy
+        // cancels diagonal motion, and choosing anew at every event can jitter.
+        dragAxis ??= Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+        const movement = dragAxis === "x" ? dx : -dy;
+        const camera = getCamera(), controls = getControls(), origin = pivot === "origin";
+        if (!camera || !controls) { stop(); return; }
+        if (rotateGeometryCameraAroundAxis(camera, controls, axis, movement * 0.006, {
+            pivot: origin ? new camera.position.constructor() : controls.target,
+            rotateTarget: origin, updateControls: false,
+        })) onRotate();
+    }
+    function pointerLeave() {
+        inside = false; previous = null; dragAxis = null; onPointerLeave();
+    }
+    function blur() { inside = false; previous = null; stop(); }
+    element.addEventListener("pointerenter", pointerEnter);
+    element.addEventListener("pointermove", pointerMove);
+    element.addEventListener("pointerleave", pointerLeave);
+    owner.addEventListener("keydown", keyDown, true);
+    owner.addEventListener("keyup", keyUp, true);
+    win?.addEventListener("blur", blur);
+    return {
+        get active() { return Boolean(axis); },
+        stop,
+        dispose() {
+            disposed = true; stop(); previous = null;
+            element.removeEventListener("pointerenter", pointerEnter);
+            element.removeEventListener("pointermove", pointerMove);
+            element.removeEventListener("pointerleave", pointerLeave);
+            owner.removeEventListener("keydown", keyDown, true);
+            owner.removeEventListener("keyup", keyUp, true);
+            win?.removeEventListener("blur", blur);
+        },
+    };
+}
+
 export function rotateGeometryCameraAroundAxis(camera, controls, axis, angle, {
     pivot = controls?.target,
     rotateTarget = false,
+    updateControls = true,
 } = {}) {
     if (!camera?.position || !camera?.up || !controls?.target
         || !Number.isFinite(angle) || angle === 0
@@ -204,6 +297,6 @@ export function rotateGeometryCameraAroundAxis(camera, controls, axis, angle, {
         controls.target.copy(pivot).add(targetOffset);
     }
     camera.lookAt(controls.target);
-    controls.update?.();
+    if (updateControls) controls.update?.();
     return true;
 }

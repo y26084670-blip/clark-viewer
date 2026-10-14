@@ -185,6 +185,7 @@ export function createGeometryAxisRotationController({
 }) {
     const owner = element.ownerDocument, win = owner.defaultView;
     let axis = null, pivot = "target", inside = false, previous = null, dragAxis = null;
+    let motionX = 0, motionY = 0;
     let ownedControls = null, previousEnabled = true, disposed = false;
     const point = event => Number.isFinite(event.clientX) && Number.isFinite(event.clientY)
         ? { x: event.clientX, y: event.clientY, id: event.pointerId } : null;
@@ -192,9 +193,10 @@ export function createGeometryAxisRotationController({
     const modifierHeld = event => !event.metaKey && (pivot === "origin"
         ? event.shiftKey && !event.altKey && !event.ctrlKey
         : (event.altKey || event.ctrlKey) && !event.shiftKey && !(event.altKey && event.ctrlKey));
+    function resetDirection() { dragAxis = null; motionX = motionY = 0; }
     function stop() {
         if (!axis) return;
-        axis = null; dragAxis = null;
+        axis = null; resetDirection();
         if (getControls() === ownedControls) ownedControls.enabled = previousEnabled;
         ownedControls = null;
         if (!disposed) onStateChange(false);
@@ -217,11 +219,11 @@ export function createGeometryAxisRotationController({
             ownedControls = controls; previousEnabled = controls.enabled;
             controls.enabled = false;
         }
-        axis = nextAxis; pivot = nextPivot; dragAxis = null;
+        axis = nextAxis; pivot = nextPivot; resetDirection();
         if (!wasActive) onStateChange(true);
     }
     function keyUp(event) { if (axis && !modifierHeld(event)) stop(); }
-    function pointerEnter(event) { inside = true; previous = point(event); dragAxis = null; }
+    function pointerEnter(event) { inside = true; previous = point(event); resetDirection(); }
     function pointerMove(event) {
         inside = true;
         const before = previous;
@@ -230,12 +232,17 @@ export function createGeometryAxisRotationController({
         if (axis && !modifierHeld(event)) stop();
         if (!axis) { onPointerMove(event); return; }
         event.preventDefault();
-        if (!before || !previous || before.id !== previous.id) { dragAxis = null; return; }
+        if (!before || !previous || before.id !== previous.id) { resetDirection(); return; }
         const dx = previous.x - before.x, dy = previous.y - before.y;
         if (dx === 0 && dy === 0) return;
-        // Keep the first dominant direction for this gesture. Subtracting dx-dy
-        // cancels diagonal motion, and choosing anew at every event can jitter.
-        dragAxis ??= Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+        // Remember direction over about 8 CSS pixels, rather than locking it to
+        // the first tiny movement. A 2:1 margin keeps diagonal input from jittering.
+        const distance = Math.hypot(dx, dy), keep = Math.exp(-distance / 8);
+        motionX = motionX * keep + Math.abs(dx) / distance * (1 - keep);
+        motionY = motionY * keep + Math.abs(dy) / distance * (1 - keep);
+        if (!dragAxis) dragAxis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+        else if (motionX > motionY * 2) dragAxis = "x";
+        else if (motionY > motionX * 2) dragAxis = "y";
         const movement = dragAxis === "x" ? dx : -dy;
         const camera = getCamera(), controls = getControls(), origin = pivot === "origin";
         if (!camera || !controls) { stop(); return; }
@@ -245,7 +252,7 @@ export function createGeometryAxisRotationController({
         })) onRotate();
     }
     function pointerLeave() {
-        inside = false; previous = null; dragAxis = null; onPointerLeave();
+        inside = false; previous = null; resetDirection(); onPointerLeave();
     }
     function blur() { inside = false; previous = null; stop(); }
     element.addEventListener("pointerenter", pointerEnter);

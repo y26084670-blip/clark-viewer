@@ -37,7 +37,11 @@
 .task-gif-dialog-header { display: flex; flex: none; align-items: center; gap: 12px; padding: 7px 9px; border-bottom: 1px solid #596773; background: #29343e; cursor: move; user-select: none; touch-action: none; }
 .task-gif-dialog-header h2 { flex: 1; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-weight: bold; }
 .task-gif-dialog-header > button { flex: none; font: 22px/1 Arial, sans-serif; }
-.task-gif-preview-body { display: flex; align-items: center; justify-content: center; min-height: 90px; min-width: 0; overflow: hidden; }
+.task-gif-preview-body { position: relative; display: flex; align-items: center; justify-content: center; min-height: 90px; min-width: 0; overflow: hidden; }
+.task-gif-navigation-hint { position: absolute; top: 50%; z-index: 1; transform: translateY(-50%); color: #fff; font: 48px/1 Arial, sans-serif; text-shadow: 0 1px 5px #000; pointer-events: none; user-select: none; }
+.task-gif-navigation-hint.is-previous { left: 12px; }
+.task-gif-navigation-hint.is-next { right: 12px; }
+.task-gif-navigation-hint.is-unavailable { opacity: .3; }
 .task-gif-preview-body > img { display: block; max-width: 100%; max-height: calc(92dvh - 45px); object-fit: contain; }
 .task-gif-preview-body > p { padding: 20px; overflow-wrap: anywhere; }
 .task-gif-preview-body { flex: 1 1 0; min-height: 0; }

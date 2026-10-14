@@ -107,3 +107,27 @@ test("pre-flight view snapshots stay independent and restore both camera types a
     assert.ok(camera.quaternion.angleTo(new THREE.Quaternion().fromArray(saved.quaternion))<1e-7);
   }
 });
+
+
+test("Ctrl and Shift restore fixed-axis rotation without snapping or fitting", async () => {
+ const {geometryAxisRotationFromKeyboardEvent: targetAxis, geometryOriginAxisRotationFromKeyboardEvent: originAxis, rotateGeometryCameraAroundAxis: rotate}=await import("../src/services/visualization/geometryCameraView.js");
+ for(const axis of ["X","Y","Z"]){
+  assert.equal(targetAxis({code:`Key${axis}`,ctrlKey:true}),axis.toLowerCase());
+  assert.equal(originAxis({code:`Key${axis}`,shiftKey:true}),axis.toLowerCase());
+  assert.equal(targetAxis({code:`Key${axis}`,ctrlKey:true,shiftKey:true}),null);
+  assert.equal(targetAxis({code:`Key${axis}`,ctrlKey:true,target:{tagName:"INPUT"}}),null);
+  for(const target of [{tagName:"SELECT"},{tagName:"INPUT",type:"checkbox"},{tagName:"INPUT",type:"range"}]){
+   assert.equal(targetAxis({code:`Key${axis}`,ctrlKey:true,target},{allowControls:true}),axis.toLowerCase());
+   assert.equal(originAxis({code:`Key${axis}`,shiftKey:true,target},{allowControls:true}),axis.toLowerCase());
+  }
+  assert.equal(targetAxis({code:`Key${axis}`,ctrlKey:true,target:{tagName:"INPUT",type:"number"}},{allowControls:true}),null);
+ }
+ for(const origin of [false,true]){
+  const camera=new THREE.PerspectiveCamera(45,1,.1,100);camera.position.set(4,5,6);camera.up.set(0,0,1);
+  const controls={target:new THREE.Vector3(1,2,3),update(){}};camera.lookAt(controls.target);const target=controls.target.clone();
+  const pivot=origin?new THREE.Vector3():controls.target.clone();const distance=camera.position.distanceTo(pivot);const zoom=camera.zoom;
+  assert.equal(rotate(camera,controls,"z",Math.PI/2,{pivot,rotateTarget:origin}),true);
+  assert.ok(Math.abs(camera.position.distanceTo(pivot)-distance)<1e-10);assert.equal(camera.zoom,zoom);
+  if(origin)assert.ok(controls.target.distanceTo(target)>1);else assert.deepEqual(controls.target,target);
+ }
+});

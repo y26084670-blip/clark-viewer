@@ -120,6 +120,12 @@ export function createTaskGifGalleryController({ publish = () => {}, concurrency
     queue.unshift({ kind: "preview", entry, epoch, token: previewId, abort: previewAbort }); pump();
   }
   function closePreview() { resetPreview(); emit(); }
+  function navigatePreview(direction) {
+    if ((direction !== -1 && direction !== 1) || !preview) return;
+    const index = entries.findIndex(entry => entry.name === preview.entry.name);
+    const next = index >= 0 ? entries[index + direction] : null;
+    if (next) openPreview(next);
+  }
   function thumbnailFailed(entry, url) {
     const record = records.get(entry?.name);
     if (record?.entry !== entry || !url || record.url !== url) return;
@@ -158,5 +164,5 @@ export function createTaskGifGalleryController({ publish = () => {}, concurrency
     queue.length = 0; entries = []; records.clear();
   }
   emit();
-  return { setContext, refresh, setVisible, openPreview, closePreview, thumbnailFailed, previewFailed, deleteEntry, dispose };
+  return { setContext, refresh, setVisible, openPreview, closePreview, navigatePreview, thumbnailFailed, previewFailed, deleteEntry, dispose };
 }

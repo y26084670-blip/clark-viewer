@@ -1861,7 +1861,7 @@ export function ThreeGeometryViewport(props) {
   const setFixedAxisRotation = (axis, pivot = "target") => {
     fixedAxisRotation = axis;
     fixedAxisPivot = pivot;
-    if (controls) controls.enabled = !axis;
+    if (controls) controls.enabled = !axis && flightController?.state === "idle";
     if (axis) {
       controlsInteracting = true;
       clearHoverTooltip();
@@ -2819,9 +2819,10 @@ export function ThreeGeometryViewport(props) {
       renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
 
       handleAxisKeyDown = event => {
-        if (!pointerInsideViewport || movieSnapshot || event.repeat || flightController.state !== "idle") return;
-        const altAxis = geometryAxisRotationFromKeyboardEvent(event);
-        const shiftAxis = geometryOriginAxisRotationFromKeyboardEvent(event);
+        if (!pointerInsideViewport || movieSnapshot || event.repeat || flightController.state !== "idle"
+          || document.querySelector("dialog[open]")) return;
+        const altAxis = geometryAxisRotationFromKeyboardEvent(event, { allowControls: true });
+        const shiftAxis = geometryOriginAxisRotationFromKeyboardEvent(event, { allowControls: true });
         const axis = altAxis ?? shiftAxis;
         if (!axis) return;
         event.preventDefault();
@@ -2829,7 +2830,7 @@ export function ThreeGeometryViewport(props) {
       };
       handleAxisKeyUp = event => {
         if (!fixedAxisRotation) return;
-        if ((fixedAxisPivot === "target" && (event.code === "AltLeft" || event.code === "AltRight"))
+        if ((fixedAxisPivot === "target" && (event.code === "AltLeft" || event.code === "AltRight" || event.code === "ControlLeft" || event.code === "ControlRight"))
             || (fixedAxisPivot === "origin" && (event.code === "ShiftLeft" || event.code === "ShiftRight"))) {
           setFixedAxisRotation(null);
         }

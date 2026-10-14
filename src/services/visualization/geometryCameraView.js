@@ -143,7 +143,7 @@ export function geometryCameraCommandFromKeyboardEvent(event, options) {
 
     const commands = KEYBOARD_COMMANDS[event.code];
     if (!commands) return null;
-    return event.ctrlKey ? commands.negative : commands.positive;
+    return event.ctrlKey ? null : commands.positive; // Ctrl+axis belongs to mouse rotation.
 }
 
 export function isGeometryCameraShortcutTarget(target, {allowControls=false}={}) {
@@ -157,11 +157,11 @@ export function isGeometryCameraShortcutTarget(target, {allowControls=false}={})
 
 function axisFromModifiedKeyboardEvent(event, modifier, options) {
     if (!event || event.defaultPrevented || event.isComposing
-        || event.ctrlKey || event.metaKey
+        || event.metaKey
         || !isGeometryCameraShortcutTarget(event.target, options)) return null;
     const valid = modifier === "alt"
-        ? event.altKey && !event.shiftKey
-        : event.shiftKey && !event.altKey;
+        ? (event.ctrlKey || event.altKey) && !event.shiftKey && !(event.ctrlKey && event.altKey)
+        : event.shiftKey && !event.altKey && !event.ctrlKey;
     if (!valid) return null;
     if (event.code === "KeyX") return GEOMETRY_AXIS_ROTATION.X;
     if (event.code === "KeyY") return GEOMETRY_AXIS_ROTATION.Y;

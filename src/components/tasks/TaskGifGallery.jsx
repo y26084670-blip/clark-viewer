@@ -21,6 +21,18 @@ export function TaskGifGallery(props) {
   const cells = new Map();
   const enabled = () => props.active !== false && Boolean(props.taskHandle);
   const actionsDisabled = () => !enabled() || props.disabled || Boolean(view().deleting);
+  const canNavigate = direction => {
+    const index = view().entries.findIndex(entry => entry.name === view().preview?.entry.name);
+    return !actionsDisabled() && index >= 0 && Boolean(view().entries[index + direction]);
+  };
+  function previewKeyDown(event) {
+    if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey || event.isComposing
+      || event.target?.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(event.target?.tagName)) return;
+    const direction = event.code === "ArrowLeft" ? -1 : event.code === "ArrowRight" ? 1 : 0;
+    if (!direction) return;
+    event.preventDefault(); event.stopPropagation();
+    if (canNavigate(direction)) controller.navigatePreview(direction);
+  }
 
   function updateFallbackVisibility() {
     if (observer || !grid || disposed) return;
@@ -215,6 +227,7 @@ export function TaskGifGallery(props) {
         </div>
       </dialog>
       <dialog ref={dialog} class="task-gif-dialog" aria-labelledby={titleId}
+        onKeyDown={previewKeyDown}
         classList={{"is-maximized":maximized()}}
         style={maximized() ? {left:"8px",top:"8px",right:"auto",bottom:"auto",margin:"0",width:"calc(100vw - 16px)",height:"calc(100dvh - 16px)"} : {
           ...(dialogPosition() ? { left: `${dialogPosition().left}px`, top: `${dialogPosition().top}px`, right: "auto", bottom: "auto", margin: "0" } : {}),
@@ -224,6 +237,10 @@ export function TaskGifGallery(props) {
         <header ref={dialogHeader} class="task-gif-dialog-header" onPointerDown={startDrag} onPointerMove={moveDrag}
           onPointerUp={stopDrag} onPointerCancel={stopDrag} onLostPointerCapture={stopDrag}>
           <h2 id={titleId} title={view().preview?.entry.name}>{view().preview?.entry.name}</h2>
+          <button type="button" title="Предыдущий GIF" aria-label="Предыдущий GIF" disabled={!canNavigate(-1)}
+            onClick={() => controller.navigatePreview(-1)}>←</button>
+          <button type="button" title="Следующий GIF" aria-label="Следующий GIF" disabled={!canNavigate(1)}
+            onClick={() => controller.navigatePreview(1)}>→</button>
           <button type="button" title={maximized()?"Восстановить размер":"Максимальный размер окна"}
             aria-label={maximized()?"Восстановить размер":"Максимальный размер окна"} onClick={toggleMaximized}>{maximized()?"❐":"□"}</button>
           <button ref={closeButton} type="button" title="Закрыть" aria-label="Закрыть просмотр GIF" onClick={() => controller.closePreview()}>×</button>

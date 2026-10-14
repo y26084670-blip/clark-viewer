@@ -246,6 +246,12 @@ export function TaskGifGallery(props) {
           <button ref={closeButton} type="button" title="Закрыть" aria-label="Закрыть просмотр GIF" onClick={() => controller.closePreview()}>×</button>
         </header>
         <div class="task-gif-preview-body">
+          <Show when={view().entries.length > 1}>
+            <span class="task-gif-navigation-hint is-previous" aria-hidden="true"
+              classList={{ "is-unavailable": !canNavigate(-1) }}>‹</span>
+            <span class="task-gif-navigation-hint is-next" aria-hidden="true"
+              classList={{ "is-unavailable": !canNavigate(1) }}>›</span>
+          </Show>
           <Show when={view().preview?.url} fallback={<p role={view().preview?.error ? "alert" : "status"}>
             {view().preview?.error || "Загрузка…"}
           </p>}>

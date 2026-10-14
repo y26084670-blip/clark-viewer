@@ -311,3 +311,55 @@ test("axis gestures preserve editor, dialog, flight/export and disposal boundari
         assert.equal(f.controller.active,false); assert.equal(f.controls.enabled,true); assert.deepEqual(f.camera.position,pose);
     } finally { f.close(); }
 });
+
+test("axis rotation recovers from perpendicular first-pixel noise", () => {
+    for (const projection of ["perspective", "orthographic"]) {
+        for (const [, flags] of AXIS_GESTURE_MODIFIERS) for (const vertical of [false, true]) {
+            const f = axisGestureFixture(projection);
+            try {
+                f.enter(); f.key("keydown", "KeyZ", flags);
+                const initial = f.camera.quaternion.clone();
+                f.move(vertical ? 101 : 100, vertical ? 100 : 101, flags);
+                for (let i = 1; i <= 20; i++) {
+                    f.move(vertical ? 100 : 100 + i * 3, vertical ? 100 + i * 3 : 100, flags);
+                }
+                const angle = f.camera.quaternion.angleTo(initial);
+                assert.ok(angle > .32 && angle < .38, `First-pixel noise must not suppress the gesture: ${angle}`);
+            } finally { f.close(); }
+        }
+    }
+});
+
+test("axis rotation stays steady when diagonal motion arrives on alternating coordinates", () => {
+    for (const firstVertical of [false, true]) for (const [, flags] of AXIS_GESTURE_MODIFIERS) {
+        const f = axisGestureFixture();
+        try {
+            f.enter(); f.key("keydown", "KeyZ", flags);
+            const initial = f.camera.quaternion.clone();
+            let previousAngle = 0;
+            for (let i = 1; i <= 120; i++) {
+                const a = Math.ceil(i / 2), b = Math.floor(i / 2);
+                f.move(100 + (firstVertical ? b : a), 100 + (firstVertical ? a : b), flags);
+                const angle = f.camera.quaternion.angleTo(initial);
+                assert.ok(angle >= previousAngle - 1e-7, "Alternating pointer packets must not reverse rotation");
+                previousAngle = angle;
+            }
+            assert.ok(Math.abs(previousAngle - .36) < 1e-7);
+        } finally { f.close(); }
+    }
+});
+
+test("axis rotation follows a change from horizontal to vertical mouse movement", () => {
+    for (const [, flags] of AXIS_GESTURE_MODIFIERS) {
+        const f = axisGestureFixture();
+        try {
+            f.enter(); f.key("keydown", "KeyZ", flags);
+            for (let i = 1; i <= 20; i++) f.move(100 + i * 3, 100, flags);
+            for (let i = 1; i <= 10; i++) f.move(160, 100 + i * 3, flags);
+            const before = f.camera.quaternion.clone();
+            for (let i = 1; i <= 20; i++) f.move(160, 130 + i * 3, flags);
+            assert.ok(Math.abs(f.camera.quaternion.angleTo(before) - .36) < 1e-7);
+            assert.equal(f.controller.active, true, "Changing mouse direction keeps the axis mode active");
+        } finally { f.close(); }
+    }
+});

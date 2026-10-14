@@ -156,15 +156,16 @@ export function Tasks(props) {
             <TaskStatusCells status={taskStatus(item.handle)} /><span class="task-status-name"><Show when={isLastTask(item)}><LastOpenedTaskMarker label="Последнее открытое задание" /></Show>{item.name}</span>
           </button>}</For>
         </div>
+        <div class="task-load-row">
         <button class="load-button" disabled={!candidate() || props.busy || browserBusy()} onClick={load}>{props.busy ? "Загрузка…" : "Загрузить для просмотра"}</button>
         <button type="button" class="task-cross-open-button"
           disabled={!candidate() || !selectionChannel.supported || props.busy || browserBusy() || selectionSending()}
           aria-busy={selectionSending()}
           title="Выбрать проект и выделить это задание в открытом Editor с тем же базовым каталогом"
           onClick={showInEditor}>Показать в Editor</button>
+        </div>
         <Show when={props.loadedHandle === candidate()?.handle && props.loadedHandle}><div class="loaded-note">✓ Задание загружено</div></Show>
         <Show when={lastTaskNotice()}><div class="task-last-opened-notice" role="status">{lastTaskNotice()}</div></Show>
-        <Show when={selectionNotice()}><div class="task-selection-notice" role="status">{selectionNotice()}</div></Show>
         <Show when={selectionError()}><div class="task-selection-error" role="alert">{selectionError()}</div></Show>
         <Show when={error() || props.error || info.value()?.error}><div class="task-error" role="alert">{error() || props.error || info.value()?.error}</div></Show>
       </div>

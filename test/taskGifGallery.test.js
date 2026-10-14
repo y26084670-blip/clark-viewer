@@ -20,6 +20,22 @@ function fixture(options = {}) {
   return { controller, states, created, revoked, get state() { return state; } };
 }
 
+test("preview navigation follows the list, stops at boundaries and cancels stale reads", async () => {
+  const jobs=[];
+  const ui=fixture({read:(handle,{signal})=>{const job=deferred();jobs.push({...job,handle,signal});return job.promise;}});
+  ui.controller.setContext({});await tick();
+  ui.controller.openPreview(ui.state.entries[0]);await tick();
+  ui.controller.navigatePreview(-1);assert.equal(jobs.length,1);
+  ui.controller.navigatePreview(1);await tick();assert.equal(jobs[0].signal.aborted,true);
+  assert.equal(ui.state.preview.entry.name,"b.gif");
+  jobs[0].resolve(new Blob(["late a"]));jobs[1].resolve(new Blob(["b"]));await tick();
+  assert.equal(ui.created.length,1);const url=ui.state.preview.url;
+  ui.controller.navigatePreview(1);await tick();assert.ok(ui.revoked.includes(url));
+  assert.equal(ui.state.preview.entry.name,"c.gif");ui.controller.navigatePreview(1);assert.equal(jobs.length,3);
+  ui.controller.setContext({});jobs[2].resolve(new Blob(["late c"]));await tick();assert.equal(ui.state.preview,null);
+  ui.controller.dispose();
+});
+
 test("inactive gallery performs no reads, and deactivation releases visible images", async () => {
   let lists = 0, reads = 0;
   const ui = fixture({ list: async () => { lists++; return [file("a.gif")]; },

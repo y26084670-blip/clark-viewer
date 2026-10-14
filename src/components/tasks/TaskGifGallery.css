@@ -60,3 +60,5 @@
 .task-gif-confirm-actions > button:hover { background: #4a5965; }
 .task-gif-confirm-actions > button:first-child { border-color: #c47570; }
 .task-gif-confirm-actions > button:focus-visible { outline: 2px solid #74c5ff; outline-offset: 1px; }
+
+.task-gif-dialog-header button:disabled { opacity: .4; cursor: default; }

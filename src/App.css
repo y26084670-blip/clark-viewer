@@ -42,6 +42,9 @@ input[type=range] { accent-color: #2077b5; cursor: pointer; }
 .task-list button.selected { color: #fff; background: #254b6b; box-shadow: inset 3px 0 #73beef; }
 .load-button { margin-top: 5px; background: #f3e9c0; color: #c62828; font-weight: bold; }
 .task-cross-open-button { background: #dae8f3; color: #185f96; font-weight: bold; }
+.task-load-row { display: flex; gap: 7px; align-items: stretch; }
+.task-load-row > .load-button { flex: 1 1 0; min-width: 0; margin: 0; }
+.task-load-row > .task-cross-open-button { flex: 0 0 auto; width: max-content; white-space: nowrap; }
 .task-cross-open-button:hover:not(:disabled) { background: #bed6e8; }
 .task-selection-notice, .task-selection-error { font-size: .875rem; overflow-wrap: anywhere; }
 .task-selection-notice { color: #92e0ac; }

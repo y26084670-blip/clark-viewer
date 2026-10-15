@@ -9,6 +9,7 @@ import { TaskGifGallery } from "../components/tasks/TaskGifGallery.jsx";
 import { TaskStatusCells } from "../components/tasks/TaskStatusCells.jsx";
 import { LastOpenedTaskMarker, ProjectSelectValue } from "../components/tasks/LastOpenedTaskMarker.jsx";
 import { useTaskStatuses } from "../services/taskStatusMonitor.js";
+import { createTaskTestProtocolWindow } from "../services/taskTestProtocolWindow.js";
 import "../components/geometry/ResultsGeometryViewport.css";
 
 export function Tasks(props) {
@@ -19,16 +20,26 @@ export function Tasks(props) {
   );
   const [candidate, setCandidate] = createSignal(null), [error, setError] = createSignal("");
   const [galleryBusy, setGalleryBusy] = createSignal(false);
+  const [protocolBusy, setProtocolBusy] = createSignal(false);
   const [selectionReceiving, setSelectionReceiving] = createSignal(false);
   const [selectionSending, setSelectionSending] = createSignal(false);
   const [selectionNotice, setSelectionNotice] = createSignal("");
   const [selectionError, setSelectionError] = createSignal("");
-  const browserBusy = () => galleryBusy() || selectionReceiving();
+  const browserBusy = () => galleryBusy() || selectionReceiving() || protocolBusy();
   let taskListElement;
   const [lastTask, setLastTask] = createSignal(null), [lastTaskNotice, setLastTaskNotice] = createSignal("");
   const lastTaskHistory = createLastOpenedTaskHistory({ app: "viewer", onChange: setLastTask, onNotice: setLastTaskNotice });
   const lastProjectName = () => projects()[lastTask()?.projectIndex - 1]?.name;
   const isLastTask = item => project() === lastProjectName() && tasks().indexOf(item) + 1 === lastTask()?.taskIndex;
+  const protocolWindow = createTaskTestProtocolWindow();
+  onCleanup(() => protocolWindow.dispose());
+  async function openTestProtocols(item) {
+    if (props.busy || browserBusy()) return;
+    setError(""); setProtocolBusy(true);
+    try { await protocolWindow.open(item.handle, { label: `${project()}/${item.name}` }); }
+    catch (error) { if (!disposed && error.name !== "AbortError") setError(error.message); }
+    finally { if (!disposed) setProtocolBusy(false); }
+  }
   let revision = 0, pickRevision = 0, loadRequest = 0, disposed = false;
   const selectionChannel = createTaskSelectionChannel({ app: "viewer", onSelection: receiveTaskSelection });
   onCleanup(() => selectionChannel.dispose());
@@ -149,12 +160,19 @@ export function Tasks(props) {
           const y = event.clientY - bounds.top - list.clientTop;
           if (x >= 0 && y >= 0 && x < list.clientWidth && y < list.clientHeight) setCandidate(null);
         }}>
-          <For each={tasks()}>{item => <button role="option" aria-selected={candidate()?.handle === item.handle} disabled={browserBusy()}
+          <For each={tasks()}>{item => <div role="option" aria-selected={candidate()?.handle === item.handle}
+            aria-disabled={browserBusy()} tabIndex={browserBusy() ? -1 : 0}
             class="task-status-row" classList={{ selected: candidate()?.handle === item.handle }} onClick={() => { if (!browserBusy()) setCandidate({ ...item }); }}
+            onKeyDown={event => {
+              if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault(); if (!browserBusy()) setCandidate({ ...item });
+              }
+            }}
             onDblClick={() => { if (candidate()?.handle === item.handle) void load(); }}
             title="Двойной щелчок — загрузить задание для просмотра">
-            <TaskStatusCells status={taskStatus(item.handle)} /><span class="task-status-name"><Show when={isLastTask(item)}><LastOpenedTaskMarker label="Последнее открытое задание" /></Show>{item.name}</span>
-          </button>}</For>
+            <TaskStatusCells status={taskStatus(item.handle)} disabled={props.busy || browserBusy()}
+              onOpenProtocols={() => { void openTestProtocols(item); }} /><span class="task-status-name"><Show when={isLastTask(item)}><LastOpenedTaskMarker label="Последнее открытое задание" /></Show>{item.name}</span>
+          </div>}</For>
         </div>
         <div class="task-load-row">
         <button class="load-button" disabled={!candidate() || props.busy || browserBusy()} onClick={load}>{props.busy ? "Загрузка…" : "Загрузить для просмотра"}</button>

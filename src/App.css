@@ -36,10 +36,11 @@ input[type=range] { accent-color: #2077b5; cursor: pointer; }
 .task-list-heading .task-status-refresh[aria-busy="true"] { cursor: progress; }
 .project-select { width: 100%; color: #eef3f7; background: #141a20; border-color: #697c8b; }
 .task-list { flex: 1; min-height: 100px; overflow: auto; background: #141a20; border: 1px solid #697c8b; }
-.task-list button { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid #37434f; border-radius: 0; font-size: 1rem; font-weight: 600; line-height: 1.4; padding: 9px 10px; color: #f5f7fa; background: #141a20; }
-.task-list button:hover { background: #334454; }
-.task-list button.task-status-row { display: grid; grid-template-columns: var(--task-status-columns) minmax(0, 1fr); }
-.task-list button.selected { color: #fff; background: #254b6b; box-shadow: inset 3px 0 #73beef; }
+.task-list > .task-status-row { display: grid; grid-template-columns: var(--task-status-columns) minmax(0, 1fr); width: 100%; text-align: left; border: 0; border-bottom: 1px solid #37434f; border-radius: 0; font-size: 1rem; font-weight: 600; line-height: 1.4; padding: 9px 10px; color: #f5f7fa; background: #141a20; cursor: pointer; }
+.task-list > .task-status-row:hover { background: #334454; }
+.task-list > .task-status-row:focus-visible { outline: 2px solid #2184d1; outline-offset: -2px; }
+.task-list > .task-status-row[aria-disabled="true"] { cursor: default; opacity: .55; }
+.task-list > .task-status-row.selected { color: #fff; background: #254b6b; box-shadow: inset 3px 0 #73beef; }
 .load-button { margin-top: 5px; background: #f3e9c0; color: #c62828; font-weight: bold; }
 .task-cross-open-button { background: #dae8f3; color: #185f96; font-weight: bold; }
 .task-load-row { display: flex; gap: 7px; align-items: stretch; }

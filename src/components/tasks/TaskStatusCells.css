@@ -33,4 +33,12 @@
     font: 700 10px/1.2 Arial, sans-serif;
 }
 .task-status-comparison { color: #86d6ff; font: 800 16px/1 Arial, sans-serif; }
+.task-status-protocol-button {
+    width: 100%;
+    min-height: 22px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+.task-status-protocol-button:hover:not(:disabled) { background: #476078; }
 .task-status-name { min-width: 0; }

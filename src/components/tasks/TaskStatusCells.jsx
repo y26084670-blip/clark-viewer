@@ -7,6 +7,7 @@ const labels = {
   hasGifs: "Созданы GIF анимации",
   hasComparison: "Есть каталог протокола сравнения: comparison",
 };
+const protocolAction = `${labels.hasComparison}\nЩелчок — открыть все HTML-протоколы тестов`;
 const failure = (status, keys) => keys.filter(key => status?.errors?.[key])
   .map(key => `Не удалось проверить: ${labels[key]} (${status.errors[key]})`).join("\n");
 
@@ -31,7 +32,10 @@ export function TaskStatusCells(props) {
     </span>
     <span class="task-status-cell" title={failure(props.status, ["hasComparison"])}>
       <Show when={props.status?.hasComparison === true}>
-        <span class="task-status-comparison" title={labels.hasComparison} role="img" aria-label={labels.hasComparison}>T</span>
+        <button type="button" class="task-status-comparison task-status-protocol-button" title={protocolAction}
+          aria-label={protocolAction} disabled={props.disabled || !props.onOpenProtocols}
+          onClick={event => { event.stopPropagation(); props.onOpenProtocols?.(); }}
+          onDblClick={event => event.stopPropagation()}>T</button>
       </Show>
     </span>
   </>;

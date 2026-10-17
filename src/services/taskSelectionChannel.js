@@ -12,13 +12,13 @@ export async function readTaskSelection(root, request, { isCurrent = () => true 
     if (!isCurrent()) throw new Error("Выбор задания отменён: состояние страницы изменилось.");
   };
   checkCurrent();
-  if (!root) throw new Error("В принимающем приложении не выбран базовый каталог.");
+  if (!root) throw new Error("В принимающем приложении не выбран базовый каталог. Ограничения браузера требуют ручной выбор базового каталога.");
   if (!request?.baseHandle || !validName(request.projectName) || !validName(request.taskName)) {
     throw new Error("Получена некорректная команда выбора задания.");
   }
   const sameRoot = await root.isSameEntry(request.baseHandle);
   checkCurrent();
-  if (!sameRoot) throw new Error("В Editor и Viewer выбраны разные базовые каталоги.");
+  if (!sameRoot) throw new Error("В Editor и Viewer выбраны разные базовые каталоги. Ограничения браузера требуют ручной выбор базового каталога.");
   if (typeof root.queryPermission === "function") {
     const permission = await root.queryPermission({ mode: "read" });
     checkCurrent();

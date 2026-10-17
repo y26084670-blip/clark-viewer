@@ -186,7 +186,7 @@ export function Tasks(props) {
           disabled={!candidate() || !selectionChannel.supported || props.busy || browserBusy() || selectionSending()}
           aria-busy={selectionSending()}
           title="Выбрать проект и выделить это задание в открытом Editor с тем же базовым каталогом"
-          onClick={showInEditor}>Показать в Editor</button>
+          onClick={showInEditor}>Выбрать в Editor</button>
         </div>
         <Show when={props.loadedHandle === candidate()?.handle && props.loadedHandle}><div class="loaded-note">✓ Задание загружено</div></Show>
         <Show when={lastTaskNotice()}><div class="task-last-opened-notice" role="status">{lastTaskNotice()}</div></Show>

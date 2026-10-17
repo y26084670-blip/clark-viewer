@@ -26,7 +26,7 @@ export function Tasks(props) {
   const [selectionNotice, setSelectionNotice] = createSignal("");
   const [selectionError, setSelectionError] = createSignal("");
   const browserBusy = () => galleryBusy() || selectionReceiving() || protocolBusy();
-  let taskListElement;
+  let taskListElement, selectionErrorDialog, selectionErrorReturnFocus;
   const [lastTask, setLastTask] = createSignal(null), [lastTaskNotice, setLastTaskNotice] = createSignal("");
   const lastTaskHistory = createLastOpenedTaskHistory({ app: "viewer", onChange: setLastTask, onNotice: setLastTaskNotice });
   const lastProjectName = () => projects()[lastTask()?.projectIndex - 1]?.name;
@@ -44,6 +44,11 @@ export function Tasks(props) {
   const selectionChannel = createTaskSelectionChannel({ app: "viewer", onSelection: receiveTaskSelection });
   onCleanup(() => selectionChannel.dispose());
   onCleanup(() => { disposed = true; revision++; pickRevision++; loadRequest++; lastTaskHistory.dispose(); });
+  function showSelectionError(message, returnFocus) {
+    selectionErrorReturnFocus = returnFocus;
+    setSelectionError(message);
+    if (!selectionErrorDialog.open) selectionErrorDialog.showModal();
+  }
   async function receiveTaskSelection(request) {
     if (props.busy || browserBusy() || document.querySelector("dialog[open]")) {
       throw new Error("Viewer занят. Завершите текущую операцию и повторите переход.");
@@ -70,14 +75,15 @@ export function Tasks(props) {
       });
     } finally { setSelectionReceiving(false); }
   }
-  async function showInEditor() {
+  async function showInEditor(event) {
     if (!candidate() || props.busy || browserBusy() || selectionSending()) return;
+    const sourceButton = event.currentTarget;
     const item = candidate(), name = project(), handle = root();
     setSelectionSending(true); setSelectionNotice(""); setSelectionError("");
     try {
       await selectionChannel.select({ baseHandle: handle, projectName: name, taskName: item.name });
       if (!disposed) setSelectionNotice(`В Editor выделено задание: ${name}/${item.name}`);
-    } catch (error) { if (!disposed) setSelectionError(error.message); }
+    } catch (error) { if (!disposed) showSelectionError(error.message, sourceButton); }
     finally { if (!disposed) setSelectionSending(false); }
   }
   async function subdirectories(handle) {
@@ -184,7 +190,6 @@ export function Tasks(props) {
         </div>
         <Show when={props.loadedHandle === candidate()?.handle && props.loadedHandle}><div class="loaded-note">✓ Задание загружено</div></Show>
         <Show when={lastTaskNotice()}><div class="task-last-opened-notice" role="status">{lastTaskNotice()}</div></Show>
-        <Show when={selectionError()}><div class="task-selection-error" role="alert">{selectionError()}</div></Show>
         <Show when={error() || props.error || info.value()?.error}><div class="task-error" role="alert">{error() || props.error || info.value()?.error}</div></Show>
       </div>
       <footer>выбор задания</footer>
@@ -205,5 +210,14 @@ export function Tasks(props) {
       <textarea readOnly aria-label="Сводка результатов расчёта" value={info.value()?.summary.output ?? ""} />
       <footer>результаты</footer>
     </section>
+    <dialog class="task-selection-error-dialog" aria-label="Не удалось показать задание в Editor"
+      aria-describedby="task-selection-error-message" ref={selectionErrorDialog} onClose={() => {
+        setSelectionError("");
+        selectionErrorReturnFocus?.focus();
+        selectionErrorReturnFocus = null;
+      }}>
+      <p id="task-selection-error-message">{selectionError()}</p>
+      <button type="button" autofocus onClick={() => selectionErrorDialog.close()}>Закрыть</button>
+    </dialog>
   </div>;
 }

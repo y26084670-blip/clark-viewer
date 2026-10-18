@@ -111,13 +111,11 @@ textarea[readonly] { resize: none; width: 100%; margin: 0; padding: 12px; border
 .chart-menu button { width: 100%; display: block; border: 0; text-align: left; font-size: .875rem; }
 .copy-message { position: absolute; bottom: 12px; right: 15px; font-size: .875rem; background: #e2f2e8; }
 .surface-canvas { position: absolute; inset: 0; }
-.surface-view-buttons { position: absolute; left: 10px; top: 8px; z-index: 2; display: flex; gap: 5px; }
+.surface-view-buttons { display: flex; flex-wrap: wrap; gap: 5px; }
 .surface-view-buttons button { font-size: .875rem; }
 .field-area-plots { flex: 1; min-height: 220px; display: grid; grid-template-columns: repeat(3, minmax(260px, 1fr)); gap: 6px; overflow-x: auto; padding: 5px; }
 .field-area-component { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid #b4c2cf; }
 .field-area-component h3 { flex: 0 0 auto; text-align: center; font-size: 14px; margin: 0; padding: 5px; background: #eef3f7; }
-.field-area-component .surface-view-buttons { left: 5px; right: 5px; flex-wrap: wrap; gap: 3px; }
-.field-area-component .surface-view-buttons button { font-size: 12px; padding: 4px; }
 .surface-legend { position: absolute; bottom: 12px; right: 15px; display: flex; gap: 9px; align-items: center; font-size: .8rem; padding: 6px; background: #ffffffda; }
 .surface-legend > div { width: 120px; height: 12px; background: linear-gradient(to right, #1538ea, #13efbf, #b5ed13, #ef1913); }
 .field-area-component .surface-legend { left: 8px; right: 8px; bottom: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }

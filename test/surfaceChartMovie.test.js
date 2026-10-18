@@ -26,7 +26,7 @@ const grid = values => ({ width: 2, height: 2, values: Float64Array.from(values)
   coordinates: new Float64Array(12), axes: ["i1", "i2"], copy: 0 });
 
 function runtime({ initial = [0, 0, 0, 0], failInit = false, viewState, onViewChange } = {}) {
-  let dispose, api, registered;
+  let dispose, api, registered, viewControls;
   const events = new Map(), captures = [], drawCalls = [];
   const canvas = { width: 0, height: 0, addEventListener: (name, listener) => events.set(name, listener),
     removeEventListener: name => events.delete(name), remove() {} };
@@ -53,6 +53,7 @@ function runtime({ initial = [0, 0, 0, 0], failInit = false, viewState, onViewCh
     const [data, setGrid] = createSignal(grid(initial)), [key, setKey] = createSignal({ step: 0 });
     api = component({ get grid() { return data(); }, get captureFrameKey() { return key(); }, label: "Индукция", unit: "Тл",
       get viewState() { return viewState?.(); }, onViewChange,
+      onViewReady: value => { viewControls = value; },
       onCaptureReady: value => { registered = value; } }, {
       createEffect, createSignal, onCleanup, onMount, THREE: { ...THREE, WebGLRenderer: Renderer }, OrbitControls: Controls,
       ResizeObserver: class { observe() {} disconnect() {} }, disposeSurfaceObject, updateSurfaceMesh,
@@ -68,7 +69,7 @@ function runtime({ initial = [0, 0, 0, 0], failInit = false, viewState, onViewCh
     });
     Object.assign(api, { key, publish(values, frame, displayRange) { batch(() => { setGrid({ ...grid(values), displayRange }); setKey(frame); }); } });
   });
-  return { ...api, dispose, host, canvas, captures, drawCalls, events, get registered() { return registered; } };
+  return { ...api, dispose, host, canvas, captures, drawCalls, events, get registered() { return registered; }, get viewControls() { return viewControls; } };
 }
 const cameraState = h => ({ position: h.camera().position.toArray(), quaternion: h.camera().quaternion.toArray(),
   up: h.camera().up.toArray(), projection: [...h.camera().projectionMatrix.elements], zoom: h.camera().zoom,
@@ -87,7 +88,7 @@ test("three surfaces share view, pan and zoom from any panel without recursive p
     assertLinked();
     for (const [index, surface] of surfaces.entries()) {
       const before = publications;
-      surface.view(["x", "y", "z"][index]);
+      surface.viewControls.view(["x", "y", "z"][index]);
       assert.equal(publications, before + 1); assertLinked();
       surface.camera().position.set(index + 4, -6, 7); surface.camera().zoom = 1.7;
       surface.camera().updateProjectionMatrix(); surface.controls().target.set(.1, -.2, .3);
@@ -99,7 +100,7 @@ test("three surfaces share view, pan and zoom from any panel without recursive p
     assert.equal(publications, before); assertLinked();
     assert.deepEqual(cameraState(surfaces[0]), original);
     surfaces.forEach(surface => surface.captureAdapter.prepare());
-    surfaces[1].view("iso"); assert.equal(publications, before);
+    surfaces[1].viewControls.view("iso"); assert.equal(publications, before);
     surfaces.forEach(surface => surface.captureAdapter.restore());
     assertLinked(); assert.deepEqual(cameraState(surfaces[0]), original);
   } finally { surfaces.forEach(surface => surface.dispose()); }
@@ -182,7 +183,7 @@ test("Surface movie blocks camera commands and defers renderer resizing without 
 
 test("Surface movie preserves exact render identity and rejects init, context loss and unmount waits", async () => {
   const failed = runtime({ failInit: true });
-  try { assert.ok(failed.registered); await assert.rejects(failed.captureAdapter.renderReady(failed.key()), /initialization/); }
+  try { assert.ok(failed.registered); assert.equal(failed.viewControls, undefined); await assert.rejects(failed.captureAdapter.renderReady(failed.key()), /initialization/); }
   finally { failed.dispose(); }
   const h = runtime();
   try {
@@ -195,6 +196,7 @@ test("Surface movie preserves exact render identity and rejects init, context lo
     h.events.get("webglcontextlost")({ preventDefault() {} }); await assert.rejects(lost, /WebGL потерян/);
     h.events.get("webglcontextrestored")();
     const closed = h.captureAdapter.renderReady({ step: 3 }); h.dispose();
+    assert.equal(h.viewControls, null);
     await assert.rejects(closed, /закрыто/); h.captureAdapter.restore();
   } finally { h.dispose(); }
 });

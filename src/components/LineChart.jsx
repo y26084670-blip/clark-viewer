@@ -2,6 +2,7 @@ import { batch, createEffect, createSignal, on, onCleanup, onMount, Show, untrac
 import Chart from "chart.js/auto";
 import { captureMovieCanvas } from "../services/movie/movieCanvas.js";
 import { chartPanLimits, chartZoomLimits, clampChartPoint } from "../services/visualization/chartZoom.js";
+import { chartTableText } from "../services/visualization/chartTable.js";
 
 const colors = ["#1776bd", "#d94943", "#289447", "#994bbc", "#db8b19", "#15a2a2"];
 
@@ -472,9 +473,9 @@ export function LineChart(props) {
   }
   async function copyTable() {
     try {
-      const rows = [["Кривая", props.xLabel, props.yLabel].join("\t")];
-      for (const series of props.series ?? []) for (const p of series.points) rows.push([series.label, p.x, p.y].join("\t"));
-      await navigator.clipboard.writeText(rows.join("\n")); setMessage("Таблица скопирована");
+      if (props.tableUnavailableReason) throw new Error(props.tableUnavailableReason);
+      const table = chartTableText(props.series, props.xLabel, props.yLabel);
+      await navigator.clipboard.writeText(table); setMessage("Таблица скопирована");
     } catch (error) { setMessage(`Не удалось скопировать: ${error.message}`); }
     setMenu(null);
   }
@@ -508,7 +509,7 @@ export function LineChart(props) {
       <Show when={renderError()}><div class="plot-empty" role="alert">{renderError()}</div></Show>
       <Show when={!renderError() && !(props.series?.length)}><div class="plot-empty">{props.emptyText || "Выберите объект и величину"}</div></Show>
       <Show when={menu()}><div class="chart-menu" style={{ left: `${menu().x}px`, top: `${menu().y}px` }}>
-        <button title="Скопировать названия кривых и все точки X/Y как таблицу с разделением табуляцией" onClick={copyTable}>Копировать таблицу</button><button title="Скопировать изображение текущего графика в буфер обмена" onClick={copyImage}>Копировать картинку</button>
+        <button disabled={Boolean(props.tableUnavailableReason)} title={props.tableUnavailableReason || "Скопировать все кривые этого графика, включая скрытые: общий X и отдельные столбцы Y; при разных X — пары X/Y для каждой кривой"} onClick={copyTable}>Копировать таблицу</button><button title="Скопировать изображение текущего графика в буфер обмена" onClick={copyImage}>Копировать картинку</button>
       </div></Show>
       <Show when={message()}><button class="copy-message" title="Закрыть сообщение" onClick={() => setMessage("")}>{message()}</button></Show>
     </div>

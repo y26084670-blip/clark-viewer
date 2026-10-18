@@ -162,6 +162,7 @@ export function SurfaceChart(props) {
       renderer.domElement.addEventListener("pointermove", pick);
       renderer.domElement.addEventListener("pointerleave", () => setHover(""));
       view("iso"); resize(); setReady(true);
+      props.onViewReady?.({ view });
     } catch (error) { setError(`3D-поверхность недоступна: ${error.message}`); captureGate.fail(error); }
   });
   function applyGrid(grid, title, unit, frameKey) {
@@ -193,6 +194,7 @@ export function SurfaceChart(props) {
   createEffect(() => applyGrid(props.grid, props.label, props.unit, props.captureFrameKey));
   onCleanup(() => {
     disposed = true; captureGate.close(); props.onCaptureReady?.(null);
+    props.onViewReady?.(null);
     renderer?.domElement.removeEventListener("webglcontextlost", contextLostHandler);
     renderer?.domElement.removeEventListener("webglcontextrestored", contextRestoredHandler);
     observer?.disconnect(); controls?.removeEventListener("change", cameraChanged); controls?.dispose();
@@ -200,8 +202,6 @@ export function SurfaceChart(props) {
     renderer?.dispose(); renderer?.forceContextLoss(); renderer?.domElement.remove();
   });
   return <div class="surface-chart">
-    <div class="surface-view-buttons"><button title="Вернуть начальный наклонный ракурс для всех связанных компонент" onClick={() => view("iso")}>Вписать</button>
-      <button title="Смотреть вдоль оси X; ракурс меняется у всех связанных компонент" onClick={() => view("x")}>Вид X</button><button title="Смотреть вдоль оси Y; ракурс меняется у всех связанных компонент" onClick={() => view("y")}>Вид Y</button><button title="Смотреть вдоль оси Z; ракурс меняется у всех связанных компонент" onClick={() => view("z")}>Вид Z</button></div>
     <div ref={host} class="surface-canvas" />
     <Show when={!props.grid}><div class="plot-empty">{props.emptyText || "Выберите площадку"}</div></Show>
     <Show when={limits()}><div class="surface-legend"><span>{limits().min.toPrecision(6)}</span><div /><span>{limits().max.toPrecision(6)} {props.unit}</span></div></Show>

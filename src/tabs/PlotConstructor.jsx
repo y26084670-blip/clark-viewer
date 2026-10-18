@@ -146,6 +146,7 @@ export function PlotConstructor(props) {
       <LineChart series={series()} autoScaleToggle={true} legendMode="overlay"
         marker={{ points: series().flatMap(item => item.points.filter(point => point.step === props.time)) }}
         captureFrameKey={frameKey()} onCaptureReady={target => setRenderer(() => target)} captureError={failure()}
+        tableUnavailableReason={data.loading() ? "Дождитесь загрузки всех кривых графика" : failure()}
         xLabel={axisLabel("x")} yLabel={axisLabel("y")}
         emptyText={data.loading() ? "Чтение результатов…" : failure() || "Нет общих шагов"} status={data.loading() ? "Чтение результатов…" : failure()}
         toolbar={<strong title="Щёлкните по графику, чтобы добавлять кривые в него и записывать его в GIF">График {number()}{activeId() === p.id ? " · активный" : ""}</strong>}

@@ -56,7 +56,7 @@ export default function App() {
   const movieController = createMovieExportController({ createEncoder: createMovieGifEncoder,
     onAdapterChange: adapter => setMovieAdapter(() => adapter) });
   let loadRevision = 0, activeReader;
-  async function load(handle, newPath) {
+  async function load(handle, newPath, workspace) {
     const revision = ++loadRevision;
     setBusy(true); setError("");
     let reader;
@@ -79,7 +79,7 @@ export default function App() {
       setTime(0); setElements(data.elements.map(row => row.id)); setRegions(data.regions.map(row => row.id)); setCoils(null);
       setPlotRecipes([]);
       setPlotSources([]);
-      setTask({ ...data, reader, metadata }); setPath(newPath);
+      setTask({ ...data, reader, metadata, workspace }); setPath(newPath);
       setActive(1);
       return true;
     } catch (error) {
@@ -113,7 +113,7 @@ export default function App() {
             }
           }
           activeReader = reader;
-          setTask({ ...data, reader, metadata });
+          setTask({ ...data, reader, metadata, workspace: current.workspace });
         } catch (error) {
           reader?.close();
           throw new Error(`Диапазоны записаны, но результаты не удалось переоткрыть: ${error.message}`);

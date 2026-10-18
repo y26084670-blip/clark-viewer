@@ -2,10 +2,12 @@ import { createEffect, createSignal, createUniqueId, For, onCleanup, Show } from
 import { Portal } from "solid-js/web";
 import { saveTaskGif } from "../../services/taskGifService.js";
 import { listTaskTestProtocols, readTaskTestProtocol } from "../../services/taskTestProtocolService.js";
+import { TaskConditionsDialog } from "./TaskConditionsDialog.jsx";
 import "./ViewerToolsMenu.css";
 
 export function ViewerToolsMenu(props) {
   const menuId = createUniqueId(), titleId = createUniqueId(), protocolsTitleId = createUniqueId();
+  const [conditionsOpen, setConditionsOpen] = createSignal(false);
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [menuPosition, setMenuPosition] = createSignal({ left: 8, top: 8 });
   const [dialogOpen, setDialogOpen] = createSignal(false);
@@ -28,7 +30,7 @@ export function ViewerToolsMenu(props) {
   const [protocolOpenError, setProtocolOpenError] = createSignal("");
   const [protocolsDialogOpen, setProtocolsDialogOpen] = createSignal(false);
   const [protocolOpening, setProtocolOpening] = createSignal("");
-  let trigger, menu, menuItem, rangeMenuItem, protocolsMenuItem, dialog, backfillDialog, protocolsDialog, protocolsCloseButton;
+  let trigger, menu, menuItem, rangeMenuItem, protocolsMenuItem, conditionsMenuItem, dialog, backfillDialog, protocolsDialog, protocolsCloseButton;
   let intervalInput, cancelButton, saveButton, startButton;
   let runAbort, saveAbort, backfillAbort, revision = 0, disposed = false;
   let protocolTaskHandle, protocolScanAbort, protocolReadAbort, protocolScanRevision = 0;
@@ -271,7 +273,7 @@ export function ViewerToolsMenu(props) {
   function onMenuKeyDown(event) {
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.code)) {
       event.preventDefault();
-      const items = [menuItem, rangeMenuItem, protocolsMenuItem].filter(item => item && !item.disabled);
+      const items = [menuItem, rangeMenuItem, protocolsMenuItem, conditionsMenuItem].filter(item => item && !item.disabled);
       const current = Math.max(0, items.indexOf(event.target));
       const index = event.code === "Home" ? 0 : event.code === "End" ? items.length - 1
         : event.code === "ArrowUp" ? (current + items.length - 1) % items.length : (current + 1) % items.length;
@@ -293,6 +295,7 @@ export function ViewerToolsMenu(props) {
     const handle = props.task?.handle;
     if (handle === protocolTaskHandle) return;
     protocolTaskHandle = handle;
+    setConditionsOpen(false);
     protocolReadAbort?.abort(); protocolReadAbort = null; setProtocolOpening("");
     setProtocolsDialogOpen(false); setProtocolOpenError("");
     void refreshProtocols(handle);
@@ -355,6 +358,8 @@ export function ViewerToolsMenu(props) {
     <button ref={trigger} type="button" class="viewer-tools-trigger" aria-haspopup="menu" aria-expanded={menuOpen()}
       aria-controls={menuId} onClick={toggleMenu} onKeyDown={onTriggerKeyDown}>Инструменты</button>
     <Portal>
+      <TaskConditionsDialog open={conditionsOpen()} task={props.task} onBusyChange={props.onBusyChange}
+        onClose={() => { setConditionsOpen(false); trigger?.focus(); }} />
       <Show when={menuOpen()}>
         <div ref={menu} id={menuId} class="viewer-tools-popup" role="menu" aria-label="Инструменты"
           style={{ left: `${menuPosition().left}px`, top: `${menuPosition().top}px` }} onKeyDown={onMenuKeyDown}>
@@ -368,6 +373,8 @@ export function ViewerToolsMenu(props) {
             aria-disabled={Boolean(protocolsDisabledReason())} title={protocolsDisabledReason() || "Открыть HTML-протоколы текущего задания"}
             onClick={openProtocols}>Протоколы тестов</button>
           <Show when={protocolsDisabledReason()}><p class="viewer-tools-disabled-reason">{protocolsDisabledReason()}</p></Show>
+          <button ref={conditionsMenuItem} type="button" role="menuitem" disabled={!props.backfillEligible}
+            onClick={() => { if (props.backfillEligible) { closeMenu(); setConditionsOpen(true); } }}>Сформировать условия расчета</button>
         </div>
       </Show>
       <dialog ref={protocolsDialog} class="viewer-movie-dialog viewer-protocols-dialog" aria-labelledby={protocolsTitleId}

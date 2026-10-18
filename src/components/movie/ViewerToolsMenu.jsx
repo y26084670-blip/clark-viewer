@@ -374,7 +374,7 @@ export function ViewerToolsMenu(props) {
             onClick={openProtocols}>Протоколы тестов</button>
           <Show when={protocolsDisabledReason()}><p class="viewer-tools-disabled-reason">{protocolsDisabledReason()}</p></Show>
           <button ref={conditionsMenuItem} type="button" role="menuitem" disabled={!props.backfillEligible}
-            onClick={() => { if (props.backfillEligible) { closeMenu(); setConditionsOpen(true); } }}>Сформировать условия расчета</button>
+            onClick={() => { if (props.backfillEligible) { closeMenu(); setConditionsOpen(true); } }}>Сохранить условия расчета</button>
         </div>
       </Show>
       <dialog ref={protocolsDialog} class="viewer-movie-dialog viewer-protocols-dialog" aria-labelledby={protocolsTitleId}

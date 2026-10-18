@@ -46,7 +46,7 @@ export function TaskConditionsDialog(props) {
   onCleanup(() => { revision++; controller?.abort(); if (dialog?.open) dialog.close(); });
   return <dialog ref={dialog} class="viewer-movie-dialog" aria-labelledby={titleId} aria-busy={busy() || loading()}
     onCancel={event => { event.preventDefault(); close(); }} onClose={close}>
-    <h2 id={titleId}>Сформировать условия расчета</h2>
+    <h2 id={titleId}>Сохранить условия расчета</h2>
     <p>{props.task?.name} · <code>output3XX/conditions.json</code></p>
     <p class="viewer-movie-note">Будут записаны характеристики текущего компьютера. Число процессов укажите по выполненному расчёту. Если задание перенесено с другой машины, сформируйте файл на машине расчёта.</p>
     <p class="viewer-movie-note">Дата в файле — момент его формирования. Файл можно создать для любого режима расчёта; перенос в архив теста выполняется вручную.</p>

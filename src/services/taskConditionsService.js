@@ -66,7 +66,7 @@ export async function readConditionsResult(request) {
   try { result = await readJson(request.root, RESULT); }
   catch (error) { if (missing(error) || error instanceof SyntaxError) return null; throw error; }
   if (result.schemaVersion !== 1 || result.workspaceId !== request.workspaceId || result.requestId !== request.requestId) return null;
-  if (result.state === "error") throw new Error(result.message || "Не удалось сформировать условия расчета.");
+  if (result.state === "error") throw new Error(result.message || "Не удалось сохранить условия расчета.");
   if (result.state !== "completed" || result.path !== "output3XX/conditions.json") throw new Error("Некорректный ответ локального помощника Clark.");
   return result;
 }

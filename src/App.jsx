@@ -9,7 +9,7 @@ import { createMovieExportController } from "./services/movie/movieExportControl
 import { createMovieGifEncoder } from "./services/movie/movieGifEncoder.js";
 import { backfillTaskResultRanges } from "./services/results/resultRangeBackfill.js";
 
-const tabs = ["Выбор задания", "Источники / Поле 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Потоки", "Силы / Потери"];
+const tabs = ["Выбор задания", "Источники / Поле 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Потоки", "Силы / Потери", "Конструктор графиков"];
 
 const TAB_MODULE_LOADERS = Object.freeze({
   SourcesFields3D: () => import("./tabs/SourcesFields3D.jsx"),
@@ -18,6 +18,7 @@ const TAB_MODULE_LOADERS = Object.freeze({
   FieldAreas: () => import("./tabs/FieldAreas.jsx"),
   Fluxes: () => import("./tabs/Fluxes.jsx"),
   ForcesMoments: () => import("./tabs/ForcesMoments.jsx"),
+  PlotConstructor: () => import("./tabs/PlotConstructor.jsx"),
 });
 const tabModulePromises = new Map();
 export function loadViewerTabModule(name) {
@@ -37,6 +38,7 @@ const FieldLines = tabComponent("FieldLines");
 const FieldAreas = tabComponent("FieldAreas");
 const Fluxes = tabComponent("Fluxes");
 const ForcesMoments = tabComponent("ForcesMoments");
+const PlotConstructor = tabComponent("PlotConstructor");
 export default function App() {
   onMount(() => {
     // Load all lazy tab chunks while this HTML version is current. This keeps
@@ -47,6 +49,8 @@ export default function App() {
   const [active, setActive] = createSignal(0), [task, setTask] = createSignal(null), [path, setPath] = createSignal("");
   const [time, setTime] = createSignal(0), [elements, setElements] = createSignal([]), [regions, setRegions] = createSignal([]);
   const [coils, setCoils] = createSignal(null);
+  const [plotRecipes, setPlotRecipes] = createSignal([]);
+  const [plotSources, setPlotSources] = createSignal([]);
   const [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
   const [movieBusy, setMovieBusy] = createSignal(false), [movieAdapter, setMovieAdapter] = createSignal(null);
   const movieController = createMovieExportController({ createEncoder: createMovieGifEncoder,
@@ -73,6 +77,8 @@ export default function App() {
       }
       activeReader?.close(); activeReader = reader;
       setTime(0); setElements(data.elements.map(row => row.id)); setRegions(data.regions.map(row => row.id)); setCoils(null);
+      setPlotRecipes([]);
+      setPlotSources([]);
       setTask({ ...data, reader, metadata }); setPath(newPath);
       setActive(1);
       return true;
@@ -138,6 +144,8 @@ export default function App() {
     get elements() { return elements(); }, setElements: value => { if (!movieBusy()) setElements(value); },
     get regions() { return regions(); }, setRegions: value => { if (!movieBusy()) setRegions(value); },
     get coils() { return coils(); }, setCoils: value => { if (!movieBusy()) setCoils(value); },
+    get plotRecipes() { return plotRecipes(); }, setPlotRecipes,
+    get plotSources() { return plotSources(); }, setPlotSources,
   };
   return <div class="app-container">
     <header class="task-info-bar">
@@ -172,6 +180,7 @@ export default function App() {
               <Match when={active() === 4}><FieldAreas {...shared} /></Match>
               <Match when={active() === 5}><Fluxes {...shared} /></Match>
               <Match when={active() === 6}><ForcesMoments {...shared} /></Match>
+              <Match when={active() === 7}><PlotConstructor {...shared} /></Match>
             </Switch></Suspense>
           </ErrorBoundary>
         </Show>

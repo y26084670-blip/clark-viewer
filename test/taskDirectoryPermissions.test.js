@@ -130,7 +130,7 @@ const loadEnd = appSource.indexOf("  function changeTime(", loadStart);
 assert.ok(loadStart >= 0 && loadEnd > loadStart);
 const createViewerLoad = new Function("dependencies", `
     const { loadTask, ResultService, mapResultObjects, setBusy, setError, setTime,
-        setElements, setRegions, setCoils, setTask, setPath, setActive } = dependencies;
+        setElements, setRegions, setCoils, setPlotRecipes, setPlotSources, setTask, setPath, setActive } = dependencies;
     ${appSource.slice(loadStart, loadEnd)}
     return load;
 `);
@@ -143,7 +143,7 @@ function viewerLoadingRuntime(loadTask, openResults = async () => ({})) {
             close() { state.closedReaders++; }
         }, mapResultObjects() {},
         setBusy: value => { state.busy = value; }, setError: value => { state.error = value; },
-        setTime() {}, setElements() {}, setRegions() {}, setCoils() {},
+        setTime() {}, setElements() {}, setRegions() {}, setCoils() {}, setPlotRecipes() {}, setPlotSources() {},
         setTask: value => { state.task = value; }, setPath: value => { state.path = value; },
         setActive: value => { state.active = value; state.opened.push({ active: value, task: state.task, path: state.path }); },
     });

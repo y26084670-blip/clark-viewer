@@ -1,0 +1,11 @@
+.plot-constructor { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: 12px; gap: 10px; }
+.constructor-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
+.constructor-controls fieldset { flex: 1 1 320px; display: flex; flex-direction: column; gap: 8px; border: 1px solid #99a9b8; min-width: 0; }
+.constructor-controls label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.constructor-controls select { max-width: 100%; flex: 1; min-width: 120px; }
+.constructor-controls input { width: 85px; }
+.constructor-actions { display: flex; flex-direction: column; gap: 8px; justify-content: center; }
+.constructor-plots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr)); gap: 12px; }
+.constructor-plot { height: 370px; min-width: 0; }
+.constructor-error { color: #9b2222; }
+.constructor-hint { margin: 0; color: #526273; font-size: 13px; }

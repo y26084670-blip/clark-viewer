@@ -135,7 +135,7 @@ export function Tasks(props) {
     const snapshot = lastTaskHistory.capture(projects(), project(), tasks(), item);
     const handle = root();
     try {
-      const loaded = await props.onLoad(item.handle, `${handle.name}/${project()}/${item.name}`);
+      const loaded = await props.onLoad(item.handle, `${handle.name}/${project()}/${item.name}`, { rootHandle: handle });
       if (loaded === true && !disposed && request === loadRequest) await lastTaskHistory.remember(snapshot);
     } catch (error) {
       if (!disposed && request === loadRequest && root() === handle) setError(error.message);

@@ -125,5 +125,7 @@ export async function readSurfaceFrame(request) {
   if (!Number.isSafeInteger(request.copy) || request.copy < 0 || request.copy >= layout.copies) throw new Error("Неверный номер LS");
   const frame = await request.task.reader.read({ name: quantity.file, step: request.time,
     start: object.start + request.copy * layout.planeCount, count: layout.planeCount });
+  if (Array.isArray(request.components)) return request.components.map(component =>
+    regionSurfaceGrid(frame, object.record, quantity, component, request.copy));
   return regionSurfaceGrid(frame, object.record, quantity, request.component, request.copy);
 }

@@ -1,4 +1,4 @@
-.plot-constructor { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; padding: 12px; gap: 10px; }
+.plot-constructor { display: flex; flex: 1; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: auto; padding: 12px; gap: 10px; }
 .constructor-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
 .constructor-controls fieldset { flex: 1 1 320px; display: flex; flex-direction: column; gap: 8px; border: 1px solid #99a9b8; min-width: 0; }
 .constructor-controls label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
@@ -6,6 +6,20 @@
 .constructor-controls input { width: 85px; }
 .constructor-actions { display: flex; flex-direction: column; gap: 8px; justify-content: center; }
 .constructor-plots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr)); gap: 12px; }
-.constructor-plot { height: 370px; min-width: 0; }
+.constructor-plot { height: 400px; min-width: 0; border: 2px solid #a1aeb9; }
+.constructor-plot-active { border-color: #1776bd; box-shadow: 0 0 0 1px #1776bd; }
+.constructor-plot:focus-visible { outline: 2px solid #1776bd; outline-offset: 3px; }
+.constructor-curves { flex: 0 0 auto; padding: 4px 8px; font-size: 12px; max-height: 110px; overflow: auto; }
+.constructor-curves summary { cursor: pointer; }
+.constructor-curves > div { display: flex; gap: 6px; align-items: center; padding: 3px 0; }
+.constructor-curves span { flex: 1; overflow-wrap: anywhere; }
+.constructor-curves button { flex: 0 0 auto; }
 .constructor-error { color: #9b2222; }
 .constructor-hint { margin: 0; color: #526273; font-size: 13px; }
+.constructor-source-dialog { max-width: 600px; width: calc(100vw - 50px); border: 1px solid #718498; border-radius: 6px; padding: 20px; color: #edf2f7; background: #202932; color-scheme: dark; }
+.constructor-source-dialog::backdrop { background: #0008; }
+.constructor-source-dialog h3 { margin-top: 0; }
+.constructor-source-dialog p { line-height: 1.45; }
+.constructor-source-dialog [role="alert"] { color: #ffb5ae; }
+.constructor-source-dialog > div { display: flex; justify-content: flex-end; gap: 8px; }
+.constructor-source-dialog button { background: #334252; color: #edf2f7; border: 1px solid #718498; padding: 7px 12px; border-radius: 4px; }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseResultTable, validateChannelSource } from '../src/services/results/omResultChannels.js';
-import { plotChannels, readPlotChannel, pairPlotChannels } from '../src/services/results/plotConstructor.js';
+import { plotChannels, readPlotChannel, pairPlotChannels, validatePlotCurve, plotChannelLabel, readPlotCurves } from '../src/services/results/plotConstructor.js';
 const task={ general:{countTimeSteps:2,timeStep:.5},metadata:{MH:{ranges:{runId:'run-1'}}} };
 const manifest={schema:'clark-result-channels/1',model:'inertia',role:'derived',complete:true,
   fieldRunId:'run-1',grid:{steps:2,dt:.5},dataFile:'energy.tsv',channels:[{column:'energy_J',label:'Механическая энергия',unit:'Дж'}]};
@@ -35,4 +35,27 @@ test('field vector units/components reuse the Viewer quantity mapping',async()=>
  assert.deepEqual((await readPlotChannel(fieldTask,c)).map(p=>p.value),[5,5]);
  assert.deepEqual((await readPlotChannel(fieldTask,c,{component:'0'})).map(p=>p.value),[3,-3]);
  await assert.rejects(readPlotChannel(fieldTask,c,{point:2}),/Номер точки/);
+});
+
+test('adding a curve validates point indices and both axis units',()=>{
+ const time={key:'time',kind:'time',unit:'с'}, field={key:'field:M',kind:'field',unit:'кА/м',points:2,components:3,label:'M'};
+ const curve={id:'one',x:{},y:{point:1,component:'0'},xChannel:time,yChannel:field};
+ assert.equal(validatePlotCurve(curve,curve),curve);
+ assert.throws(()=>validatePlotCurve({...curve,y:{point:0}}),/номер точки/);
+ assert.throws(()=>validatePlotCurve({...curve,yChannel:{...field,unit:'Тл'}},curve),/Ось Y/);
+ assert.throws(()=>validatePlotCurve({...curve,xChannel:{...time,unit:'А'}},curve),/Ось X/);
+ assert.match(plotChannelLabel(field,curve.y),/X · точка 1, кА\/м/);
+});
+
+test('multiple curves retain loop order and good curves survive an invalid source',async()=>{
+ const source=validateChannelSource(manifest,parseResultTable(data,manifest.channels),task);
+ const [time,energy]=plotChannels(task,[source]);
+ const curves=[{id:'energy',x:{},y:{},xChannel:time,yChannel:energy},
+  {id:'loop',x:{},y:{},xChannel:energy,yChannel:time},
+  {id:'bad',x:{},y:{},xChannel:time,yChannel:{kind:'unknown'}}];
+ const plot=await readPlotCurves(task,curves);
+ assert.deepEqual(plot.series.map(s=>s.key),['energy','loop']);
+ assert.deepEqual(plot.series[1].points.map(p=>p.x),[0,7,3]);
+ assert.match(plot.error,/Кривая 3/);
+ assert.match(plot.series[0].tooltip(plot.series[0].points[1]).join(' '),/Механическая энергия/);
 });

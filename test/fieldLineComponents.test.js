@@ -150,9 +150,9 @@ test("late responses for a previous checkbox set cannot publish a wrong frame", 
   controller.close();
 });
 
-test("FieldAreas retains the original single-component surface contract", async () => {
+test("surface reader retains its single-component API when no component array is requested", async () => {
   const { request, reads } = fixture();
-  const grid = await readSurfaceFrame({ ...request, selected: [1], component: "0" });
+  const grid = await readSurfaceFrame({ ...request, selected: [1], components: undefined, component: "0" });
   assert.equal(reads.length, 1); assert.deepEqual([...grid.values], [-3, -3, -3, -3]);
   assert.equal(grid.width, 2); assert.equal(grid.height, 2);
 });

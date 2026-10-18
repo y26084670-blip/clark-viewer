@@ -43,3 +43,19 @@ export function captureMovieCanvas(source, { caption = "", overlay,
   context.fillText(String(caption), 10, MOVIE_CAPTION_HEIGHT / 2, Math.max(1, width - 20));
   return context.getImageData(0, 0, width, height);
 }
+
+/** One frame for a row of rendered component views, including their own legends. */
+export function combineMovieFrames(images, { caption = "", canvasFactory = () => document.createElement("canvas") } = {}) {
+  if (!images.length || images.some(image => !image || image.width < 1 || image.height < 1)) {
+    throw new Error("Не все компоненты поля готовы к записи");
+  }
+  const canvas = canvasFactory();
+  canvas.width = images.reduce((sum, image) => sum + image.width, 0);
+  canvas.height = Math.max(...images.map(image => image.height));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Браузер не предоставляет Canvas 2D для записи фильма");
+  context.fillStyle = "#fafcfe"; context.fillRect(0, 0, canvas.width, canvas.height);
+  let x = 0;
+  for (const image of images) { context.putImageData(image, x, 0); x += image.width; }
+  return captureMovieCanvas(canvas, { caption, background: "#fafcfe", canvasFactory });
+}

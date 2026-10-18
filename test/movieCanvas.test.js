@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { captureMovieCanvas, movieCanvasSize, MOVIE_CAPTION_HEIGHT } from "../src/services/movie/movieCanvas.js";
+import { captureMovieCanvas, combineMovieFrames, movieCanvasSize, MOVIE_CAPTION_HEIGHT } from "../src/services/movie/movieCanvas.js";
 
 test("movie canvas preserves the complete view aspect and includes its caption within the pixel limit", () => {
   assert.deepEqual(movieCanvasSize(2560, 1440), { width: 1280, height: 752 });
@@ -27,4 +27,19 @@ test("capture copies the canvas synchronously, clips overlays below the caption,
   assert.ok(calls.findIndex(call => call[0] === "drawImage") < calls.findIndex(call => call[0] === "overlay"));
   assert.ok(calls.findIndex(call => call[0] === "clip") < calls.findIndex(call => call[0] === "overlay"));
   assert.deepEqual(calls.at(-1), ["getImageData", 0, 0, 1280, 672]);
+});
+
+test("component movie frame joins X, Y and Z in order and scales the complete row", () => {
+  const placed = [], canvases = [];
+  const canvasFactory = () => {
+    const canvas = { getContext: () => ({ fillRect() {}, fillText() {}, drawImage() {},
+      putImageData(image, x, y) { placed.push([image.id, x, y]); },
+      getImageData(x, y, width, height) { return { width, height }; } }) };
+    canvases.push(canvas); return canvas;
+  };
+  const result = combineMovieFrames(["X", "Y", "Z"].map(id => ({ id, width: 600, height: 400 })), { canvasFactory });
+  assert.deepEqual(placed, [["X",0,0],["Y",600,0],["Z",1200,0]]);
+  assert.deepEqual([canvases[0].width, canvases[0].height], [1800,400]);
+  assert.deepEqual(result, movieCanvasSize(1800,400));
+  assert.throws(() => combineMovieFrames([]), /Не все компоненты/);
 });

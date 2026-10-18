@@ -8,16 +8,15 @@ import { ViewerToolsMenu } from "./components/movie/ViewerToolsMenu.jsx";
 import { createMovieExportController } from "./services/movie/movieExportController.js";
 import { createMovieGifEncoder } from "./services/movie/movieGifEncoder.js";
 import { backfillTaskResultRanges } from "./services/results/resultRangeBackfill.js";
+import { installBrowserDefaults } from "./services/browserDefaults.js";
 
-const tabs = ["Выбор задания", "Источники / Поле 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Потоки", "Силы / Потери", "Конструктор графиков"];
+const tabs = ["Выбор задания", "Источники / Поле 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Графики"];
 
 const TAB_MODULE_LOADERS = Object.freeze({
   SourcesFields3D: () => import("./tabs/SourcesFields3D.jsx"),
   WorkingPoints: () => import("./tabs/WorkingPoints.jsx"),
   FieldLines: () => import("./tabs/FieldLines.jsx"),
   FieldAreas: () => import("./tabs/FieldAreas.jsx"),
-  Fluxes: () => import("./tabs/Fluxes.jsx"),
-  ForcesMoments: () => import("./tabs/ForcesMoments.jsx"),
   PlotConstructor: () => import("./tabs/PlotConstructor.jsx"),
 });
 const tabModulePromises = new Map();
@@ -36,8 +35,6 @@ const SourcesFields3D = tabComponent("SourcesFields3D");
 const WorkingPoints = tabComponent("WorkingPoints");
 const FieldLines = tabComponent("FieldLines");
 const FieldAreas = tabComponent("FieldAreas");
-const Fluxes = tabComponent("Fluxes");
-const ForcesMoments = tabComponent("ForcesMoments");
 const PlotConstructor = tabComponent("PlotConstructor");
 export default function App() {
   onMount(() => {
@@ -45,12 +42,13 @@ export default function App() {
     // an already-open Viewer usable after a later GitHub Pages deployment
     // replaces hashed asset names.
     void preloadViewerTabs();
+    onCleanup(installBrowserDefaults(window));
   });
   const [active, setActive] = createSignal(0), [task, setTask] = createSignal(null), [path, setPath] = createSignal("");
   const [time, setTime] = createSignal(0), [elements, setElements] = createSignal([]), [regions, setRegions] = createSignal([]);
-  const [coils, setCoils] = createSignal(null);
   const [plotRecipes, setPlotRecipes] = createSignal([]);
   const [plotSources, setPlotSources] = createSignal([]);
+  const [activePlotId, setActivePlotId] = createSignal(null);
   const [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
   const [movieBusy, setMovieBusy] = createSignal(false), [movieAdapter, setMovieAdapter] = createSignal(null);
   const movieController = createMovieExportController({ createEncoder: createMovieGifEncoder,
@@ -76,9 +74,10 @@ export default function App() {
         }
       }
       activeReader?.close(); activeReader = reader;
-      setTime(0); setElements(data.elements.map(row => row.id)); setRegions(data.regions.map(row => row.id)); setCoils(null);
+      setTime(0); setElements(data.elements.map(row => row.id)); setRegions(data.regions.map(row => row.id));
       setPlotRecipes([]);
       setPlotSources([]);
+      setActivePlotId(null);
       setTask({ ...data, reader, metadata, workspace }); setPath(newPath);
       setActive(1);
       return true;
@@ -132,7 +131,7 @@ export default function App() {
     if (!Number.isSafeInteger(task().general?.countTimeSteps) || task().general.countTimeSteps < 0
       || !Number.isFinite(task().general.timeStep) || task().general.timeStep < 0
       || (task().general.countTimeSteps > 0 && task().general.timeStep === 0)) return "Некорректное число интервалов или шаг времени задания.";
-    if (active() < 1 || active() > 6) return "Откройте вкладку с результатами.";
+    if (active() < 1 || active() > 5) return "Откройте вкладку с результатами.";
     if (!movieAdapter()) return "Дождитесь готовности текущего графика.";
     return "";
   };
@@ -143,9 +142,9 @@ export default function App() {
     get movieBusy() { return movieBusy(); },
     get elements() { return elements(); }, setElements: value => { if (!movieBusy()) setElements(value); },
     get regions() { return regions(); }, setRegions: value => { if (!movieBusy()) setRegions(value); },
-    get coils() { return coils(); }, setCoils: value => { if (!movieBusy()) setCoils(value); },
     get plotRecipes() { return plotRecipes(); }, setPlotRecipes,
     get plotSources() { return plotSources(); }, setPlotSources,
+    get activePlotId() { return activePlotId(); }, setActivePlotId,
   };
   return <div class="app-container">
     <header class="task-info-bar">
@@ -178,9 +177,7 @@ export default function App() {
               <Match when={active() === 2}><WorkingPoints {...shared} /></Match>
               <Match when={active() === 3}><FieldLines {...shared} /></Match>
               <Match when={active() === 4}><FieldAreas {...shared} /></Match>
-              <Match when={active() === 5}><Fluxes {...shared} /></Match>
-              <Match when={active() === 6}><ForcesMoments {...shared} /></Match>
-              <Match when={active() === 7}><PlotConstructor {...shared} /></Match>
+              <Match when={active() === 5}><PlotConstructor {...shared} /></Match>
             </Switch></Suspense>
           </ErrorBoundary>
         </Show>

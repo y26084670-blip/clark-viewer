@@ -65,3 +65,50 @@ export function pairPlotChannels(x, y) {
   // Keep time order: sorting by X would destroy hysteresis and phase portraits.
   return points;
 }
+
+export function plotChannelLabel(channel, spec = {}) {
+  if (!channel) return "";
+  const component = channel.components === 3 && !channel.productOffsets
+    ? ` · ${spec.component === "norm" || spec.component == null ? "модуль" : "XYZ"[Number(spec.component)]}` : "";
+  const point = channel.kind === "field" ? ` · точка ${spec.point ?? 1}` : "";
+  return `${channel.label}${component}${point}${channel.unit ? `, ${channel.unit}` : ""}`;
+}
+
+export function validatePlotCurve(curve, existing) {
+  for (const axis of ["x", "y"]) {
+    const channel = curve[`${axis}Channel`], spec = curve[axis];
+    if (!channel) throw new Error("Выберите X и Y.");
+    if (channel.kind === "field" && (!Number.isSafeInteger(Number(spec.point))
+      || Number(spec.point) < 1 || Number(spec.point) > channel.points)) {
+      throw new Error(`Ось ${axis.toUpperCase()}: номер точки должен быть от 1 до ${channel.points}.`);
+    }
+    const previous = existing?.[`${axis}Channel`];
+    if (previous && ((previous.unit ?? "").trim() !== (channel.unit ?? "").trim()
+      || (!channel.unit && previous.key !== channel.key))) {
+      throw new Error(`Ось ${axis.toUpperCase()}: единицы выбранной кривой (${channel.unit || "не указаны"}) `
+        + `не совпадают с активным графиком (${previous.unit || "не указаны"}). Добавьте отдельный график.`);
+    }
+  }
+  return curve;
+}
+
+// A failing curve does not remove the other curves. The caller also uses the
+// combined diagnostic to stop movie capture of an incomplete plot.
+export async function readPlotCurves(task, curves) {
+  const cache = new Map();
+  const read = (channel, spec) => {
+    let entries = cache.get(channel);
+    if (!entries) cache.set(channel, entries = new Map());
+    const key = JSON.stringify(spec);
+    if (!entries.has(key)) entries.set(key, readPlotChannel(task, channel, spec));
+    return entries.get(key);
+  };
+  const results = await Promise.allSettled(curves.map(async curve => {
+    const [x, y] = await Promise.all([read(curve.xChannel, curve.x), read(curve.yChannel, curve.y)]);
+    const xLabel = plotChannelLabel(curve.xChannel, curve.x), yLabel = plotChannelLabel(curve.yChannel, curve.y);
+    return { key: curve.id, label: `${yLabel} / ${xLabel}`, points: pairPlotChannels(x, y),
+      tooltip: point => [`t = ${point.time} с; шаг ${point.step}`, `${xLabel}: ${point.x}`, `${yLabel}: ${point.y}`] };
+  }));
+  return { series: results.filter(r => r.status === "fulfilled").map(r => r.value),
+    error: results.flatMap((r, i) => r.status === "rejected" ? [`Кривая ${i + 1}: ${r.reason.message ?? r.reason}`] : []).join("; ") };
+}

@@ -3,12 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { globalRangesTask } from "../scripts/test-support/globalRangesFixture.js";
 import { QUANTITIES, regionLayout, MU0 } from "../src/services/results/resultMappings.js";
-import { fieldLineCycleRange } from "../src/services/results/fieldLineComponents.js";
+import { surfaceComponentRange } from "../src/services/results/resultPlots.js";
 import { readSurfaceFrame } from "../src/services/results/resultRequests.js";
 import { disposeSurfaceObject, updateSurfaceMesh } from "../src/services/visualization/surfaceChartResources.js";
 
-// Exercise the actual tab's request/display setup; browser acceptance additionally
-// covers Solid scheduling, the checkbox and WebGL/GIF boundaries.
 const source = readFileSync(new URL("../src/tabs/FieldAreas.jsx", import.meta.url), "utf8");
 const setup = source.slice(source.indexOf("export function FieldAreas"), source.indexOf('  return <div class="results-layout"'));
 function fixture(settings = {}) {
@@ -16,22 +14,19 @@ function fixture(settings = {}) {
   task.reader.read = request => { reads.push(request); return nativeRead(request); };
   const props = { task, regions: [1], time: 0, movieBusy: false };
   let state = { frame: null, requested: null, loading: false, error: "" }, request, load;
-  // The component body ends immediately before JSX. Append its public test
-  // boundary there, rather than reconstructing the production request logic.
   const run = new Function("props", "dependencies", `
     const {createSignal,createMemo,createEffect,createGeometryViewSetting,QUANTITIES,regionLayout,
-      fieldLineCycleRange,useResultFrame,readSurfaceFrame,createMovieTabAdapter,completedMovieFrame}=dependencies;
+      surfaceComponentRange,useResultFrame,readSurfaceFrame,createMovieTabAdapter,completedMovieFrame,combineMovieFrames}=dependencies;
     ${setup.replace("export function", "function")}
-    return {quantityKey,setQuantity,component,setComponent,globalMinMax,setGlobalMinMax,
-      cycleRange,globalRange,grid,setCopy,copy,record,status};
+    return {quantityKey,setQuantity,globalMinMax,setGlobalMinMax,commonRange,grids,setCopy,copy,record,status};
     } return FieldAreas(props);`);
   const api = run(props, {
     createSignal: initial => { let value = initial; return [() => value, next => { value = next; }]; },
     createMemo: compute => compute, createEffect: callback => callback(),
     createGeometryViewSetting: (name, initial) => [() => settings[name] ?? initial, value => { settings[name] = value; }],
-    QUANTITIES, regionLayout, fieldLineCycleRange, readSurfaceFrame,
+    QUANTITIES, regionLayout, surfaceComponentRange, readSurfaceFrame,
     useResultFrame: (source, reader) => { request = source; load = reader; return () => state; },
-    createMovieTabAdapter: () => ({ onCaptureReady() {} }), completedMovieFrame() {},
+    createMovieTabAdapter: () => ({ onCaptureReady() {} }), completedMovieFrame() {}, combineMovieFrames() {},
   });
   return { ...api, props, reads, settings, request: () => request(),
     async display() { const current = request(), value = await load(current);
@@ -39,67 +34,64 @@ function fixture(settings = {}) {
   };
 }
 
-test("area default uses only the displayed region's full-cycle bounds, with original field values intact", async () => {
+test("three signed component surfaces share only the displayed frame's bounds and one read", async () => {
   const h = fixture(); h.props.regions = [1, 2];
-  const original = await h.display(), values = original.values.slice();
+  const original = await h.display();
+  assert.equal(h.reads.length, 1); assert.equal(original.length, 3);
+  assert.deepEqual(original.map(grid => grid.values[0]), [3, 4, 0]);
   assert.equal(h.globalMinMax(), true);
-  assert.equal(h.globalRange().minimum, 5); assert.equal(h.globalRange().maximum, 50);
-  assert.notEqual(h.grid(), original); assert.equal(h.grid().values, original.values);
-  assert.equal(h.grid().coordinates, original.coordinates); assert.equal(original.displayRange, undefined);
-  const first = updateSurfaceMesh(null, h.grid());
-  assert.deepEqual(first.userData.limits, { min: 5, max: 50 });
+  assert.deepEqual(h.commonRange(), { minimum: 0, maximum: 4 });
+  for (const [i, grid] of h.grids().entries()) {
+    assert.equal(grid.values, original[i].values); assert.equal(original[i].displayRange, undefined);
+    const mesh = updateSurfaceMesh(null, grid);
+    assert.deepEqual(mesh.userData.limits, { min: 0, max: 4 }); disposeSurfaceObject(mesh);
+  }
   h.props.time = 2; await h.display();
-  updateSurfaceMesh(first, h.grid()); assert.deepEqual(first.userData.limits, { min: 5, max: 50 });
-  assert.deepEqual(original.values, values); assert.equal(h.reads.length, 2);
-  disposeSurfaceObject(first);
+  assert.deepEqual(h.commonRange(), { minimum: 0, maximum: 12 }); assert.equal(h.reads.length, 2);
 });
 
-test("changing the flag updates display limits without another read or mutating a cached grid", async () => {
-  const h = fixture(), raw = await h.display(), request = h.request();
-  h.setGlobalMinMax(false); assert.equal(h.globalRange(), null); assert.equal(h.grid(), raw);
-  const mesh = updateSurfaceMesh(null, h.grid()); assert.deepEqual(mesh.userData.limits, { min: 5, max: 5 });
-  h.setGlobalMinMax(true); updateSurfaceMesh(mesh, h.grid());
-  assert.deepEqual(mesh.userData.limits, { min: 5, max: 50 }); assert.equal(h.reads.length, 1);
-  assert.deepEqual(h.request(), request); assert.equal(raw.displayRange, undefined);
-  disposeSurfaceObject(mesh);
+test("unchecked uses each component's own bounds without another read or changed values", async () => {
+  const h = fixture(), original = await h.display(), request = h.request();
+  h.setGlobalMinMax(false);
+  assert.equal(h.grids(), original);
+  for (const [i, grid] of h.grids().entries()) {
+    const mesh = updateSurfaceMesh(null, grid);
+    assert.deepEqual(mesh.userData.limits, { min: [3, 4, 0][i], max: [3, 4, 0][i] }); disposeSurfaceObject(mesh);
+  }
+  h.setGlobalMinMax(true); assert.deepEqual(h.commonRange(), { minimum: 0, maximum: 4 });
+  assert.equal(h.reads.length, 1); assert.deepEqual(h.request(), request);
 });
 
-test("signed components and A bounds use the chosen channel and exactly one unit conversion", async () => {
-  const h = fixture(); h.setComponent("0"); await h.display();
-  assert.equal(h.globalRange().minimum, -3); assert.equal(h.globalRange().maximum, 30);
-  assert.equal(h.grid().values[0], 3);
-  h.setQuantity("As"); await h.display();
-  assert.equal(h.globalRange().minimum, -3 * MU0); assert.equal(h.globalRange().maximum, 30 * MU0);
-  assert.equal(h.grid().values[0], 3 * MU0);
-  h.props.regions = [2]; await h.display();
-  assert.equal(h.globalRange().minimum, -6 * MU0); assert.equal(h.globalRange().maximum, 60 * MU0);
+test("common bounds preserve negative components, constants, zero and tiny values", () => {
+  const grids = (...values) => values.map(items => ({ values: Float64Array.from(items) }));
+  assert.deepEqual(surfaceComponentRange(grids([-10, -3], [1, 4], [-2, 0])), { minimum: -10, maximum: 4 });
+  assert.deepEqual(surfaceComponentRange(grids([0, 0], [0, 0], [0, 0])), { minimum: 0, maximum: 0 });
+  assert.deepEqual(surfaceComponentRange(grids([-1e-30], [2e-30], [0])), { minimum: -1e-30, maximum: 2e-30 });
+  assert.throws(() => surfaceComponentRange(grids([NaN], [1], [2])), /нечисловые/);
 });
 
-test("LS choice retains the complete region's bounds and reads only the chosen plane", async () => {
+test("A components and shared bounds are converted into display units exactly once", async () => {
+  const h = fixture(); h.setQuantity("As"); await h.display();
+  assert.deepEqual(h.grids().map(grid => grid.values[0]), [3 * MU0, 4 * MU0, 0]);
+  assert.deepEqual(h.commonRange(), { minimum: 0, maximum: 4 * MU0 });
+});
+
+test("one selected LS plane supplies all components; full-cycle indexes are irrelevant", async () => {
   const h = fixture(); h.props.task.regions[0].symLs = 2;
   for (const file of ["HS", "AS"]) {
     const metadata = h.props.task.metadata[file]; metadata.header.numbs[0] = 8; metadata.header.inds1[1] = 9;
+    delete metadata.ranges;
   }
   h.setCopy(1); await h.display();
-  assert.equal(h.reads[0].start, 4); assert.equal(h.reads[0].count, 4);
-  assert.equal(h.grid().copy, 1); assert.equal(h.globalRange().minimum, 5); assert.equal(h.globalRange().maximum, 50);
+  assert.equal(h.reads[0].start, 4); assert.equal(h.reads[0].count, 4); assert.equal(h.reads.length, 1);
+  assert.ok(h.grids().every(grid => grid.copy === 1));
+  assert.deepEqual(h.commonRange(), { minimum: 0, maximum: 4 });
 });
 
-test("unusable indexes retain the requested default and a viewable frame-local scale", async () => {
-  for (const change of [t => { delete t.metadata.HS.ranges; },
-    t => { t.metadata.HS.ranges.state = "partial"; }, t => { t.general.timeStep = .2; },
-    t => { t.metadata.HS.ranges.objectIds.reverse(); }, t => { t.metadata.HS.ranges.invalidCount[3] = 1; }]) {
-    const h = fixture(); change(h.props.task); const raw = await h.display();
-    assert.equal(h.globalMinMax(), true); assert.equal(h.cycleRange().available, false);
-    assert.equal(h.globalRange(), null); assert.equal(h.grid(), raw);
-    const mesh = updateSurfaceMesh(null, h.grid()); assert.deepEqual(mesh.userData.limits, { min: 5, max: 5 });
-    disposeSurfaceObject(mesh);
-  }
-});
-
-test("the existing page setting is preserved across remounts and task changes", async () => {
-  const settings = {}, first = fixture(settings); first.setGlobalMinMax(false);
+test("area preference survives remounts and task changes without changing other tabs", async () => {
+  const settings = { resultGlobalMinMax: false }, first = fixture(settings);
+  assert.equal(first.globalMinMax(), true); first.setGlobalMinMax(false);
   const next = fixture(settings); assert.equal(next.globalMinMax(), false);
-  next.props.task = globalRangesTask(); await next.display(); assert.equal(next.globalRange(), null);
-  next.setGlobalMinMax(true); assert.equal(first.globalMinMax(), true);
+  next.props.task = globalRangesTask(); await next.display(); assert.equal(next.grids()[0].displayRange, undefined);
+  next.setGlobalMinMax(true); assert.equal(first.globalMinMax(), true); assert.equal(settings.resultGlobalMinMax, false);
 });

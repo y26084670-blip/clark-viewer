@@ -9,6 +9,7 @@ export function SurfaceChart(props) {
   let host, renderer, scene, camera, controls, surface, observer, axes;
   const labelObjects = [];
   let movieSnapshot = null, appliedFrameKey, disposed = false, contextLost = false, resizePending = false;
+  let applyingView = false, lastView = null;
   const captureGate = createRenderedFrameGate();
   const [ready, setReady] = createSignal(false);
   const [error, setError] = createSignal("");
@@ -21,7 +22,25 @@ export function SurfaceChart(props) {
     try { renderer.render(scene, camera); captureGate.rendered(appliedFrameKey); }
     catch (error) { setError(error.message); captureGate.fail(error); }
   }
-  function cameraChanged() { setHover(""); draw(); }
+  function cameraChanged() {
+    setHover("");
+    if (!applyingView && !movieSnapshot && props.onViewChange && camera && controls) {
+      lastView = { position: camera.position.toArray(), quaternion: camera.quaternion.toArray(),
+        up: camera.up.toArray(), target: controls.target.toArray(), zoom: camera.zoom };
+      props.onViewChange(lastView);
+    }
+    draw();
+  }
+  createEffect(() => {
+    const view = props.viewState;
+    if (!ready() || !view || view === lastView || movieSnapshot) return;
+    applyingView = true;
+    try {
+      camera.position.fromArray(view.position); camera.quaternion.fromArray(view.quaternion);
+      camera.up.fromArray(view.up); camera.zoom = view.zoom; controls.target.fromArray(view.target);
+      camera.updateProjectionMatrix(); controls.update(); lastView = view; draw();
+    } finally { applyingView = false; }
+  });
   function resize() {
     if (!renderer || !host) return;
     if (movieSnapshot) { resizePending = true; return; }
@@ -39,7 +58,17 @@ export function SurfaceChart(props) {
     setHover("");
     camera.up.set(0, 0, 1);
     const positions = { iso: [3.3, -4, 3], x: [4, 0, .01], y: [0, -4, .01], z: [0, -.001, 5] };
-    camera.position.fromArray(positions[direction]); controls.target.set(0, 0, .3); controls.update(); draw();
+    applyingView = true;
+    try {
+      controls.target.set(0, 0, .3);
+      // In the three-column view, horizontal field of view is the limiting one.
+      // Fit the same model without cutting off its sides in a tall canvas.
+      const fit = Math.max(1, host.clientHeight / Math.max(1, host.clientWidth));
+      camera.position.fromArray(positions[direction]).sub(controls.target).multiplyScalar(fit).add(controls.target);
+      controls.update();
+    }
+    finally { applyingView = false; }
+    cameraChanged();
   }
   function pick(event) {
     if (movieSnapshot || !surface?.visible || !props.grid) return;
@@ -171,8 +200,8 @@ export function SurfaceChart(props) {
     renderer?.dispose(); renderer?.forceContextLoss(); renderer?.domElement.remove();
   });
   return <div class="surface-chart">
-    <div class="surface-view-buttons"><button onClick={() => view("iso")}>Вписать</button>
-      <button onClick={() => view("x")}>Вид X</button><button onClick={() => view("y")}>Вид Y</button><button onClick={() => view("z")}>Вид Z</button></div>
+    <div class="surface-view-buttons"><button title="Вернуть начальный наклонный ракурс для всех связанных компонент" onClick={() => view("iso")}>Вписать</button>
+      <button title="Смотреть вдоль оси X; ракурс меняется у всех связанных компонент" onClick={() => view("x")}>Вид X</button><button title="Смотреть вдоль оси Y; ракурс меняется у всех связанных компонент" onClick={() => view("y")}>Вид Y</button><button title="Смотреть вдоль оси Z; ракурс меняется у всех связанных компонент" onClick={() => view("z")}>Вид Z</button></div>
     <div ref={host} class="surface-canvas" />
     <Show when={!props.grid}><div class="plot-empty">{props.emptyText || "Выберите площадку"}</div></Show>
     <Show when={limits()}><div class="surface-legend"><span>{limits().min.toPrecision(6)}</span><div /><span>{limits().max.toPrecision(6)} {props.unit}</span></div></Show>

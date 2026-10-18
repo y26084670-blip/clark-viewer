@@ -12,11 +12,11 @@ import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/mo
 
 export function FieldLines(props) {
   const [quantityKey, setQuantity] = createSignal("Bs");
-  const [components, setComponents] = createSignal(["norm"]);
+  const [components, setComponents] = createSignal(["norm", "0", "1", "2"]);
   const [globalScale, setGlobalScale] = createGeometryViewSetting("resultGlobalMinMax", true);
   const [direction, setDirection] = createSignal("i2");
   const [copy, setCopy] = createSignal(0);
-  const [allCopies, setAllCopies] = createSignal(false);
+  const [allCopies, setAllCopies] = createSignal(true);
   const records = () => props.task?.regions ?? [];
   const selectedRecords = createMemo(() => records().filter(row => props.regions.includes(row.id)));
   const copyCount = createMemo(() => selectedRecords().reduce((max, row) => Math.max(max, row.symLs ?? 1), 1));

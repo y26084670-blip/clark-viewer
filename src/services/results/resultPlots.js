@@ -222,3 +222,13 @@ export function surfaceGrid(frame, record, quantity, component, axis, layer, cop
   if (![...values].every(Number.isFinite)) throw new Error("Поверхность содержит нечисловые значения");
   return { width, height, values, coordinates, axes: other.map(i => `i${i + 1}`) };
 }
+
+// Shared display bounds of simultaneous surfaces, never a full-cycle index.
+export function surfaceComponentRange(grids) {
+  let minimum = Infinity, maximum = -Infinity;
+  for (const grid of grids ?? []) for (const value of grid.values) {
+    if (!Number.isFinite(value)) throw new Error("Поверхность содержит нечисловые значения");
+    minimum = Math.min(minimum, value); maximum = Math.max(maximum, value);
+  }
+  return minimum === Infinity ? null : { minimum, maximum };
+}

@@ -25,7 +25,7 @@ const component = new Function("props", "dependencies", `
 const grid = values => ({ width: 2, height: 2, values: Float64Array.from(values),
   coordinates: new Float64Array(12), axes: ["i1", "i2"], copy: 0 });
 
-function runtime({ initial = [0, 0, 0, 0], failInit = false } = {}) {
+function runtime({ initial = [0, 0, 0, 0], failInit = false, viewState, onViewChange } = {}) {
   let dispose, api, registered;
   const events = new Map(), captures = [], drawCalls = [];
   const canvas = { width: 0, height: 0, addEventListener: (name, listener) => events.set(name, listener),
@@ -44,7 +44,7 @@ function runtime({ initial = [0, 0, 0, 0], failInit = false } = {}) {
   }
   class Controls extends THREE.EventDispatcher {
     constructor(camera) { super(); this.object = camera; this.target = new THREE.Vector3(); this.enabled = true; }
-    update() { this.object.lookAt(this.target); this.object.updateMatrixWorld(); }
+    update() { this.object.lookAt(this.target); this.object.updateMatrixWorld(); this.dispatchEvent({ type: "change" }); }
     dispose() {}
   }
   const labelCanvas = () => ({ width: 0, height: 0, getContext: () => ({ clearRect() {}, fillText() {} }) });
@@ -52,6 +52,7 @@ function runtime({ initial = [0, 0, 0, 0], failInit = false } = {}) {
     dispose = cleanup;
     const [data, setGrid] = createSignal(grid(initial)), [key, setKey] = createSignal({ step: 0 });
     api = component({ get grid() { return data(); }, get captureFrameKey() { return key(); }, label: "Индукция", unit: "Тл",
+      get viewState() { return viewState?.(); }, onViewChange,
       onCaptureReady: value => { registered = value; } }, {
       createEffect, createSignal, onCleanup, onMount, THREE: { ...THREE, WebGLRenderer: Renderer }, OrbitControls: Controls,
       ResizeObserver: class { observe() {} disconnect() {} }, disposeSurfaceObject, updateSurfaceMesh,
@@ -72,6 +73,37 @@ function runtime({ initial = [0, 0, 0, 0], failInit = false } = {}) {
 const cameraState = h => ({ position: h.camera().position.toArray(), quaternion: h.camera().quaternion.toArray(),
   up: h.camera().up.toArray(), projection: [...h.camera().projectionMatrix.elements], zoom: h.camera().zoom,
   target: h.controls().target.toArray() });
+
+test("three surfaces share view, pan and zoom from any panel without recursive publications", () => {
+  const [viewState, setViewState] = createSignal(null);
+  let publications = 0;
+  const onViewChange = view => { publications++; setViewState(view); };
+  const surfaces = Array.from({ length: 3 }, () => runtime({ viewState, onViewChange }));
+  try {
+    const assertLinked = () => {
+      assert.deepEqual(cameraState(surfaces[0]), cameraState(surfaces[1]));
+      assert.deepEqual(cameraState(surfaces[1]), cameraState(surfaces[2]));
+    };
+    assertLinked();
+    for (const [index, surface] of surfaces.entries()) {
+      const before = publications;
+      surface.view(["x", "y", "z"][index]);
+      assert.equal(publications, before + 1); assertLinked();
+      surface.camera().position.set(index + 4, -6, 7); surface.camera().zoom = 1.7;
+      surface.camera().updateProjectionMatrix(); surface.controls().target.set(.1, -.2, .3);
+      surface.controls().update();
+      assert.equal(publications, before + 2); assertLinked();
+    }
+    const original = cameraState(surfaces[0]), before = publications;
+    surfaces.forEach(surface => surface.publish([-10, 20, 0, 3], { step: 1 }));
+    assert.equal(publications, before); assertLinked();
+    assert.deepEqual(cameraState(surfaces[0]), original);
+    surfaces.forEach(surface => surface.captureAdapter.prepare());
+    surfaces[1].view("iso"); assert.equal(publications, before);
+    surfaces.forEach(surface => surface.captureAdapter.restore());
+    assertLinked(); assert.deepEqual(cameraState(surfaces[0]), original);
+  } finally { surfaces.forEach(surface => surface.dispose()); }
+});
 
 test("surface movie uses fixed full-cycle heights and legends, then restores the selected scale", async () => {
   const h = runtime(), bounds = { minimum: 0, maximum: 100 }, firstKey = { step: 0 };

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { installBrowserDefaults } from "../src/services/browserDefaults.js";
 
 const source = readFileSync(new URL("../src/components/movie/ViewerToolsMenu.jsx", import.meta.url), "utf8");
 const setup = source.slice(source.indexOf("export function ViewerToolsMenu"), source.indexOf("  return <>"))
@@ -428,40 +429,43 @@ test("Viewer disposal aborts pending scan/read and never publishes a late HTML t
 const appSource = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const appSetup = appSource.slice(appSource.indexOf("export default function App"), appSource.indexOf('  return <div class="app-container"'))
   .replace("export default function", "function");
-const createApp = new Function("createSignal", "onCleanup", "onMount", "preloadViewerTabs", "createMovieExportController", "createMovieGifEncoder", `
+const createApp = new Function("createSignal", "onCleanup", "onMount", "preloadViewerTabs", "createMovieExportController", "createMovieGifEncoder", "installBrowserDefaults", "window", `
   ${appSetup}
     return { shared, movieDisabledReason, setTask, setActive, setBusy, setMovieBusy };
   } return App();
 `);
 
-test("App permits only ready dynamic result tabs and separates guarded UI time from movie time", () => {
+test("App permits only ready result tabs and separates guarded UI time from movie time", () => {
   let controllerOptions, disposed = 0;
   const cleanup = [];
-  const controller = { register() {}, dispose() { disposed++; } };
+  const controller = { register() {}, dispose() { disposed++; } }, browserEvents = events();
   const app = createApp(initial => {
     let value = initial;
     return [() => value, next => { value = typeof next === "function" ? next(value) : next; }];
-  }, callback => cleanup.push(callback), callback => callback(), () => Promise.resolve([]), options => { controllerOptions = options; return controller; }, () => {});
+  }, callback => cleanup.push(callback), callback => callback(), () => Promise.resolve([]), options => { controllerOptions = options; return controller; }, () => {}, installBrowserDefaults, browserEvents);
   assert.match(app.movieDisabledReason(), /Загрузите/);
   app.setTask({ general: { countTimeSteps: 4, timeStep: .1 } });
   assert.match(app.movieDisabledReason(), /вкладку/);
   app.setActive(1); assert.match(app.movieDisabledReason(), /готовности/);
   controllerOptions.onAdapterChange({}); assert.equal(app.movieDisabledReason(), "");
-  for (const tab of [1, 2, 3, 4, 5, 6]) { app.setActive(tab); assert.equal(app.movieDisabledReason(), ""); }
+  for (const tab of [1, 2, 3, 4, 5]) { app.setActive(tab); assert.equal(app.movieDisabledReason(), ""); }
+  app.setActive(6); assert.match(app.movieDisabledReason(), /вкладку/); app.setActive(5);
   app.setBusy(true); assert.match(app.movieDisabledReason(), /загрузки/); app.setBusy(false);
   for (const timeStep of [0, -1, NaN, Infinity]) {
     app.setTask({ general: { countTimeSteps: 4, timeStep } });
     assert.match(app.movieDisabledReason(), /Некорректное число интервалов/);
   }
   app.setTask({ general: { countTimeSteps: 4, timeStep: .1 } });
-  app.shared.setTime(3); app.shared.setElements([1]); app.shared.setRegions([2]); app.shared.setCoils([3]);
+  app.shared.setTime(3); app.shared.setElements([1]); app.shared.setRegions([2]);
   app.setMovieBusy(true);
-  app.shared.setTime(0); app.shared.setElements([]); app.shared.setRegions([]); app.shared.setCoils([]);
+  app.shared.setTime(0); app.shared.setElements([]); app.shared.setRegions([]);
   assert.equal(app.shared.time, 3);
-  assert.deepEqual(app.shared.elements, [1]); assert.deepEqual(app.shared.regions, [2]); assert.deepEqual(app.shared.coils, [3]);
+  assert.deepEqual(app.shared.elements, [1]); assert.deepEqual(app.shared.regions, [2]);
   app.shared.setMovieTime(100); assert.equal(app.shared.time, 4);
   app.shared.setMovieTime(-1); assert.equal(app.shared.time, 0);
   assert.equal(app.shared.registerMovieAdapter, controller.register);
   app.setMovieBusy(false); app.shared.setTime(2); assert.equal(app.shared.time, 2);
+  assert.equal(browserEvents.count("keydown"), 1); assert.equal(browserEvents.count("contextmenu"), 1);
   cleanup.forEach(callback => callback()); assert.equal(disposed, 1);
+  assert.equal(browserEvents.count("keydown"), 0); assert.equal(browserEvents.count("contextmenu"), 0);
 });

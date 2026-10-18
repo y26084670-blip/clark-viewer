@@ -113,8 +113,17 @@ textarea[readonly] { resize: none; width: 100%; margin: 0; padding: 12px; border
 .surface-canvas { position: absolute; inset: 0; }
 .surface-view-buttons { position: absolute; left: 10px; top: 8px; z-index: 2; display: flex; gap: 5px; }
 .surface-view-buttons button { font-size: .875rem; }
+.field-area-plots { flex: 1; min-height: 220px; display: grid; grid-template-columns: repeat(3, minmax(260px, 1fr)); gap: 6px; overflow-x: auto; padding: 5px; }
+.field-area-component { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid #b4c2cf; }
+.field-area-component h3 { flex: 0 0 auto; text-align: center; font-size: 14px; margin: 0; padding: 5px; background: #eef3f7; }
+.field-area-component .surface-view-buttons { left: 5px; right: 5px; flex-wrap: wrap; gap: 3px; }
+.field-area-component .surface-view-buttons button { font-size: 12px; padding: 4px; }
 .surface-legend { position: absolute; bottom: 12px; right: 15px; display: flex; gap: 9px; align-items: center; font-size: .8rem; padding: 6px; background: #ffffffda; }
 .surface-legend > div { width: 120px; height: 12px; background: linear-gradient(to right, #1538ea, #13efbf, #b5ed13, #ef1913); }
+.field-area-component .surface-legend { left: 8px; right: 8px; bottom: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.field-area-component .surface-legend > div { grid-column: 1 / -1; grid-row: 1; width: auto; height: 10px; }
+.field-area-component .surface-legend > span { grid-row: 2; min-width: 0; overflow-wrap: anywhere; }
+.field-area-component .surface-legend > span:last-child { text-align: right; }
 .surface-hover { position: absolute; bottom: 45px; left: 10px; max-width: calc(100% - 20px); padding: 6px 8px; background: #fffef0e8; border: 1px solid #a5a798; font-size: .8rem; }
 .plot-error { position: absolute; top: 65px; left: 10px; padding: 8px; background: #fff0ef; color: #932d2d; }
 .empty-task { margin: auto; padding: 30px; text-align: center; color: #627486; }

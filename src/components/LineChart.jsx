@@ -160,7 +160,7 @@ export function LineChart(props) {
     const xLabel = props.xLabel, yLabel = props.yLabel, integerX = props.integerX;
     if (!ready()) return;
     try {
-      const datasets = series.map((item, index) => ({ _seriesKey: `series:${item.label}:${index}`, label: item.label,
+      const datasets = series.map((item, index) => ({ _seriesKey: item.key ?? `series:${item.label}:${index}`, label: item.label,
         data: item.points, borderColor: colors[index % colors.length], backgroundColor: colors[index % colors.length],
         showLine: item.showLine ?? true, pointRadius: item.pointRadius ?? (item.points.length === 1 ? 4 : 0),
         pointHitRadius: 5, borderWidth: item.borderWidth ?? 1.6, spanGaps: false,
@@ -493,7 +493,7 @@ export function LineChart(props) {
         <button type="button" disabled={capturing()} onClick={toggleAutoScale} aria-pressed={props.autoScaleToggle ? autoScale() : undefined}
           title={props.autoScaleToggle ? (autoScale() ? "Автомасштаб включён: нажмите, чтобы сохранить текущие пределы" : "Автомасштаб выключен: нажмите для автоматического подбора пределов") : "Автоматические пределы по обеим осям"}>Авто</button>
         <Show when={props.legendMode !== "overlay"}>
-          <label><input type="checkbox" disabled={capturing()} checked={showLegend()} onChange={event => { if (!movieState) setShowLegend(event.currentTarget.checked); }} />Показать легенду</label>
+          <label title="Показать подписи и цвета кривых; щелчок по легенде скрывает или возвращает кривую"><input type="checkbox" disabled={capturing()} checked={showLegend()} onChange={event => { if (!movieState) setShowLegend(event.currentTarget.checked); }} />Показать легенду</label>
         </Show>
       </div>
     </div>
@@ -508,9 +508,9 @@ export function LineChart(props) {
       <Show when={renderError()}><div class="plot-empty" role="alert">{renderError()}</div></Show>
       <Show when={!renderError() && !(props.series?.length)}><div class="plot-empty">{props.emptyText || "Выберите объект и величину"}</div></Show>
       <Show when={menu()}><div class="chart-menu" style={{ left: `${menu().x}px`, top: `${menu().y}px` }}>
-        <button onClick={copyTable}>Копировать таблицу</button><button onClick={copyImage}>Копировать картинку</button>
+        <button title="Скопировать названия кривых и все точки X/Y как таблицу с разделением табуляцией" onClick={copyTable}>Копировать таблицу</button><button title="Скопировать изображение текущего графика в буфер обмена" onClick={copyImage}>Копировать картинку</button>
       </div></Show>
-      <Show when={message()}><button class="copy-message" onClick={() => setMessage("")}>{message()}</button></Show>
+      <Show when={message()}><button class="copy-message" title="Закрыть сообщение" onClick={() => setMessage("")}>{message()}</button></Show>
     </div>
   </div>;
 }

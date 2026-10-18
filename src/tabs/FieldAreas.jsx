@@ -14,6 +14,7 @@ export function FieldAreas(props) {
   const [quantityKey, setQuantity] = createSignal("Bs");
   const [copy, setCopy] = createSignal(0);
   const [viewState, setViewState] = createSignal(null);
+  const [viewControls, setViewControls] = createSignal(null);
   // This tab compares three components at one time, independently of the
   // full-cycle preference shared by 3D, working points and field lines.
   const [globalMinMax, setGlobalMinMax] = createGeometryViewSetting("areaComponentMinMax", true);
@@ -64,6 +65,13 @@ export function FieldAreas(props) {
           <input type="checkbox" aria-label="Общий минимакс" checked={globalMinMax()} disabled={props.movieBusy}
             onChange={event => !props.movieBusy && setGlobalMinMax(event.currentTarget.checked)} /> Общий минимакс
         </label>
+        <div class="surface-view-buttons" role="group" aria-label="Ракурс всех компонент">
+          <button disabled={props.movieBusy || !viewControls()} title="Вернуть начальный наклонный ракурс всех трёх компонент"
+            onClick={() => viewControls()?.view("iso")}>Вписать</button>
+          <For each={["x", "y", "z"]}>{direction => <button disabled={props.movieBusy || !viewControls()}
+            title={`Смотреть вдоль оси ${direction.toUpperCase()}; ракурс меняется у всех трёх компонент`}
+            onClick={() => viewControls()?.view(direction)}>Вид {direction.toUpperCase()}</button>}</For>
+        </div>
         <Show when={layout()?.copies > 1}><label title="Номер локального образа выбранной площадки">LS <input type="number" min="1" max={layout()?.copies ?? 1} step="1" value={copy() + 1}
           onChange={event => {
             const value = event.currentTarget.valueAsNumber;
@@ -76,6 +84,7 @@ export function FieldAreas(props) {
         <h3>{QUANTITIES[quantityKey()].label} · {"XYZ"[index]}</h3>
         <SurfaceChart grid={grids()[index]} label={`${QUANTITIES[quantityKey()].label} · ${"XYZ"[index]}`} unit={QUANTITIES[quantityKey()].unit}
           viewState={viewState()} onViewChange={setViewState} emptyText={result().error}
+          onViewReady={index === 0 ? setViewControls : undefined}
           captureFrameKey={displayed()} onCaptureReady={renderer => { renderers[index] = renderer; }} />
       </section>}</For></div>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />

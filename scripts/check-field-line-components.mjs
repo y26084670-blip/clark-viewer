@@ -55,8 +55,9 @@ function Fixture() {
         range:chart?{xMin:chart.scales.x.min,xMax:chart.scales.x.max,yMin:chart.scales.y.min,yMax:chart.scales.y.max}:null,
         chartArea:chart?{left:chart.chartArea.left,right:chart.chartArea.right,top:chart.chartArea.top,bottom:chart.chartArea.bottom}:null};},
     async exportMovie(){setBusy(true);const globalDisabledDuringExport=document.querySelector('input[aria-label="Общий минимакс"]')?.disabled;
+      const viewButtonsDisabled=Array.from(document.querySelectorAll('.surface-view-buttons button')).map(button=>button.disabled);
       try{const value=await controller.run({intervalMs:100});
-      return {filename:value.filename,frameCount:value.frameCount,globalDisabledDuringExport,bytes:Array.from(new Uint8Array(await value.blob.arrayBuffer()))};}finally{setBusy(false);}}
+      return {filename:value.filename,frameCount:value.frameCount,globalDisabledDuringExport,viewButtonsDisabled,bytes:Array.from(new Uint8Array(await value.blob.arrayBuffer()))};}finally{setBusy(false);}}
   };
   return <div class="app-container"><header class="task-info-bar"><strong id="fixture-heading">Проверка компонент поля</strong></header>
     <main class="tabs-body"><Show when={!area()} fallback={<FieldAreas {...props}/>}><FieldLines {...props}/></Show></main></div>;
@@ -82,6 +83,7 @@ try {
     args: ["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
   page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   page.on("pageerror", error => errors.push(error.message));
+  page.on("console", message => { if (message.type() === "error") console.error(message.text()); });
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__field_line_acceptance__/index.html`);
   await waitCount(16);
   assert.equal(await page.getByRole("checkbox", { name: "Все локальные образы", exact: true }).isChecked(), true);
@@ -251,12 +253,30 @@ try {
   const views = () => page.evaluate(()=>window.__surfaceViews.filter(s=>s.host.isConnected).map(({camera:c,controls:o})=>[...c.position.toArray(),...c.quaternion.toArray(),...c.up.toArray(),...o.target.toArray(),c.zoom]));
   const assertLinked = async () => { const v=await views();assert.equal(v.length,3);for(const w of v.slice(1)) for(let i=0;i<w.length;i++) assert.ok(Math.abs(w[i]-v[0][i])<1e-10);return v; };
   const panels=page.locator('.field-area-component');
-  await panels.nth(1).getByRole('button',{name:'Вид X',exact:true}).click(); await assertLinked();
+  const viewButtons=page.getByRole('group',{name:'Ракурс всех компонент',exact:true});
+  assert.equal(await viewButtons.count(),1);
+  assert.equal(await panels.locator('button').count(),0);
+  const toolbar=page.locator('.field-area-panel > .plot-toolbar');
+  assert.equal(await toolbar.getByRole('group',{name:'Ракурс всех компонент',exact:true}).count(),1);
+  const controlRows=await toolbar.locator(':scope > select, :scope > label, :scope > .surface-view-buttons').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {top:r.top,bottom:r.bottom};}));
+  assert.ok(controlRows.length>=3);
+  assert.ok(Math.max(...controlRows.map(r=>r.top))<Math.min(...controlRows.map(r=>r.bottom)), 'Common buttons share the quantity/minimax row');
+  const initialView=await assertLinked();
+  for(const name of ['Вид X','Вид Y','Вид Z']) {
+    const before=await views();
+    assert.equal(await page.getByRole('button',{name,exact:true}).count(),1);
+    await viewButtons.getByRole('button',{name,exact:true}).click();
+    assert.notDeepEqual(await assertLinked(),before);
+  }
+  assert.equal(await page.getByRole('button',{name:'Вписать',exact:true}).count(),1);
+  passed("One shared set of four camera buttons sits beside quantity/minimax; X/Y/Z commands update all surfaces");
   const beforeDrag=await views(), surface=await panels.nth(2).locator('canvas').boundingBox();
   await page.mouse.move(surface.x+surface.width*.45,surface.y+surface.height*.45);await page.mouse.down();
   await page.mouse.move(surface.x+surface.width*.65,surface.y+surface.height*.6,{steps:8});await page.mouse.up();
   assert.notDeepEqual(await assertLinked(),beforeDrag);
-  await panels.nth(0).getByRole('button',{name:'Вписать',exact:true}).click(); await assertLinked();
+  await viewButtons.getByRole('button',{name:'Вписать',exact:true}).click();
+  const fitted=await assertLinked();
+  for(let p=0;p<3;p++) for(let i=0;i<fitted[p].length;i++) assert.ok(Math.abs(fitted[p][i]-initialView[p][i])<1e-10);
   await page.screenshot({ path: path.join(output, "area-components-common.png"), fullPage: true });
   passed("Real OrbitControls drag and view buttons synchronize all three cameras without feedback");
   const originalViews=await views(), areaMovie = await page.evaluate(() => window.__acceptance.exportMovie());
@@ -264,6 +284,8 @@ try {
   const areaFrames = decompressFrames(parseGIF(areaBytes.buffer.slice(areaBytes.byteOffset, areaBytes.byteOffset + areaBytes.byteLength)), true);
   assert.equal(areaMovie.frameCount, 3); assert.equal(areaFrames.length, 3);
   assert.equal(areaMovie.globalDisabledDuringExport, true);
+  assert.deepEqual(areaMovie.viewButtonsDisabled,[true,true,true,true]);
+  assert.equal(await viewButtons.locator('button:disabled').count(),0);
   assert.equal(await areaGlobal.isDisabled(), false); assert.deepEqual(await surfaceLimits(), [-12,9,-12,9,-12,9]);
   assert.equal((await snapshot()).time, 2);
   const restoredViews=await assertLinked();
@@ -286,6 +308,9 @@ try {
   await page.setViewportSize({width:800,height:720});
   const narrow=await panels.evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().y));assert.deepEqual(narrow,[narrow[0],narrow[0],narrow[0]]);
   const scroll=await page.locator('.field-area-plots').evaluate(n=>({width:n.clientWidth,scroll:n.scrollWidth}));assert.ok(scroll.scroll>scroll.width);
+  const sharedButtons=await viewButtons.boundingBox();
+  assert.ok(sharedButtons.x>=0 && sharedButtons.x+sharedButtons.width<=800);
+  for(const button of await viewButtons.getByRole('button').all()) assert.ok(await button.isVisible());
   await page.screenshot({path:path.join(output,'area-components-narrow.png'),fullPage:true});
   passed("Narrow screens retain a single horizontally scrollable component row");
   assert.deepEqual(errors, []);

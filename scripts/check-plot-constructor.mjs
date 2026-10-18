@@ -21,7 +21,7 @@ import {createMovieExportController} from '../src/services/movie/movieExportCont
 import {createMovieGifEncoder} from '../src/services/movie/movieGifEncoder.js';
 installBrowserDefaults(window);
 const task={general:{countTimeSteps:2,timeStep:.5},metadata:{MH:{steps:[{index:0},{index:1},{index:2}],header:{stride:9},pointCount:1,ranges:{runId:'field-1'}}},
-handle:{getDirectoryHandle:async()=>{throw new DOMException('no OM','NotFoundError')}},reader:{history:async()=>({steps:[0,1,2],stride:9,values:Float64Array.from([0,0,0,3,4,0,0,0,0,0,0,0,-3,0,4,0,0,0,0,0,0,3,4,0,0,0,0])})}};
+handle:{getDirectoryHandle:async()=>{throw new DOMException('no OM','NotFoundError')}},reader:{history:async()=>{await window.__historyGate;return {steps:[0,1,2],stride:9,values:Float64Array.from([0,0,0,3,4,0,0,0,0,0,0,0,-3,0,4,0,0,0,0,0,0,3,4,0,0,0,0])}}}};
 const manifest={schema:'clark-result-channels/1',model:'mechanics',role:'derived',complete:true,fieldRunId:'field-1',grid:{steps:2,dt:.5},dataFile:'energy.tsv',channels:[{column:'energy_J',label:'Механическая энергия',unit:'Дж'}]};
 window.pickerCalls=0;
 window.showDirectoryPicker=async()=>{window.pickerCalls++;return {getFileHandle:async name=>({getFile:async()=>new File([name==='results.json'?JSON.stringify(manifest):'step\\ttime_s\\tenergy_J\\n0\\t0\\t0\\n1\\t0.5\\t7\\n2\\t1\\t3\\n'],name)})}};
@@ -68,7 +68,17 @@ try {
  await graphs.nth(0).getByRole('button',{name:'Авто',exact:true}).click();
  const frozen = (await snap()).plots[0].range;
  await page.evaluate(()=>window.__graphs.visible(0,0,false));
- await y.getByLabel('Компонента').selectOption('1'); await curve.click(); await waitSeries(0,3);
+ await page.evaluate(()=>{window.__historyGate=new Promise(resolve=>{window.__releaseHistory=resolve;});});
+ await y.getByLabel('Компонента').selectOption('1'); await curve.click();
+ await graphs.nth(0).locator('canvas').click({button:'right'});
+ const pendingCopy=graphs.nth(0).getByRole('button',{name:'Копировать таблицу',exact:true});
+ assert.equal(await pendingCopy.isDisabled(),true);
+ assert.match(await pendingCopy.getAttribute('title'),/загрузки всех кривых/);
+ assert.equal((await snap()).plots[0].series.length,2);
+ await page.evaluate(()=>window.__releaseHistory()); await waitSeries(0,3);
+ assert.equal(await pendingCopy.isEnabled(),true);
+ await graphs.nth(0).locator('.chart-toolbar strong').click();
+ passed('Copy waits for all requested curves while the preceding plotted data remains visible');
  assert.equal((await snap()).plots[0].visible[0],false);
  assert.deepEqual((await snap()).plots[0].range,frozen);
  passed('Add curve preserves chart identity, existing curves and manual axis limits');
@@ -87,6 +97,25 @@ try {
  passed('Click selects the target plot; one curve can be removed while other plots remain intact');
  await graphs.nth(0).locator('canvas').click({button:'right'});
  assert.equal(await graphs.nth(0).getByRole('button',{name:'Копировать таблицу',exact:true}).isVisible(),true);
+ await page.context().grantPermissions(['clipboard-read','clipboard-write']);
+ async function copyAndCheck(plot, sharedX=true) {
+   const expected=(await snap()).plots[plot].series;
+   await graphs.nth(plot).locator('.chart-toolbar strong').click();
+   await graphs.nth(plot).locator('canvas').click({button:'right'});
+   await graphs.nth(plot).getByRole('button',{name:'Копировать таблицу',exact:true}).click();
+   await graphs.nth(plot).getByRole('button',{name:'Таблица скопирована',exact:true}).waitFor();
+   const rows=(await page.evaluate(()=>navigator.clipboard.readText())).split('\n').map(row=>row.split('\t'));
+   assert.equal(rows.length,expected[0].length+1,'Clipboard must have one data row per shared X, with every curve in its own column');
+   assert.equal(rows[0].length,sharedX ? expected.length+1 : expected.length*2);
+   assert.equal(new Set(rows[0]).size,rows[0].length);
+   assert.deepEqual(rows.slice(1).map(row=>row.map(Number)),expected[0].map((p,i)=>sharedX
+     ? [p.x,...expected.map(s=>s[i].y)] : expected.flatMap(s=>[s[i].x,s[i].y])));
+ }
+ await page.evaluate(()=>window.__graphs.visible(0,0,false));
+ await copyAndCheck(0);
+ await copyAndCheck(1);
+ await page.evaluate(()=>window.__graphs.visible(0,0,true));
+ passed('Clipboard contains every current curve in separate columns, including hidden curves, and only from the chosen plot');
  await graphs.nth(0).locator('.chart-toolbar strong').click();
  await page.getByRole('heading',{name:'Графики',exact:true}).click(); await page.keyboard.press('Control+a');
  assert.equal(await page.evaluate(()=>String(window.getSelection())), '');
@@ -105,6 +134,8 @@ try {
  assert.match(await page.getByRole('alert').innerText(),/Ось X.*не совпадают/); assert.equal(await graphs.count(),2);
  await add.click(); await waitSeries(2,1);
  const loop=(await snap()).plots[2].series[0]; assert.deepEqual(loop.map(p=>p.x),[3,-3,3]); assert.deepEqual(loop.map(p=>p.y),[0,7,3]);
+ await x.getByLabel('Компонента').selectOption('1'); await curve.click(); await waitSeries(2,2);
+ await copyAndCheck(2,false);
  passed('OM import explains the directory first; XY keeps time order and incompatible axes are rejected');
  await page.screenshot({path:path.join(output,'graphs.png'),fullPage:true});
  async function checkMovie(filename) {
@@ -119,7 +150,7 @@ try {
  passed('Real GIF export follows the active plot, supports multiple curves and restores time and axes');
  const beforeRemount=(await snap()).recipes, active=(await snap()).active;
  await page.evaluate(()=>window.__graphs.setShown(false)); await page.evaluate(()=>window.__graphs.setShown(true));
- await waitSeries(0,3); await waitSeries(2,1); assert.deepEqual((await snap()).recipes,beforeRemount); assert.equal((await snap()).active,active);
+ await waitSeries(0,3); await waitSeries(2,2); assert.deepEqual((await snap()).recipes,beforeRemount); assert.equal((await snap()).active,active);
  await graphs.nth(2).getByRole('button',{name:'Удалить график',exact:true}).click(); assert.equal(await graphs.count(),2);
  assert.equal((await snap()).active,(await snap()).recipes[1].id);
  assert.equal(await page.locator('.constructor-actions button:not([title])').count(),0);

@@ -179,7 +179,7 @@ export function sourceAmplitudeFactors(elements = [], amps = [], time = 0) {
         ));
         if (!Number.isSafeInteger(reference) || reference < 1
             || !Array.isArray(amps) || !amps[reference - 1]) {
-            report("SOURCE_AMPLITUDE_REFERENCE_INVALID", "Указана недоступная или некорректная амплитуда.");
+            report("SOURCE_AMPLITUDE_REFERENCE_INVALID", "Указан недоступный или некорректный импульс.");
             return null;
         }
         if (!sampledAmplitudes.has(reference)) {
@@ -187,7 +187,7 @@ export function sourceAmplitudeFactors(elements = [], amps = [], time = 0) {
         }
         const sampled = sampledAmplitudes.get(reference);
         if (sampled.error) {
-            report("SOURCE_AMPLITUDE_TABLE_INVALID", `Амплитуда №${reference}: ${sampled.error}.`);
+            report("SOURCE_AMPLITUDE_TABLE_INVALID", `Импульс №${reference}: ${sampled.error}.`);
             return null;
         }
         return sampled.values[0];

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseResultTable, validateChannelSource } from '../src/services/results/omResultChannels.js';
-import { plotChannels, readPlotChannel, pairPlotChannels, validatePlotCurve, plotChannelLabel, readPlotCurves } from '../src/services/results/plotConstructor.js';
+import { plotChannels, readPlotChannel, pairPlotChannels, pairPlotChannelsByTime, plotPointAtStep, validatePlotCurve, plotChannelLabel, readPlotCurves } from '../src/services/results/plotConstructor.js';
 const task={ general:{countTimeSteps:2,timeStep:.5},metadata:{MH:{ranges:{runId:'run-1'}}} };
 const manifest={schema:'clark-result-channels/1',model:'inertia',role:'derived',complete:true,
   fieldRunId:'run-1',grid:{steps:2,dt:.5},dataFile:'energy.tsv',channels:[{column:'energy_J',label:'Механическая энергия',unit:'Дж'}]};
@@ -58,4 +58,41 @@ test('multiple curves retain loop order and good curves survive an invalid sourc
  assert.deepEqual(plot.series[1].points.map(p=>p.x),[0,7,3]);
  assert.match(plot.error,/Кривая 3/);
  assert.match(plot.series[0].tooltip(plot.series[0].points[1]).join(' '),/Механическая энергия/);
+});
+
+function comparisonTask(dt, values) {
+ return {general:{countTimeSteps:values.length-1,timeStep:dt},metadata:{FM:{steps:values.map((_,index)=>({index})),pointCount:1,header:{stride:6}}},
+  reader:{history:async()=>({steps:values.map((_,i)=>i),stride:6,values:Float64Array.from(values.flatMap(v=>[v,0,0,0,0,0]))})}};
+}
+
+test('cross-task time curves use their own complete grid and readers, even with identical channel objects',async()=>{
+ const a=comparisonTask(.5,[1,2,3]), b=comparisonTask(.25,[10,20,30,40,50,60]);
+ const time=plotChannels(a)[0], force=plotChannels(a).find(c=>c.key==='force');
+ const base={xChannel:time,yChannel:force,x:{},y:{component:'0'}};
+ const result=await readPlotCurves(a,[{...base,id:'a',taskLabel:'Проект/A'},{...base,id:'b',yTask:b,taskLabel:'Проект/B'}]);
+ assert.equal(result.error,'');
+ assert.deepEqual(result.series[0].points.map(p=>p.y),[1,2,3]);
+ assert.deepEqual(result.series[1].points.map(p=>[p.x,p.y]),[[0,10],[.25,20],[.5,30],[.75,40],[1,50],[1.25,60]]);
+ assert.match(result.series[1].label,/Проект\/B/);
+ assert.match(result.series[1].tooltip(result.series[1].points[2]).join(' '),/шаг задания Y 2/);
+ assert.deepEqual(result.series[1].points.filter(p=>plotPointAtStep(p,a,1)).map(p=>p.y),[30]);
+});
+
+test('cross-task XY pairs physical time rather than step number and preserves loops',()=>{
+ const x=[2,-2,2].map((value,step)=>({value,step,time:step*.5}));
+ const y=[10,20,30,40,50].map((value,step)=>({value,step,time:step*.25}));
+ assert.deepEqual(pairPlotChannelsByTime(x,y).map(p=>[p.x,p.y,p.sourceStep]),[[2,10,0],[-2,30,2],[2,50,4]]);
+ assert.throws(()=>pairPlotChannelsByTime(x,[{value:1,step:0,time:.123}]),/нет общих/);
+ assert.equal(pairPlotChannelsByTime([{step:1,time:.1+.2,value:1}],[{step:3,time:.3,value:2}]).length,1);
+});
+
+test('cross-task XY reads X from the current task; failed comparison leaves original curve visible',async()=>{
+ const a=comparisonTask(.5,[3,-3,3]), b=comparisonTask(.25,[1,2,3,4,5]);
+ const force=plotChannels(a).find(c=>c.key==='force');
+ const base={xChannel:force,yChannel:force,x:{component:'0'},y:{component:'0'}};
+ const result=await readPlotCurves(a,[{...base,id:'a'},{...base,id:'b',yTask:b},
+  {...base,id:'broken',yTask:{...b,reader:{history:async()=>{throw Error('Не удалось прочитать B')}}}}]);
+ assert.deepEqual(result.series[1].points.map(p=>[p.x,p.y]),[[3,1],[-3,3],[3,5]]);
+ assert.deepEqual(result.series.map(s=>s.key),['a','b']);
+ assert.match(result.error,/Кривая 3.*прочитать B/);
 });

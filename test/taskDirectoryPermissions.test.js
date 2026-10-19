@@ -10,7 +10,7 @@ assert.ok(start >= 0 && end > start);
 
 // Run the actual picker and directory enumeration without mounting unrelated JSX.
 const createPicker = new Function("dependencies", `
-    const { window, root, setError, setRoot, setProjects, setProject, setTasks, setCandidate, browserBusy, onCleanup, lastTaskHistory, sortTaskDirectories, createTaskSelectionChannel } = dependencies;
+    const { props, window, root, setError, setRoot, setProjects, setProject, setTasks, setCandidate, browserBusy, onCleanup, lastTaskHistory, sortTaskDirectories, createTaskSelectionChannel } = dependencies;
     ${source.slice(start, end)}
     return pickRoot;
 `);
@@ -24,6 +24,7 @@ function directory(name, items = []) {
 function runtime(picker, windowOverrides = {}) {
     const state = { root: null, projects: [], project: "Previous", tasks: [1], candidate: 1, error: "", permissions: [], galleryBusy: false, historyRoots: [] };
     const pick = createPicker({
+        props: { onRootChange: value => { state.plotRoot = value; } },
         window: {
             isSecureContext: true,
             showDirectoryPicker: async options => {
@@ -53,6 +54,7 @@ test("viewer accepts any root name, lists sorted projects and requests read-writ
         const { state, pick } = runtime(() => handle);
         await pick();
         assert.equal(state.root, handle);
+        assert.equal(state.plotRoot, handle);
         assert.deepEqual(state.projects.map(item => item.name), ["Project 2", "Project 10"]);
         assert.deepEqual(state.permissions, [{ mode: "readwrite" }]);
         assert.equal(state.project, "");
@@ -130,7 +132,7 @@ const loadEnd = appSource.indexOf("  function changeTime(", loadStart);
 assert.ok(loadStart >= 0 && loadEnd > loadStart);
 const createViewerLoad = new Function("dependencies", `
     const { loadTask, ResultService, mapResultObjects, setBusy, setError, setTime,
-        setElements, setRegions, setActivePlotId, setPlotRecipes, setPlotSources, setTask, setPath, setActive } = dependencies;
+        setElements, setRegions, setActivePlotId, setPlotRecipes, setPlotSources, plotTaskStore, setTask, setPath, setActive } = dependencies;
     ${appSource.slice(loadStart, loadEnd)}
     return load;
 `);
@@ -143,7 +145,8 @@ function viewerLoadingRuntime(loadTask, openResults = async () => ({})) {
             close() { state.closedReaders++; }
         }, mapResultObjects() {},
         setBusy: value => { state.busy = value; }, setError: value => { state.error = value; },
-        setTime() {}, setElements() {}, setRegions() {}, setActivePlotId() {}, setPlotRecipes() {}, setPlotSources() {},
+        setTime() {}, setElements: value => { state.elements = value; }, setRegions: value => { state.regions = value; },
+        setActivePlotId() {}, setPlotRecipes() {}, setPlotSources() {}, plotTaskStore: { clear() {} },
         setTask: value => { state.task = value; }, setPath: value => { state.path = value; },
         setActive: value => { state.active = value; state.opened.push({ active: value, task: state.task, path: state.path }); },
     });
@@ -156,7 +159,9 @@ test("viewer opens 3D only after the task and HDF5 metadata finish loading", asy
     let finish, entered;
     const ready = new Promise(resolve => { entered = resolve; });
     const metadata = new Promise(resolve => { finish = resolve; });
-    const h = viewerLoadingRuntime(async () => viewerTaskData("New", { JE: {} }), () => { entered(); return metadata; });
+    const h = viewerLoadingRuntime(async () => ({ ...viewerTaskData("New", { JE: {} }),
+        elements: [{ id: 1 }, { id: 2 }], regions: [{ id: 1 }] }), () => { entered(); return metadata; });
+    h.state.elements = [99]; h.state.regions = [99];
     const loading = h.load({}, "Projects/New");
     await ready;
     assert.equal(h.state.active, 0); assert.equal(h.state.task, null);
@@ -164,6 +169,7 @@ test("viewer opens 3D only after the task and HDF5 metadata finish loading", asy
     assert.equal(h.state.active, 1); assert.equal(h.state.opened.length, 1);
     assert.equal(h.state.opened[0].task.name, "New"); assert.equal(h.state.opened[0].path, "Projects/New");
     assert.equal(h.state.busy, false);
+    assert.deepEqual(h.state.elements, []); assert.deepEqual(h.state.regions, []);
     assert.match(source, /onClick=\{\(\) => \{ if \(!browserBusy\(\)\) setCandidate\(\{ \.\.\.item \}\); \}\}/u);
 });
 

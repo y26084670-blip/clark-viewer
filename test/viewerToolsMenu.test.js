@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { installBrowserDefaults } from "../src/services/browserDefaults.js";
+import { createPlotTaskStore } from "../src/services/results/plotTaskSources.js";
 
 const source = readFileSync(new URL("../src/components/movie/ViewerToolsMenu.jsx", import.meta.url), "utf8");
 const setup = source.slice(source.indexOf("export function ViewerToolsMenu"), source.indexOf("  return <>"))
@@ -429,7 +430,7 @@ test("Viewer disposal aborts pending scan/read and never publishes a late HTML t
 const appSource = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const appSetup = appSource.slice(appSource.indexOf("export default function App"), appSource.indexOf('  return <div class="app-container"'))
   .replace("export default function", "function");
-const createApp = new Function("createSignal", "onCleanup", "onMount", "preloadViewerTabs", "createMovieExportController", "createMovieGifEncoder", "installBrowserDefaults", "window", `
+const createApp = new Function("createSignal", "onCleanup", "onMount", "preloadViewerTabs", "createMovieExportController", "createMovieGifEncoder", "installBrowserDefaults", "window", "createEffect", "createPlotTaskStore", `
   ${appSetup}
     return { shared, movieDisabledReason, setTask, setActive, setBusy, setMovieBusy };
   } return App();
@@ -442,7 +443,7 @@ test("App permits only ready result tabs and separates guarded UI time from movi
   const app = createApp(initial => {
     let value = initial;
     return [() => value, next => { value = typeof next === "function" ? next(value) : next; }];
-  }, callback => cleanup.push(callback), callback => callback(), () => Promise.resolve([]), options => { controllerOptions = options; return controller; }, () => {}, installBrowserDefaults, browserEvents);
+  }, callback => cleanup.push(callback), callback => callback(), () => Promise.resolve([]), options => { controllerOptions = options; return controller; }, () => {}, installBrowserDefaults, browserEvents, callback => callback(), createPlotTaskStore);
   assert.match(app.movieDisabledReason(), /Загрузите/);
   app.setTask({ general: { countTimeSteps: 4, timeStep: .1 } });
   assert.match(app.movieDisabledReason(), /вкладку/);

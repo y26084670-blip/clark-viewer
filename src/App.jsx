@@ -1,4 +1,4 @@
-import { createSignal, ErrorBoundary, For, lazy, onCleanup, onMount, Show, Switch, Match, Suspense } from "solid-js";
+import { createEffect, createSignal, ErrorBoundary, For, lazy, onCleanup, onMount, Show, Switch, Match, Suspense } from "solid-js";
 import { Tasks } from "./tabs/Tasks.jsx";
 import { loadTask } from "./services/taskLoadService.js";
 import { ResultService } from "./services/resultService.js";
@@ -9,6 +9,7 @@ import { createMovieExportController } from "./services/movie/movieExportControl
 import { createMovieGifEncoder } from "./services/movie/movieGifEncoder.js";
 import { backfillTaskResultRanges } from "./services/results/resultRangeBackfill.js";
 import { installBrowserDefaults } from "./services/browserDefaults.js";
+import { createPlotTaskStore } from "./services/results/plotTaskSources.js";
 
 const tabs = ["Выбор задания", "Источники / Поле 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Графики"];
 
@@ -49,6 +50,9 @@ export default function App() {
   const [plotRecipes, setPlotRecipes] = createSignal([]);
   const [plotSources, setPlotSources] = createSignal([]);
   const [activePlotId, setActivePlotId] = createSignal(null);
+  const [plotRoot, setPlotRoot] = createSignal(null), [plotTaskSource, setPlotTaskSource] = createSignal({});
+  const plotTaskStore = createPlotTaskStore({ onChange: setPlotTaskSource });
+  createEffect(() => plotTaskStore.retain(plotRecipes().flatMap(plot => plot.curves.map(curve => curve.yTask))));
   const [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
   const [movieBusy, setMovieBusy] = createSignal(false), [movieAdapter, setMovieAdapter] = createSignal(null);
   const movieController = createMovieExportController({ createEncoder: createMovieGifEncoder,
@@ -74,11 +78,12 @@ export default function App() {
         }
       }
       activeReader?.close(); activeReader = reader;
-      setTime(0); setElements(data.elements.map(row => row.id)); setRegions(data.regions.map(row => row.id));
+      setTime(0); setElements([]); setRegions([]);
       setPlotRecipes([]);
+      plotTaskStore.clear();
       setPlotSources([]);
       setActivePlotId(null);
-      setTask({ ...data, reader, metadata, workspace }); setPath(newPath);
+      setTask({ ...data, reader, metadata, workspace, plotLabel: newPath }); setPath(newPath);
       setActive(1);
       return true;
     } catch (error) {
@@ -112,7 +117,7 @@ export default function App() {
             }
           }
           activeReader = reader;
-          setTask({ ...data, reader, metadata, workspace: current.workspace });
+          setTask({ ...data, reader, metadata, workspace: current.workspace, plotLabel: current.plotLabel });
         } catch (error) {
           reader?.close();
           throw new Error(`Диапазоны записаны, но результаты не удалось переоткрыть: ${error.message}`);
@@ -123,7 +128,7 @@ export default function App() {
   function changeTime(index) {
     if (Number.isFinite(index)) setTime(Math.max(0, Math.min(task()?.general.countTimeSteps ?? 0, Math.trunc(index))));
   }
-  onCleanup(() => { loadRevision++; movieController.dispose(); activeReader?.close(); });
+  onCleanup(() => { loadRevision++; movieController.dispose(); activeReader?.close(); plotTaskStore.clear(); });
   const movieDisabledReason = () => {
     if (movieBusy()) return "Создание GIF уже выполняется.";
     if (busy()) return "Дождитесь загрузки задания.";
@@ -145,6 +150,8 @@ export default function App() {
     get plotRecipes() { return plotRecipes(); }, setPlotRecipes,
     get plotSources() { return plotSources(); }, setPlotSources,
     get activePlotId() { return activePlotId(); }, setActivePlotId,
+    get plotRoot() { return plotRoot(); },
+    get plotTaskSource() { return plotTaskSource(); }, selectPlotTask: plotTaskStore.select,
   };
   return <div class="app-container">
     <header class="task-info-bar">
@@ -163,7 +170,7 @@ export default function App() {
     </nav>
     <main class="tabs-body" inert={movieBusy()} aria-busy={movieBusy()}>
       <div class="task-tab" style={{ display: active() === 0 ? "flex" : "none" }}>
-        <Tasks active={active() === 0} onShowTasks={() => setActive(0)} onLoad={(...args) => { if (!movieBusy()) return load(...args); }} loadedHandle={task()?.handle} busy={busy() || movieBusy()} error={error()} />
+        <Tasks active={active() === 0} onRootChange={setPlotRoot} onShowTasks={() => setActive(0)} onLoad={(...args) => { if (!movieBusy()) return load(...args); }} loadedHandle={task()?.handle} busy={busy() || movieBusy()} error={error()} />
       </div>
       <Show when={active() !== 0}>
         <Show when={task()} fallback={<div class="empty-task"><p>Загрузите задание на первой вкладке</p><button onClick={() => setActive(0)}>Выбор задания</button></div>}>

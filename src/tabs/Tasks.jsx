@@ -108,6 +108,7 @@ export function Tasks(props) {
       const entries = await subdirectories(handle);
       if (disposed || current !== revision || request !== pickRevision) return;
       setRoot(handle); setProjects(entries); setProject(""); setTasks([]); setCandidate(null);
+      props.onRootChange?.(handle);
       await lastTaskHistory.open(handle);
     } catch (error) { if (!disposed && request === pickRevision && error.name !== "AbortError") setError(error.message); }
   }

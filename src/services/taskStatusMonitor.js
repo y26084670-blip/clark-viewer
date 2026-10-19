@@ -2,7 +2,7 @@ import { createEffect, createSignal, onCleanup, untrack } from "solid-js";
 import { EMPTY_TASK_STATUS, readTaskStatusEntry, unavailableTaskStatus } from "./taskStatusService.js";
 
 function equalStatus(a, b) {
-  return a && b && ["hasSolution", "missingInput", "hasGifs", "hasComparison"]
+  return a && b && ["hasSolution", "missingInput", "hasGifs", "hasComparison", "omState"]
     .every(key => a[key] === b[key] && a.errors[key] === b.errors[key]);
 }
 

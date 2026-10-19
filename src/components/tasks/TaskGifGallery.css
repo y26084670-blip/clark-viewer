@@ -21,7 +21,7 @@
 .task-gif-gallery button:focus-visible, .task-gif-dialog button:focus-visible { outline: 2px solid #74c5ff; outline-offset: 1px; }
 .task-gif-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr)); align-content: start; gap: 7px; flex: 1 1 0; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 7px; }
 .task-gif-cell { position: relative; min-width: 0; height: 145px; border: 1px solid #596773; background: #141a20; overflow: hidden; }
-.task-gif-thumbnail { height: 116px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.task-gif-thumbnail { width: 100%; height: 116px; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; cursor: zoom-in; }
 .task-gif-thumbnail img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .task-gif-placeholder { padding: 8px; color: #aab9c5; font-size: 12px; text-align: center; }
 .task-gif-cell-actions { position: absolute; top: 4px; right: 4px; display: flex; gap: 4px; }
@@ -38,10 +38,11 @@
 .task-gif-dialog-header h2 { flex: 1; min-width: 0; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; font-weight: bold; }
 .task-gif-dialog-header > button { flex: none; font: 22px/1 Arial, sans-serif; }
 .task-gif-preview-body { position: relative; display: flex; align-items: center; justify-content: center; min-height: 90px; min-width: 0; overflow: hidden; }
-.task-gif-navigation-hint { position: absolute; top: 50%; z-index: 1; transform: translateY(-50%); color: #fff; font: 48px/1 Arial, sans-serif; text-shadow: 0 1px 5px #000; pointer-events: none; user-select: none; }
-.task-gif-navigation-hint.is-previous { left: 12px; }
-.task-gif-navigation-hint.is-next { right: 12px; }
-.task-gif-navigation-hint.is-unavailable { opacity: .3; }
+.task-gif-navigation-button { position: absolute; top: 50%; z-index: 1; transform: translateY(-50%); width: 44px; height: 64px; padding: 0; border: 0; border-radius: 4px; background: #20262d80; color: #fff; font: 48px/1 Arial, sans-serif; text-shadow: 0 1px 5px #000; cursor: pointer; user-select: none; }
+.task-gif-navigation-button.is-previous { left: 12px; }
+.task-gif-navigation-button.is-next { right: 12px; }
+.task-gif-navigation-button:hover:not(:disabled) { background: #303b45e0; }
+.task-gif-navigation-button:disabled { background: #20262d80; opacity: .3; cursor: default; }
 .task-gif-preview-body > img { display: block; max-width: 100%; max-height: calc(92dvh - 45px); object-fit: contain; }
 .task-gif-preview-body > p { padding: 20px; overflow-wrap: anywhere; }
 .task-gif-preview-body { flex: 1 1 0; min-height: 0; }

@@ -51,7 +51,7 @@ export function TaskGifGallery(props) {
   }
   function showPreview(entry, event) {
     if (actionsDisabled()) return;
-    opener = event.currentTarget; setDialogPosition(null); setMaximized(false); setDialogSize(null);
+    opener = event.currentTarget; setDialogPosition(null); setMaximized(true); setDialogSize(null);
     restoreBounds=null; controller.openPreview(entry);
   }
   function requestDelete(entry, event) {
@@ -121,14 +121,16 @@ export function TaskGifGallery(props) {
     onMount(() => { unwatch = watchCell(cell, cellProps.entry); });
     onCleanup(() => unwatch?.());
     return <article ref={cell} class="task-gif-cell">
-      <div class="task-gif-thumbnail">
+      <button type="button" class="task-gif-thumbnail" disabled={actionsDisabled()}
+        title={`Открыть ${cellProps.entry.name}`} aria-label={`Открыть ${cellProps.entry.name}`}
+        onClick={event => { event.stopPropagation(); showPreview(cellProps.entry, event); }}>
         <Show when={thumbnail().url} fallback={<span class="task-gif-placeholder" title={thumbnail().error || undefined}>
           {thumbnail().error ? "Не удалось прочитать GIF" : thumbnail().loading ? "Загрузка…" : "GIF"}
         </span>}>
           <img src={thumbnail().url} alt="" loading="lazy" decoding="async"
             onError={event => controller.thumbnailFailed(cellProps.entry, event.currentTarget.getAttribute("src"))} />
         </Show>
-      </div>
+      </button>
       <div class="task-gif-cell-actions">
         <button type="button" disabled={actionsDisabled()} title={`Открыть ${cellProps.entry.name}`} aria-label={`Открыть ${cellProps.entry.name}`}
           onClick={event => { event.stopPropagation(); showPreview(cellProps.entry, event); }}>
@@ -237,20 +239,18 @@ export function TaskGifGallery(props) {
         <header ref={dialogHeader} class="task-gif-dialog-header" onPointerDown={startDrag} onPointerMove={moveDrag}
           onPointerUp={stopDrag} onPointerCancel={stopDrag} onLostPointerCapture={stopDrag}>
           <h2 id={titleId} title={view().preview?.entry.name}>{view().preview?.entry.name}</h2>
-          <button type="button" title="Предыдущий GIF" aria-label="Предыдущий GIF" disabled={!canNavigate(-1)}
-            onClick={() => controller.navigatePreview(-1)}>←</button>
-          <button type="button" title="Следующий GIF" aria-label="Следующий GIF" disabled={!canNavigate(1)}
-            onClick={() => controller.navigatePreview(1)}>→</button>
           <button type="button" title={maximized()?"Восстановить размер":"Максимальный размер окна"}
             aria-label={maximized()?"Восстановить размер":"Максимальный размер окна"} onClick={toggleMaximized}>{maximized()?"❐":"□"}</button>
           <button ref={closeButton} type="button" title="Закрыть" aria-label="Закрыть просмотр GIF" onClick={() => controller.closePreview()}>×</button>
         </header>
         <div class="task-gif-preview-body">
           <Show when={view().entries.length > 1}>
-            <span class="task-gif-navigation-hint is-previous" aria-hidden="true"
-              classList={{ "is-unavailable": !canNavigate(-1) }}>‹</span>
-            <span class="task-gif-navigation-hint is-next" aria-hidden="true"
-              classList={{ "is-unavailable": !canNavigate(1) }}>›</span>
+            <button type="button" class="task-gif-navigation-button is-previous"
+              title="Предыдущий GIF" aria-label="Предыдущий GIF" disabled={!canNavigate(-1)}
+              onClick={() => controller.navigatePreview(-1)}>‹</button>
+            <button type="button" class="task-gif-navigation-button is-next"
+              title="Следующий GIF" aria-label="Следующий GIF" disabled={!canNavigate(1)}
+              onClick={() => controller.navigatePreview(1)}>›</button>
           </Show>
           <Show when={view().preview?.url} fallback={<p role={view().preview?.error ? "alert" : "status"}>
             {view().preview?.error || "Загрузка…"}

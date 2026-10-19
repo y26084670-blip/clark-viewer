@@ -308,12 +308,16 @@ test("fallback checks visible cell rectangles and preview dragging stays inside 
 });
 
 
-test("preview maximize restores its measured size and blocks dragging only while maximized",()=>{
+test("preview opens maximized, restores its size and reopens maximized",()=>{
   const ui=componentRuntime();ui.showPreview(ui.entry,{currentTarget:ui.refs.opener});
-  ui.toggleMaximized();assert.equal(ui.maximized(),true);
+  assert.equal(ui.maximized(),true);
   ui.startDrag({button:0,pointerId:1,target:{closest:()=>null},preventDefault(){}});
   assert.equal(ui.capture.size,0);
   ui.toggleMaximized();assert.equal(ui.maximized(),false);
+  assert.equal(ui.dialogSize(),null);assert.equal(ui.position(),null);
+  ui.toggleMaximized();assert.equal(ui.maximized(),true);
+  ui.toggleMaximized();assert.equal(ui.maximized(),false);
   assert.deepEqual(ui.dialogSize(),{width:300,height:200});assert.deepEqual(ui.position(),{left:50,top:60});
-  ui.toggleMaximized();ui.showPreview(ui.entry,{currentTarget:ui.refs.opener});assert.equal(ui.maximized(),false);ui.dispose();
+  ui.showPreview(ui.entry,{currentTarget:ui.refs.opener});assert.equal(ui.maximized(),true);
+  assert.equal(ui.dialogSize(),null);assert.equal(ui.position(),null);ui.dispose();
 });

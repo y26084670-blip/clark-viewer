@@ -66,12 +66,36 @@ export function pairPlotChannels(x, y) {
   return points;
 }
 
+const sameTime = (a, b) => Math.abs(a - b) <= 1e-12 * Math.max(Math.abs(a), Math.abs(b), 1e-12);
+export function plotPointAtStep(point, task, step) {
+  return sameTime(point.time, step * task.general.timeStep);
+}
+
+export function pairPlotChannelsByTime(x, y) {
+  const points = [];
+  let j = 0;
+  for (const a of x) {
+    while (j < y.length && y[j].time < a.time && !sameTime(a.time, y[j].time)) j++;
+    const b = y[j];
+    if (b && sameTime(a.time, b.time)) {
+      points.push({ x: a.value, y: b.value, step: a.step, sourceStep: b.step, time: a.time });
+    }
+  }
+  if (!points.length) throw new Error("У заданий нет общих сохранённых моментов времени");
+  return points;
+}
+
 export function plotChannelLabel(channel, spec = {}) {
   if (!channel) return "";
   const component = channel.components === 3 && !channel.productOffsets
     ? ` · ${spec.component === "norm" || spec.component == null ? "модуль" : "XYZ"[Number(spec.component)]}` : "";
   const point = channel.kind === "field" ? ` · точка ${spec.point ?? 1}` : "";
   return `${channel.label}${component}${point}${channel.unit ? `, ${channel.unit}` : ""}`;
+}
+
+export function plotCurveLabel(curve, axis) {
+  const label = plotChannelLabel(curve[`${axis}Channel`], curve[axis]);
+  return axis === "y" && curve.taskLabel ? `${curve.taskLabel} · ${label}` : label;
 }
 
 export function validatePlotCurve(curve, existing) {
@@ -96,18 +120,29 @@ export function validatePlotCurve(curve, existing) {
 // combined diagnostic to stop movie capture of an incomplete plot.
 export async function readPlotCurves(task, curves) {
   const cache = new Map();
-  const read = (channel, spec) => {
-    let entries = cache.get(channel);
-    if (!entries) cache.set(channel, entries = new Map());
+  const read = (sourceTask, channel, spec) => {
+    let channels = cache.get(sourceTask);
+    if (!channels) cache.set(sourceTask, channels = new Map());
+    let entries = channels.get(channel);
+    if (!entries) channels.set(channel, entries = new Map());
     const key = JSON.stringify(spec);
-    if (!entries.has(key)) entries.set(key, readPlotChannel(task, channel, spec));
+    if (!entries.has(key)) entries.set(key, readPlotChannel(sourceTask, channel, spec));
     return entries.get(key);
   };
   const results = await Promise.allSettled(curves.map(async curve => {
-    const [x, y] = await Promise.all([read(curve.xChannel, curve.x), read(curve.yChannel, curve.y)]);
-    const xLabel = plotChannelLabel(curve.xChannel, curve.x), yLabel = plotChannelLabel(curve.yChannel, curve.y);
-    return { key: curve.id, label: `${yLabel} / ${xLabel}`, points: pairPlotChannels(x, y),
-      tooltip: point => [`t = ${point.time} с; шаг ${point.step}`, `${xLabel}: ${point.x}`, `${yLabel}: ${point.y}`] };
+    const yTask = curve.yTask ?? task;
+    const crossTask = yTask !== task;
+    let points;
+    if (crossTask && curve.xChannel.kind === "time") {
+      const y = await read(yTask, curve.yChannel, curve.y);
+      points = y.map(p => ({ x: p.time, y: p.value, step: p.step, sourceStep: p.step, time: p.time }));
+    } else {
+      const [x, y] = await Promise.all([read(task, curve.xChannel, curve.x), read(yTask, curve.yChannel, curve.y)]);
+      points = crossTask ? pairPlotChannelsByTime(x, y) : pairPlotChannels(x, y);
+    }
+    const xLabel = plotCurveLabel(curve, "x"), yLabel = plotCurveLabel(curve, "y");
+    return { key: curve.id, label: `${yLabel} / ${xLabel}`, points,
+      tooltip: point => [`t = ${point.time} с; ${crossTask ? `шаг задания Y ${point.sourceStep}` : `шаг ${point.step}`}`, `${xLabel}: ${point.x}`, `${yLabel}: ${point.y}`] };
   }));
   return { series: results.filter(r => r.status === "fulfilled").map(r => r.value),
     error: results.flatMap((r, i) => r.status === "rejected" ? [`Кривая ${i + 1}: ${r.reason.message ?? r.reason}`] : []).join("; ") };

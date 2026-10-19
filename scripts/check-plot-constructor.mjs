@@ -1,10 +1,11 @@
 import { createServer } from "vite";
 import solid from "vite-plugin-solid";
-import { mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseGIF, decompressFrames } from "gifuct-js";
+import h5wasm from "h5wasm/node";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const fixture = path.join(root, "__plot_constructor_check__");
@@ -12,7 +13,7 @@ const output = process.env.CHECK_OUTPUT || "/tmp/clark-graphs-check";
 await mkdir(fixture, { recursive: true }); await mkdir(output, { recursive: true });
 await writeFile(path.join(fixture, "index.html"), '<!doctype html><html><head><meta charset="UTF-8"></head><body><div id="root"></div><script type="module" src="./fixture.jsx"></script></body></html>');
 await writeFile(path.join(fixture, "app.html"), '<!doctype html><html><head><meta charset="UTF-8"></head><body><div id="root"></div><script type="module" src="./app.jsx"></script></body></html>');
-await writeFile(path.join(fixture, "app.jsx"), `import {render} from 'solid-js/web';import App from '../src/App.jsx';import '../src/App.css';render(()=><App/>,document.getElementById('root'));`);
+await writeFile(path.join(fixture, "app.jsx"), `import {render} from 'solid-js/web';import App from '../src/App.jsx';import {Chart} from 'chart.js';import 'tabulator-tables/dist/css/tabulator_simple.min.css';import '../src/App.css';window.__appPlots=()=>Array.from(document.querySelectorAll('.constructor-plot canvas')).map(c=>Chart.getChart(c).data.datasets.filter(d=>d._seriesKey!=="marker").map(d=>({label:d.label,points:d.data})));render(()=><App/>,document.getElementById('root'));`);
 await writeFile(path.join(fixture, "fixture.jsx"), `
 import {render} from 'solid-js/web';import {createSignal,Show} from 'solid-js';import {Chart} from 'chart.js';
 import {PlotConstructor} from '../src/tabs/PlotConstructor.jsx';import '../src/App.css';
@@ -43,15 +44,104 @@ const passed = name => { checks.push(name); console.log(`PASS ${checks.length}: 
 try {
  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
  server = await createServer({ configFile:false, root, plugins:[solid()], server:{host:'127.0.0.1',port:0} }); await server.listen();
- browser = await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_EXECUTABLE||undefined,args:['--no-sandbox']});
+ browser = await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_EXECUTABLE||undefined,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
  page = await browser.newPage({viewport:{width:1440,height:950}}); page.on('pageerror',e=>errors.push(e.message));
  const base = 'http://127.0.0.1:'+server.httpServer.address().port+'/__plot_constructor_check__/';
+
+ await h5wasm.ready;
+ const binary={};
+ for(const [name,values] of Object.entries({A:[1,2,3],B:[10,20,30,40,50,60]})) {
+   const filename=path.join(fixture,name+'.h5'), file=new h5wasm.File(filename,'w'), header=file.create_group('HEADER');
+   for(const [key,value] of Object.entries({columns:3n,arrCount:2n,hasCoo:0n})) header.create_dataset({name:key,data:new BigInt64Array([value]),shape:[]});
+   for(const key of ['inds1','numbs']) header.create_dataset({name:key,data:new BigInt64Array()});
+   values.forEach((v,i)=>file.create_dataset({name:String(i).padStart(6,'0'),data:new Float64Array([v,0,0,0,0,0]),shape:[1,6]}));
+   file.close();binary[name]=Array.from(await readFile(filename));
+ }
+ await page.addInitScript(binary=>{
+   const file=(name,body)=>({kind:'file',name,async getFile(){return new File([body],name);},async createWritable(){return {async write(value){body=value;},async close(){}};}});
+   const dir=(name,children={})=>({kind:'directory',name,async *entries(){yield* Object.entries(children);},
+     async getDirectoryHandle(key){if(children[key]?.kind==='directory')return children[key];throw new DOMException('No directory','NotFoundError');},
+     async getFileHandle(key,options){if(children[key]?.kind==='file')return children[key];if(options?.create)return children[key]=file(key,'');throw new DOMException('No file','NotFoundError');},
+     async isSameEntry(other){return this===other;},async queryPermission(){return 'granted';},async requestPermission(){return 'granted';}});
+   const kv={name:'Элемент 1',targ:0,model:0,geoType:0,rv:1,geo:[0,0,0,1,0,0,0,1,0,1,1,0,0,0,1,1,0,1,0,1,1,1,1,1],dr:[1,1,1],dp:[1,1,1]};
+   const tk={name:'Область 1',geoType:0,geo:[0,0,2,1,0,2,0,1,2,1,1,2],dr:[1,1],dp:[1,1]};
+   const task=(name,key)=>dir(name,{'input3XX':dir('input3XX',{
+     'general.txt':file('general.txt',JSON.stringify({countTimeSteps:key==='A'?2:5,timeStep:key==='A'?.5:.25})),
+     'kvs.txt':file('kvs.txt',JSON.stringify(kv)+'\n'+JSON.stringify({...kv,name:'Элемент 2'})),
+     'tks.txt':file('tks.txt',JSON.stringify(tk))}),
+     'output3XX':dir('output3XX',{'FM.h5':file('FM.h5',new Uint8Array(binary[key]))})});
+   window.__root=dir('Compare',{'Project 1':dir('Project 1',{'A':task('A','A'),'Variant':task('Variant','A')}),
+     'Project 2':dir('Project 2',{'Variant':task('Variant','B'),'Broken':dir('Broken')})});
+   window.__otherRoot=dir('Other',{'Project 3':dir('Project 3',{'Only':task('Only','B')})});
+   window.showDirectoryPicker=async()=>window.__root;
+ },binary);
  await page.goto(base+'app.html');
  const tabs = page.locator('nav[aria-label="Вкладки просмотра"] > button:not([aria-haspopup])');
  assert.deepEqual(await tabs.allTextContents(), ['Выбор задания','Источники / Поле 3D','Рабочие точки','Поле на линиях','Поле в областях','Графики']);
  await page.keyboard.press('Control+a'); assert.equal(await page.evaluate(()=>String(window.getSelection())), '');
  const cancelled = await page.evaluate(()=>!document.querySelector('header').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true})));
  assert.equal(cancelled,true); passed('Actual App has six tabs and suppresses native page selection/context menu');
+
+ await page.getByRole('button',{name:'Выбрать каталог с проектами',exact:true}).click();
+ await page.getByRole('combobox',{name:'Список проектов'}).selectOption('Project 1');
+ await page.locator('.task-status-row').filter({hasText:/^A$/}).dblclick();
+ const objects=page.locator('.object-list');
+ await page.waitForFunction(()=>document.querySelectorAll('.object-list .tabulator-row').length===3);
+ assert.equal(await objects.locator('.tabulator-selected').count(),0);
+ await objects.nth(0).locator('.tabulator-row').first().click();
+ await objects.nth(1).locator('.tabulator-row').first().click();
+ assert.equal(await objects.locator('.tabulator-selected').count(),2);
+ await tabs.filter({hasText:'Графики'}).click();
+ await tabs.filter({hasText:'Источники / Поле 3D'}).click();
+ await page.waitForFunction(()=>document.querySelectorAll('.object-list .tabulator-selected').length===2);
+ passed('Actual App starts with no selected elements/regions and preserves manual selection across tabs');
+ await tabs.filter({hasText:'Графики'}).click();
+ const ay=page.locator('fieldset').nth(1), appAdd=page.getByRole('button',{name:'Добавить график',exact:true}), appCurve=page.getByRole('button',{name:'Добавить кривую',exact:true});
+ assert.equal(await ay.getByLabel('Источник данных').inputValue(),'current');
+ await appAdd.click();
+ await page.waitForFunction(()=>window.__appPlots()[0]?.length===1);
+ assert.deepEqual((await page.evaluate(()=>window.__appPlots()))[0][0].points.map(p=>p.y),[1,2,3]);
+ await ay.getByLabel('Источник данных').selectOption('other');
+ const taskSelect=ay.getByLabel('Задание',{exact:true});
+ await taskSelect.locator('option[value="Project 2/Variant"]').waitFor({state:'attached'});
+ assert.deepEqual(await taskSelect.locator('option').allTextContents(),['Выберите задание','Project 1/A','Project 1/Variant','Project 2/Broken','Project 2/Variant']);
+ assert.equal(await appAdd.isDisabled(),true);
+ await taskSelect.selectOption('Project 2/Variant');
+ await page.waitForFunction(()=>!document.querySelector('.constructor-actions button').disabled);
+ await appCurve.click();
+ await page.waitForFunction(()=>window.__appPlots()[0]?.length===2);
+ const compared=(await page.evaluate(()=>window.__appPlots()))[0];
+ assert.deepEqual(compared[1].points.map(p=>[p.x,p.y]),[[0,10],[.25,20],[.5,30],[.75,40],[1,50],[1.25,60]]);
+ assert.match(compared[0].label,/Project 1\/A/);assert.match(compared[1].label,/Project 2\/Variant/);
+ assert.match(await page.locator('.task-path').innerText(),/Project 1\/A/);
+ passed('Real HDF5 workers load Y from a flat cross-project list and preserve its independent time grid');
+ await taskSelect.selectOption('Project 2/Broken');
+ await page.locator('.constructor-error').filter({hasText:'No directory'}).waitFor();
+ assert.equal(await appCurve.isDisabled(),true);
+ assert.deepEqual((await page.evaluate(()=>window.__appPlots()))[0],compared);
+ await ay.getByLabel('Источник данных').selectOption('current');
+ await tabs.filter({hasText:'Источники / Поле 3D'}).click();
+ await tabs.filter({hasText:'Графики'}).click();
+ await page.waitForFunction(()=>window.__appPlots()[0]?.length===2);
+ assert.deepEqual((await page.evaluate(()=>window.__appPlots()))[0],compared);
+ passed('Failed task selection leaves curves intact; comparison readers survive tab changes');
+ await page.screenshot({path:path.join(output,'comparison.png'),fullPage:true});
+ await tabs.filter({hasText:'Выбор задания'}).click();
+ await page.evaluate(()=>{window.__root=window.__otherRoot;});
+ await page.getByRole('button',{name:'Выбрать каталог с проектами',exact:true}).click();
+ await tabs.filter({hasText:'Графики'}).click();
+ await ay.getByLabel('Источник данных').selectOption('other');
+ await taskSelect.locator('option[value="Project 3/Only"]').waitFor({state:'attached'});
+ assert.deepEqual(await taskSelect.locator('option').allTextContents(),['Выберите задание','Project 3/Only']);
+ await tabs.filter({hasText:'Выбор задания'}).click();
+ await page.getByRole('combobox',{name:'Список проектов'}).selectOption('Project 3');
+ await page.locator('.task-status-row').filter({hasText:'Only'}).dblclick();
+ await page.waitForFunction(()=>document.querySelectorAll('.object-list .tabulator-row').length===3);
+ assert.equal(await objects.locator('.tabulator-selected').count(),0);
+ await tabs.filter({hasText:'Графики'}).click();
+ assert.equal(await page.locator('.constructor-plot').count(),0);
+ assert.equal(await ay.getByLabel('Источник данных').inputValue(),'current');
+ passed('Changing base directory refreshes comparison list; opening another task resets selections and plots');
  await page.goto(base+'index.html');
  const snap = () => page.evaluate(()=>window.__graphs.snapshot());
  const waitSeries = (plot, count) => page.waitForFunction(({plot,count})=>window.__graphs.snapshot().plots[plot]?.series.length===count,{plot,count});

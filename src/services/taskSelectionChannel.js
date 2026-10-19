@@ -51,7 +51,8 @@ export async function readTaskSelection(root, request, { isCurrent = () => true 
 
 // Identical in Editor and Viewer; acknowledgements never trigger another request.
 export function createTaskSelectionChannel({ app, onSelection,
-  BroadcastChannelClass = globalThis.BroadcastChannel, timeoutMs = 15000 } = {}) {
+  BroadcastChannelClass = globalThis.BroadcastChannel, timeoutMs = 15000,
+  focusWindow = () => globalThis.window?.focus() } = {}) {
   if (!["editor", "viewer"].includes(app)) throw new Error("Неизвестное приложение.");
   const pending = new Map();
   const instanceId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -83,6 +84,9 @@ export function createTaskSelectionChannel({ app, onSelection,
       if (alreadyReceiving) throw new Error("Дождитесь завершения предыдущего перехода.");
       receiving = true;
       await onSelection(message);
+      // Best effort: browser policy may keep an independently opened tab behind.
+      // Selection has succeeded even if raising the tab is blocked.
+      if (!disposed) { try { focusWindow(); } catch { /* Keep the successful selection. */ } }
     } catch (failure) { error = failure?.message || String(failure); }
     finally { if (!alreadyReceiving) receiving = false; }
     if (disposed) return;

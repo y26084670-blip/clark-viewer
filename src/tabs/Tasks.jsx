@@ -185,7 +185,7 @@ export function Tasks(props) {
         <button type="button" class="task-cross-open-button"
           disabled={!candidate() || !selectionChannel.supported || props.busy || browserBusy() || selectionSending()}
           aria-busy={selectionSending()}
-          title="Выбрать проект и выделить это задание в открытом Editor с тем же базовым каталогом"
+          title="Выделить задание и перейти на вкладку открытого Editor с тем же базовым каталогом; браузер может ограничить переключение"
           onClick={showInEditor}>Выбрать в Editor</button>
         </div>
         <Show when={props.loadedHandle === candidate()?.handle && props.loadedHandle}><div class="loaded-note">✓ Задание загружено</div></Show>

@@ -82,14 +82,17 @@ test("invalid names never traverse outside the expected project/task levels", as
 });
 
 test("both directions receive and acknowledge exactly once without echo requests", async () => {
-  const transport = bus(), received = [], { root } = fixture();
+  const transport = bus(), received = [], focused = [], { root } = fixture();
   const editor = createTaskSelectionChannel({ app: "editor", BroadcastChannelClass: transport.Channel,
-    onSelection: async request => { received.push("editor"); await readTaskSelection(root, request); } });
+    onSelection: async request => { received.push("editor"); await readTaskSelection(root, request); },
+    focusWindow() { assert.equal(received.at(-1), "editor"); focused.push("editor"); } });
   const viewer = createTaskSelectionChannel({ app: "viewer", BroadcastChannelClass: transport.Channel,
-    onSelection: async request => { received.push("viewer"); await readTaskSelection(root, request); } });
+    onSelection: async request => { received.push("viewer"); await readTaskSelection(root, request); },
+    focusWindow() { assert.equal(received.at(-1), "viewer"); focused.push("viewer"); } });
   try {
     await editor.select(selection(root)); await viewer.select(selection(root));
     assert.deepEqual(received, ["viewer", "editor"]);
+    assert.deepEqual(focused, ["viewer", "editor"]);
     assert.deepEqual(transport.messages.map(item => item.type), ["select-task", "selection-result", "select-task", "selection-result"]);
     assert.notEqual(transport.messages[0].requestId, transport.messages[2].requestId);
   } finally { editor.dispose(); viewer.dispose(); }
@@ -97,10 +100,11 @@ test("both directions receive and acknowledge exactly once without echo requests
 
 test("receiver failures reach the sender", async () => {
   const transport = bus(), { root } = fixture();
+  let focused = false;
   const editor = createTaskSelectionChannel({ app: "editor", BroadcastChannelClass: transport.Channel });
   const viewer = createTaskSelectionChannel({ app: "viewer", BroadcastChannelClass: transport.Channel,
-    onSelection() { throw new Error("Viewer занят"); } });
-  try { await assert.rejects(editor.select(selection(root)), /Viewer занят/u); }
+    onSelection() { throw new Error("Viewer занят"); }, focusWindow() { focused = true; } });
+  try { await assert.rejects(editor.select(selection(root)), /Viewer занят/u); assert.equal(focused, false); }
   finally { editor.dispose(); viewer.dispose(); }
 });
 
@@ -150,4 +154,27 @@ test("unsupported channels and cloning failures report errors without leaving ti
   class BrokenChannel { postMessage() { throw new DOMException("Cannot clone", "DataCloneError"); } close() {} }
   const broken = createTaskSelectionChannel({ app: "viewer", BroadcastChannelClass: BrokenChannel });
   await assert.rejects(broken.select(selection(root)), /передать команду.*Cannot clone/u); broken.dispose();
+});
+
+
+test("blocked window focus does not fail or repeat a successful selection", async () => {
+  const transport = bus(), { root } = fixture(); let selected = 0, focused = 0;
+  const editor = createTaskSelectionChannel({ app: "editor", BroadcastChannelClass: transport.Channel });
+  const viewer = createTaskSelectionChannel({ app: "viewer", BroadcastChannelClass: transport.Channel,
+    async onSelection(request) { await readTaskSelection(root, request); selected++; },
+    focusWindow() { focused++; throw new DOMException("Blocked", "NotAllowedError"); } });
+  try {
+    await editor.select(selection(root));
+    assert.equal(selected, 1); assert.equal(focused, 1);
+    assert.equal(transport.messages.at(-1).ok, true);
+  } finally { editor.dispose(); viewer.dispose(); }
+});
+
+test("a receiver disposed during selection cannot raise a stale tab", async () => {
+  const transport = bus(), { root } = fixture(); let focused = 0;
+  const editor = createTaskSelectionChannel({ app: "editor", BroadcastChannelClass: transport.Channel, timeoutMs: 5 });
+  const viewer = createTaskSelectionChannel({ app: "viewer", BroadcastChannelClass: transport.Channel,
+    onSelection() { viewer.dispose(); }, focusWindow() { focused++; } });
+  try { await assert.rejects(editor.select(selection(root)), /Viewer не ответил/u); assert.equal(focused, 0); }
+  finally { editor.dispose(); viewer.dispose(); }
 });

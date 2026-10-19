@@ -1,5 +1,5 @@
 export const MIN_VIEWPORT_WIDTH = 1100;
-export const MIN_VIEWPORT_HEIGHT = 800;
+export const MIN_VIEWPORT_HEIGHT = 600;
 
 export function isViewportUsable(width, height) {
   return width >= MIN_VIEWPORT_WIDTH && height >= MIN_VIEWPORT_HEIGHT;

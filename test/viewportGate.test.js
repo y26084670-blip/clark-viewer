@@ -59,9 +59,9 @@ function fixture(width = 1200, height = 800) {
 const flush = () => new Promise(resolve => queueMicrotask(resolve));
 
 test("both viewport dimensions must meet the inclusive minimum", () => {
-  assert.equal(isViewportUsable(1100, 800), true);
+  assert.equal(isViewportUsable(1100, 600), true);
   assert.equal(isViewportUsable(1099, 1000), false);
-  assert.equal(isViewportUsable(1600, 799), false);
+  assert.equal(isViewportUsable(1600, 599), false);
   assert.equal(isViewportUsable(390, 844), false);
 });
 
@@ -99,15 +99,15 @@ test("repeated shrink/enlarge preserves mounted data and restores focus and keyb
     },
   });
   t.after(dispose);
-  f.resize(1100, 800);
+  f.resize(1100, 600);
   await flush();
   for (let cycle = 0; cycle < 3; cycle++) {
-    f.resize(1100, 799);
+    f.resize(1100, 599);
     assert.equal(f.gate.open, true);
     assert.equal(f.root.inert, true);
     f.window.dispatchEvent(new Event("keydown"));
     assert.equal(keyEvents, cycle);
-    f.resize(1200, 800);
+    f.resize(1200, 600);
     assert.equal(f.gate.open, false);
     assert.equal(f.root.inert, false);
     assert.equal(f.root.getAttribute("aria-hidden"), null);
@@ -131,7 +131,7 @@ test("shrinking during import defers mounting until the window becomes large eno
   await flush();
   assert.equal(mounts, 0);
   assert.equal(f.gate.open, true);
-  f.resize(1100, 800);
+  f.resize(1100, 600);
   assert.equal(mounts, 1);
   assert.equal(f.gate.open, false);
 });

@@ -1,6 +1,11 @@
-import { render } from "solid-js/web";
-import App from "./App.jsx";
-import "tabulator-tables/dist/css/tabulator_simple.min.css";
-import "./App.css";
+import { installViewportGate } from "./viewportGate.js";
+import "./viewportGate.css";
 
-render(() => <App />, document.getElementById("root"));
+const root = document.getElementById("root");
+const dispose = installViewportGate({
+  root,
+  applicationName: "E3D Viewer",
+  load: () => import("./startApp.jsx").then(({ startApp }) => () => startApp(root)),
+});
+
+if (import.meta.hot) import.meta.hot.dispose(dispose);

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createTaskStatusMonitor } from "../src/services/taskStatusMonitor.js";
 
-const status = (hasSolution = false) => ({ hasSolution, missingInput: false, hasGifs: false, hasComparison: false, errors: {} });
+const status = (hasSolution = false) => ({ hasSolution, missingInput: false, hasGifs: false, hasComparison: false, omState: "none", errors: {} });
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { resolve, promise }; };
 const turn = () => new Promise(resolve => setImmediate(resolve));
 function fixture(read, concurrency = 6) {
@@ -134,4 +134,19 @@ test("dispose aborts pending checks and prevents late publication", async () => 
   gate.resolve(); await f.monitor.refresh(); await turn();
   assert.equal(reads, 1); assert.equal(f.published.length, 0);
   assert.deepEqual(f.busy, [true, false]);
+});
+
+
+test("OM-only changes publish even when the solution flag is unchanged", async () => {
+  let value = { ...status(true), omState: "none" };
+  const f = fixture(async () => value);
+  try {
+    f.monitor.setSource([{ key: "task" }]); await f.monitor.refresh();
+    for (const omState of ["active", "disabled", "none"]) {
+      value = { ...value, omState }; await f.monitor.refresh();
+      assert.equal(f.published.at(-1).get("task").omState, omState);
+      assert.equal(f.published.at(-1).get("task").hasSolution, true);
+    }
+    assert.equal(f.published.length, 4);
+  } finally { f.monitor.dispose(); }
 });

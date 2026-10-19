@@ -1,6 +1,6 @@
 // These are existence checks only: no task contents, writes or permission prompts.
 export const EMPTY_TASK_STATUS = Object.freeze({
-  hasSolution: null, missingInput: null, hasGifs: null, hasComparison: null,
+  hasSolution: null, missingInput: null, hasGifs: null, hasComparison: null, omState: null,
   errors: Object.freeze({}),
 });
 
@@ -11,7 +11,7 @@ function checkAbort(signal) {
 export function unavailableTaskStatus(error) {
   const message = error?.message || "Не удалось проверить каталог задания";
   return { ...EMPTY_TASK_STATUS, errors: Object.fromEntries(
-    ["hasSolution", "missingInput", "hasGifs", "hasComparison"].map(key => [key, message]),
+    ["hasSolution", "missingInput", "hasGifs", "hasComparison", "omState"].map(key => [key, message]),
   ) };
 }
 
@@ -42,13 +42,25 @@ export async function readTaskStatus(taskHandle, { signal } = {}) {
     probe(output.handle, "_summary_out.txt", "file", signal),
     probe(output.handle, "demo", "directory", signal),
   ]) : [output, output];
+  const [activeOM, disabledOM] = input.exists === true ? await Promise.all([
+    probe(input.handle, "om-client.json", "file", signal),
+    probe(input.handle, "_om-client.json", "file", signal),
+  ]) : [input, input];
+  const omState = activeOM.exists === true ? "active" : activeOM.exists === null ? null
+    : disabledOM.exists === true ? "disabled" : disabledOM.exists === null ? null : "none";
   checkAbort(signal);
   const errors = {};
+  const omError = activeOM.error || disabledOM.error;
+  if (omError) errors.omState = omError;
+  if (activeOM.exists === true && disabledOM.exists === true) {
+    errors.omState = "Одновременно найдены om-client.json и _om-client.json. Активный селектор существует; устраните конфликт файлов.";
+  }
   for (const [key, result] of [["missingInput", input], ["hasSolution", summary],
     ["hasGifs", demo], ["hasComparison", comparison]]) {
     if (result.error) errors[key] = result.error;
   }
   return {
+    omState,
     hasSolution: summary.exists,
     missingInput: input.exists === null ? null : !input.exists,
     hasGifs: demo.exists,
@@ -68,7 +80,7 @@ export async function readTaskStatusEntry(entry, { signal } = {}) {
     const result = await probe(handle, part, "directory", signal);
     if (result.exists === null) return unavailableTaskStatus(new Error(result.error));
     if (!result.exists) return {
-      hasSolution: false, missingInput: true, hasGifs: false, hasComparison: false, errors: {},
+      hasSolution: false, missingInput: true, hasGifs: false, hasComparison: false, omState: "none", errors: {},
     };
     handle = result.handle;
   }

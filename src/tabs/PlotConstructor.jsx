@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { LineChart } from "../components/LineChart.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
-import { plotChannels, plotChannelLabel, plotCurveLabel, plotPointAtStep, readPlotCurves, validatePlotCurve } from "../services/results/plotConstructor.js";
+import { plotChannels, plotChannelLabel, plotCurveLabel, plotPointAtStep, readPlotCurves, validatePlotCurve, expandPlotComponents, isSingleTimePlot, singleTimePlotRow } from "../services/results/plotConstructor.js";
 import { listPlotTasks } from "../services/results/plotTaskSources.js";
 import { loadLatestOMChannels, readChannelSource } from "../services/results/omResultChannels.js";
 import { useAsyncResult } from "../services/results/resultRequests.js";
@@ -13,8 +13,8 @@ export function PlotConstructor(props) {
   const [adding, setAdding] = createSignal(false);
   const [sourceError, setSourceError] = createSignal("");
   const [localActive, setLocalActive] = createSignal(null);
-  const [x, setX] = createSignal({ key: "time", point: 1, component: "norm" });
-  const [y, setY] = createSignal({ key: "", point: 1, component: "norm" });
+  const [x, setX] = createSignal({ key: "time", point: 1 });
+  const [y, setY] = createSignal({ key: "", point: 1 });
   const [taskMode, setTaskMode] = createSignal("current");
   let sourceDialog, sourceButton, disposed = false;
   const sources = () => props.plotSources ?? [];
@@ -34,7 +34,7 @@ export function PlotConstructor(props) {
   createEffect(() => {
     const available = yChannels();
     if (available.length && !available.some(c => c.key === y().key)) {
-      setY({ key: available[1]?.key ?? available[0].key, point: 1, component: "norm" });
+      setY({ key: available[1]?.key ?? available[0].key, point: 1 });
     }
   });
   createEffect(() => {
@@ -96,10 +96,11 @@ export function PlotConstructor(props) {
         xChannel: byKey(x().key), yChannel: byKey(y().key, "y"),
         yTask: taskMode() === "other" ? selectedTask() : undefined,
         taskLabel: taskMode() === "other" ? props.plotTaskSource.entry.label : props.task.plotLabel || props.task.name }, target?.curves[0]);
-      if (target) props.setPlotRecipes(recipes().map(r => r.id === target.id ? { ...r, curves: [...r.curves, curve] } : r));
+      const curves = expandPlotComponents(curve);
+      if (target) props.setPlotRecipes(recipes().map(r => r.id === target.id ? { ...r, curves: [...r.curves, ...curves] } : r));
       else {
         const id = crypto.randomUUID();
-        props.setPlotRecipes([...recipes(), { id, curves: [curve] }]);
+        props.setPlotRecipes([...recipes(), { id, curves }]);
         setActiveId(id);
       }
     } catch (e) { setError(e.message); }
@@ -138,11 +139,7 @@ export function PlotConstructor(props) {
           title="Порядковый номер сохранённой точки в файле результата, начиная с 1; это не номер элемента или области"
           onInput={e => p.set({ ...spec(), point: e.currentTarget.value })} /> из {c()?.points}
       </label></Show>
-      <Show when={c()?.components === 3 && !c()?.productOffsets}><label>Компонента
-        <select value={spec().component} title="Модуль вектора или одна из знаковых компонент X, Y, Z"
-          onChange={e => p.set({ ...spec(), component: e.currentTarget.value })}>
-          <option value="norm">Модуль</option><option value="0">X</option><option value="1">Y</option><option value="2">Z</option>
-        </select></label></Show>
+
     </fieldset>;
   }
   function Plot(p) {
@@ -164,6 +161,8 @@ export function PlotConstructor(props) {
       return (displayed()?.series ?? []).filter(item => ids.has(item.key));
     });
     const failure = () => data.error() || data.value()?.error || "";
+    const singleTime = createMemo(() => isSingleTimePlot(props.task, recipe().curves));
+    const valueRow = createMemo(() => !data.loading() && !failure() ? singleTimePlotRow(series()) : null);
     const frameKey = createMemo(() => ({ frame: data.state().frame, time: props.time }));
     const axisLabel = axis => {
       const labels = [...new Set(recipe().curves.map(curve => plotChannelLabel(curve[`${axis}Channel`], curve[axis])))];
@@ -183,10 +182,11 @@ export function PlotConstructor(props) {
       createEffect(() => movie.onCaptureReady(renderer()));
       return null;
     }
-    return <section class="plot-panel constructor-plot" classList={{ "constructor-plot-active": activeId() === p.id }}
+    return <section class="plot-panel constructor-plot" classList={{ "constructor-plot-active": activeId() === p.id, "constructor-value-panel": singleTime() }}
       tabIndex="0" aria-label={`График ${number()}${activeId() === p.id ? ", активный" : ""}`}
       onPointerDown={() => !props.movieBusy && setActiveId(p.id)} onFocusIn={() => !props.movieBusy && setActiveId(p.id)}>
-      <Show when={activeId() === p.id}><ActiveMovie /></Show>
+      <Show when={activeId() === p.id && !singleTime()}><ActiveMovie /></Show>
+      <Show when={singleTime()} fallback={
       <LineChart series={series()} autoScaleToggle={true} legendMode="overlay"
         marker={{ points: series().flatMap(item => item.points.filter(point => plotPointAtStep(point, props.task, props.time))) }}
         captureFrameKey={frameKey()} onCaptureReady={target => setRenderer(() => target)} captureError={failure()}
@@ -196,6 +196,18 @@ export function PlotConstructor(props) {
         toolbar={<strong title="Щёлкните по графику, чтобы добавлять кривые в него и записывать его в GIF">График {number()}{activeId() === p.id ? " · активный" : ""}</strong>}
         toolbarEnd={<button type="button" title="Удалить этот график со всеми его кривыми; файлы результатов сохраняются"
           onClick={() => !props.movieBusy && props.setPlotRecipes(recipes().filter(r => r.id !== p.id))}>Удалить график</button>} />
+      }>
+        <div class="constructor-value-toolbar"><strong>Значения {number()}{activeId() === p.id ? " · активные" : ""}</strong>
+          <button type="button" onClick={() => !props.movieBusy && props.setPlotRecipes(recipes().filter(r => r.id !== p.id))}>Удалить таблицу</button>
+        </div>
+        <Show when={valueRow()} fallback={<p role="status">{data.loading() ? "Чтение результатов…" : failure() || "Нет значений для единственного момента времени"}</p>}>
+          {row => <div class="constructor-value-scroll"><table class="constructor-values" aria-label="Значения в единственный момент времени">
+            <thead><tr><th scope="col">Время, с</th><For each={recipe().curves}>{curve => <th scope="col">{plotChannelLabel(curve.yChannel, curve.y)}</th>}</For></tr></thead>
+            <tbody><tr><td>{row().time}</td><For each={row().values}>{value => <td>{value}</td>}</For></tr></tbody>
+            <tfoot><tr><td colSpan={row().values.length + 1}>Комментарий: {row().comment}</td></tr></tfoot>
+          </table></div>}
+        </Show>
+      </Show>
       <details class="constructor-curves"><summary title="Посмотреть состав графика или удалить отдельную кривую">Кривые: {recipe().curves.length}</summary>
         <For each={recipe().curves}>{(curve, index) => <div><span>{index() + 1}. {plotCurveLabel(curve, "y")} / {plotCurveLabel(curve, "x")}</span>
           <button type="button" title="Удалить эту кривую; удаление последней кривой закрывает график"
@@ -219,7 +231,7 @@ export function PlotConstructor(props) {
     <Show when={taskSourceError()}><p class="constructor-error" role="alert">{taskSourceError()}</p></Show>
     <For each={taskMode() === "other" ? (selectedTask()?.plotSources ?? []).filter(s => s.warning) : []}>{s => <p role="status">{s.warning}</p>}</For>
     <For each={allSources().filter(s => s.warning)}>{s => <p role="status">{s.warning}</p>}</For>
-    <p class="constructor-hint">Щелчок по графику выбирает его для добавления кривых и записи GIF. X берётся из текущего задания; при X = «Время» используется временная сетка задания Y. Остальные величины разных заданий сопоставляются по совпадающим моментам времени, без интерполяции.</p>
+    <p class="constructor-hint">Векторные величины выводятся компонентами X, Y, Z; их видимость переключается в легенде. При нуле интервалов времени выводится строка значений с комментарием. Щелчок по графику выбирает его для добавления кривых и записи GIF. X берётся из текущего задания; при X = «Время» используется временная сетка задания Y. Остальные величины разных заданий сопоставляются по совпадающим моментам времени, без интерполяции.</p>
     <div class="constructor-plots"><For each={recipes().map(recipe => recipe.id)} fallback={<p>Выберите величины для осей и добавьте график.</p>}>{id => <Plot id={id} />}</For></div>
     <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
     <dialog ref={sourceDialog} class="constructor-source-dialog" aria-label="Добавление параметров ОМ"

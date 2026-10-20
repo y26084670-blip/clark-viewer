@@ -31,7 +31,7 @@ function Fixture(){
  const [currentTask,setCurrentTask]=createSignal(task);
  const [time,setTime]=createSignal(1),[busy,setBusy]=createSignal(false),[shown,setShown]=createSignal(true);
  const controller=createMovieExportController({createEncoder:createMovieGifEncoder});
- window.__graphs={setShown,singleTime(){setPlotRecipes([]);setTime(0);setCurrentTask({...task,name:'Единственный момент',general:{countTimeSteps:0,timeStep:.5},metadata:{MH:{...task.metadata.MH,steps:[{index:0}]}},reader:{history:async()=>({steps:[0],stride:9,values:Float64Array.from([0,0,0,3,4,0,0,0,0])})}});},visible(plot,index,value){const chart=Chart.getChart(document.querySelectorAll('.constructor-plot canvas')[plot]);chart.setDatasetVisibility(index,value);chart.update('none');},snapshot:()=>({time:time(),active:active(),recipes:recipes().map(r=>({id:r.id,count:r.curves.length})),plots:Array.from(document.querySelectorAll('.constructor-plot canvas')).map(c=>{const chart=Chart.getChart(c);return {id:chart.id,visible:chart.data.datasets.map((d,i)=>chart.isDatasetVisible(i)),series:chart.data.datasets.filter(d=>d._seriesKey!=="marker").map(d=>d.data),range:{xmin:chart.scales.x.min,xmax:chart.scales.x.max,ymin:chart.scales.y.min,ymax:chart.scales.y.max}}})}),
+ window.__graphs={setShown,singleTime(){setPlotRecipes([]);setTime(0);setCurrentTask({...task,name:'Единственный момент',general:{countTimeSteps:0,timeStep:.5},metadata:{MH:{...task.metadata.MH,steps:[{index:0}]}},reader:{history:async()=>({steps:[0],stride:9,values:Float64Array.from([0,0,0,3,4,0,0,0,0])})}});},visible(plot,index,value){const chart=Chart.getChart(document.querySelectorAll('.constructor-plot canvas')[plot]);chart.setDatasetVisibility(index,value);chart.update('none');},snapshot:()=>({time:time(),active:active(),recipes:recipes().map(r=>({id:r.id,count:r.curves.length})),plots:Array.from(document.querySelectorAll('.constructor-plot canvas')).map(c=>{const chart=Chart.getChart(c);return {id:chart.id,area:{...chart.chartArea},width:chart.width,height:chart.height,visible:chart.data.datasets.map((d,i)=>chart.isDatasetVisible(i)),series:chart.data.datasets.filter(d=>d._seriesKey!=="marker").map(d=>d.data),range:{xmin:chart.scales.x.min,xmax:chart.scales.x.max,ymin:chart.scales.y.min,ymax:chart.scales.y.max}}})}),
  async movie(){setBusy(true);try{const r=await controller.run({intervalMs:100});return {...r,bytes:Array.from(new Uint8Array(await r.blob.arrayBuffer()))};}finally{setBusy(false);}}};
  return <div class="app-container"><h1>Графики</h1><input aria-label="Проверка локального выделения" value="Локальный текст"/>
  <main class="tabs-body" inert={busy()}><Show when={shown()}><PlotConstructor task={currentTask()} time={time()} setTime={setTime} setMovieTime={setTime} movieBusy={busy()} registerMovieAdapter={controller.register}
@@ -246,6 +246,47 @@ try {
  assert.equal((await snap()).active,(await snap()).recipes[1].id);
  assert.equal(await page.locator('.constructor-actions button:not([title])').count(),0);
  passed('Recipe/source/active state survives tab remount; deleting an active plot selects a remaining plot');
+ const legendGraph=graphs.nth(0), legendCanvas=legendGraph.locator('canvas');
+ const beforeLegend=(await snap()).plots[0];
+ const checkbox=legendGraph.getByLabel('Показать легенду');
+ await checkbox.uncheck();
+ assert.deepEqual((await snap()).plots[0].area,beforeLegend.area);
+ await checkbox.check();
+ assert.deepEqual((await snap()).plots[0].area,beforeLegend.area);
+ // First legend square is at right minus measured text width; canvas draws a white overlay.
+ const legendSquare=()=>legendCanvas.evaluate(c=>{
+   const ctx=c.getContext('2d');const image=ctx.getImageData(0,0,c.width,c.height);
+   for(let y=0;y<c.height;y++)for(let x=0;x<c.width;x++){
+     const i=(y*c.width+x)*4;
+     if([0,5,5*c.width,5*c.width+5].every(offset=>image.data[i+offset*4]===23&&image.data[i+offset*4+1]===118&&image.data[i+offset*4+2]===189)){
+       const r=c.getBoundingClientRect();return {x:r.left+(x+5)*r.width/c.width,y:r.top+(y+5)*r.height/c.height};
+     }
+   }
+ });
+ const legendStart=await legendSquare();
+ assert.ok(legendStart);
+ await page.mouse.move(legendStart.x,legendStart.y);await page.mouse.down();
+ await page.mouse.move(legendStart.x-60,legendStart.y+55,{steps:8});await page.mouse.up();
+ assert.deepEqual((await snap()).plots[0].visible,beforeLegend.visible);
+ const moved=await legendSquare();
+ assert.ok(Math.hypot(moved.x-legendStart.x,moved.y-legendStart.y)>10);
+ await page.mouse.click(moved.x,moved.y);
+ assert.equal((await snap()).plots[0].visible[0],!beforeLegend.visible[0]);
+ passed('Legend checkbox does not shrink plot; dragging moves its hit boxes without toggling curves');
+ const beforeExpand=(await snap()).plots[0];
+ await legendGraph.getByRole('button',{name:'Развернуть',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('.constructor-plot:modal')?.getBoundingClientRect().width>800);
+ assert.equal((await snap()).plots[0].id,beforeExpand.id);
+ assert.deepEqual((await snap()).plots[0].visible,beforeExpand.visible);
+ assert.deepEqual((await snap()).plots[0].range,beforeExpand.range);
+ await page.screenshot({path:path.join(output,'expanded-plot.png'),fullPage:true});
+ await page.keyboard.press('Escape');
+ assert.equal(await page.locator('.constructor-plot:modal').count(),0);
+ assert.equal((await snap()).plots[0].id,beforeExpand.id);
+ await legendGraph.getByRole('button',{name:'Развернуть',exact:true}).click();
+ await legendGraph.getByRole('button',{name:'Свернуть',exact:true}).click();
+ assert.equal(await page.locator('.constructor-plot:modal').count(),0);
+ passed('Modal expansion fills panel; button and Escape restore same Chart, visibility and manual limits');
  assert.equal(await page.getByLabel('Компонента',{exact:true}).count(),0);
  await page.evaluate(()=>window.__graphs.singleTime());
  await x.getByLabel('Величина').selectOption('time');
@@ -253,18 +294,20 @@ try {
  await add.click();
  const table=page.getByRole('table',{name:'Значения в единственный момент времени'});
  await table.waitFor();
- assert.deepEqual(await table.locator('tbody td').allTextContents(),['0','3','4','0']);
+ assert.deepEqual(await table.locator('tbody td').allTextContents(),['3','4','0','1','Единственный момент']);
  assert.equal(await graphs.locator('canvas').count(),0);
- const comment=await table.locator('tfoot').innerText();
- for(const component of ['X','Y','Z'])assert.ok(comment.includes(' · '+component+' · точка 1'));
- assert.ok(comment.includes('Единственный момент'));assert.ok(!comment.includes('модуль'));
- await curve.click();await page.waitForFunction(()=>document.querySelectorAll('.constructor-values tbody td').length===7);
+ const headers=await table.locator('thead').innerText();
+ for(const component of ['X','Y','Z'])assert.ok(headers.includes(' · '+component));
+ assert.ok(!headers.includes('Время'));assert.ok(!headers.includes('модуль'));
+ await curve.click();await page.waitForFunction(()=>document.querySelectorAll('.constructor-values tbody tr').length===2);
+ assert.deepEqual(await table.locator('tbody tr').nth(1).locator('td').allTextContents(),['3','4','0','1','Единственный момент']);
  await graphs.locator('summary').click();
  await graphs.getByRole('button',{name:'Удалить кривую 1',exact:true}).click();
- await page.waitForFunction(()=>document.querySelectorAll('.constructor-values tbody td').length===6);
+ await page.waitForFunction(()=>document.querySelector('.constructor-values tbody td')?.textContent==='');
+ assert.equal(await table.locator('tbody tr').count(),2);
  await page.screenshot({path:path.join(output,'single-time-values.png'),fullPage:true});
  await page.getByRole('button',{name:'Удалить таблицу'}).click();assert.equal(await graphs.count(),0);
- passed('No component selector; zero-interval values and legend comment replace canvas, support append/delete');
+ passed('Zero-interval table groups additions into rows without time; quantity/component headers, point and task path; component deletion leaves blank');
  assert.deepEqual(errors,[]);
  await writeFile(path.join(output,'browser.json'),JSON.stringify({checks,errors},null,2));
  console.log(`BROWSER_OK ${checks.length}/${checks.length}`);

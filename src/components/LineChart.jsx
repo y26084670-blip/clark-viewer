@@ -6,12 +6,13 @@ import { chartTableText } from "../services/visualization/chartTable.js";
 
 const colors = ["#1776bd", "#d94943", "#289447", "#994bbc", "#db8b19", "#15a2a2"];
 
-function drawOverlayLegend(chart, series) {
+function drawOverlayLegend(chart, series, position) {
   const area = chart.chartArea;
   const entries = series.flatMap((item, index) => item.points.length
     ? [{ index, label: item.legendLabel ?? item.label, color: colors[index % colors.length], hidden: !chart.isDatasetVisible(index) }] : []);
-  if (!area || !entries.length || area.width <= 12 || area.height <= 12) return [];
+  if (!area || !entries.length || area.width <= 12 || area.height <= 12) return { hitBoxes: [], bounds: null };
   const hitBoxes = [];
+  let bounds;
   const ctx = chart.ctx, padding = 7, squareSize = 12, gap = 7, rowHeight = 18;
   ctx.save();
   try {
@@ -21,7 +22,9 @@ function drawOverlayLegend(chart, series) {
     const width = Math.min(area.width - 12, 2 * padding + squareSize + gap
       + Math.max(...entries.map(item => ctx.measureText(item.label).width)));
     const height = Math.min(area.height - 12, 2 * padding + rowHeight * entries.length);
-    const left = area.right - 6 - width, top = area.top + 6;
+    const left = area.left + 6 + position.x * Math.max(0, area.width - 12 - width);
+    const top = area.top + 6 + position.y * Math.max(0, area.height - 12 - height);
+    bounds = { left, top, right: left + width, bottom: top + height, width, height };
     // Clip the overlay itself: even a tiny chart keeps the legend inside its plot.
     ctx.beginPath(); ctx.rect(left, top, width, height); ctx.clip();
     ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
@@ -50,12 +53,13 @@ function drawOverlayLegend(chart, series) {
       }
     });
   } finally { ctx.restore(); }
-  return hitBoxes;
+  return { hitBoxes, bounds };
 }
 
 export function LineChart(props) {
   let canvas, chart, drag, skipContextMenu = false, legendHitBoxes = [];
-  let currentSeries = [], overlayLegend = false, autoPending = true;
+  let currentSeries = [], autoPending = true;
+  let legendBounds = null, legendPosition = { x: 1, y: 0 };
   let movieState = null, renderedFrameKey = null, currentMovieCursor = null, disposed = false;
   let pendingVisibility = null, drawingFailure = null;
   const renderWaiters = new Set();
@@ -66,7 +70,7 @@ export function LineChart(props) {
   const [message, setMessage] = createSignal("");
   const [limits, setLimits] = createSignal({});
   const [autoScale, setAutoScale] = createSignal(true);
-  const [showLegend, setShowLegend] = createSignal(false);
+  const [showLegend, setShowLegend] = createSignal(props.legendMode === "overlay");
   const [selection, setSelection] = createSignal(null);
   const [panning, setPanning] = createSignal(false);
   const [legendHover, setLegendHover] = createSignal(false);
@@ -156,7 +160,6 @@ export function LineChart(props) {
     const captureError = props.captureError;
     currentMovieCursor = props.movieCursor ?? null;
     renderedFrameKey = null;
-    overlayLegend = props.legendMode === "overlay";
     currentSeries = series;
     const xLabel = props.xLabel, yLabel = props.yLabel, integerX = props.integerX;
     if (!ready()) return;
@@ -175,14 +178,15 @@ export function LineChart(props) {
         plugins: [{ id: "selectionFrame", beforeEvent: () => movieState || drag ? false : undefined },
           { id: "movieTimeCursor", afterDatasetsDraw: drawMovieCursor },
           { id: "overlayLegend", afterDatasetsDraw: current => {
-            legendHitBoxes = overlayLegend ? drawOverlayLegend(current, currentSeries) : [];
+            const legend = untrack(showLegend) ? drawOverlayLegend(current, currentSeries, legendPosition) : { hitBoxes: [], bounds: null };
+            legendHitBoxes = legend.hitBoxes; legendBounds = legend.bounds;
           } }], options: {
         responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
         onResize: cancelSelection,
         scales: { x: { type: "linear", min: range.xMin, max: range.xMax,
           ticks: integerX ? { precision: 0 } : {}, title: { display: true, text: xLabel } },
           y: { min: range.yMin, max: range.yMax, title: { display: true, text: yLabel } } },
-        plugins: { legend: { display: !overlayLegend && untrack(showLegend), position: "top" }, tooltip: { callbacks: {
+        plugins: { legend: { display: false, position: "top" }, tooltip: { callbacks: {
           title: items => items[0]?.dataset.label ?? "",
           label: context => currentSeries[context.datasetIndex]?.tooltip?.(context.raw)
             ?? `${context.parsed.x}, ${context.parsed.y}`,
@@ -195,7 +199,7 @@ export function LineChart(props) {
         chart.options.scales.x.title.text = xLabel;
         chart.options.scales.y.title.text = yLabel;
         chart.options.scales.x.ticks = integerX ? { precision: 0 } : {};
-        chart.options.plugins.legend.display = !overlayLegend && untrack(showLegend);
+        chart.options.plugins.legend.display = false;
       }
       applyFrozenVisibility();
       // Chart.js animation is disabled. The identity is published only after the
@@ -210,10 +214,10 @@ export function LineChart(props) {
     }
   });
   createEffect(() => {
-    const range = limits(), legend = props.legendMode !== "overlay" && showLegend();
+    const range = limits(); showLegend();
     if (!ready() || !chart) return;
     cancelSelection();
-    chart.options.plugins.legend.display = legend;
+    chart.options.plugins.legend.display = false;
     applyChartLimits(range);
     captureAutoLimits();
   });
@@ -376,6 +380,10 @@ export function LineChart(props) {
     return legendHitBoxes.find(box => point.x >= box.left && point.x <= box.right
       && point.y >= box.top && point.y <= box.bottom);
   }
+  function legendAt(point) {
+    return legendBounds && point.x >= legendBounds.left && point.x <= legendBounds.right
+      && point.y >= legendBounds.top && point.y <= legendBounds.bottom;
+  }
   function startSelection(event) {
     skipContextMenu = false;
     if (movieState || ![0, 2].includes(event.button) || event.isPrimary === false || !chart?.chartArea || !props.series?.some(series => series.points.length)) return;
@@ -383,8 +391,9 @@ export function LineChart(props) {
     if (point.x < area.left || point.x > area.right || point.y < area.top || point.y > area.bottom) return;
     const legendItem = event.button === 0 ? legendItemAt(point) : null;
     cancelSelection(); setMenu(null); event.preventDefault();
-    const mode = legendItem ? "legend" : event.button === 2 ? "pan" : "zoom";
+    const mode = event.button === 0 && legendAt(point) ? "legend" : event.button === 2 ? "pan" : "zoom";
     drag = { pointerId: event.pointerId, mode, datasetIndex: legendItem?.index, start: point, area: { ...area },
+      legendBounds: legendBounds && { ...legendBounds },
       previousLimits: { ...untrack(limits) },
       startLimits: { xMin: chart.scales.x.min, xMax: chart.scales.x.max,
         yMin: chart.scales.y.min, yMax: chart.scales.y.max } };
@@ -398,6 +407,15 @@ export function LineChart(props) {
     if (drag.mode === "legend") {
       // A drag that returns to its starting square is still not a click.
       if (Math.hypot(current.x - drag.start.x, current.y - drag.start.y) >= 3) drag.moved = true;
+      if (drag.moved) {
+        const box = drag.legendBounds, area = drag.area;
+        const fraction = (value, room) => room > 0 ? Math.max(0, Math.min(1, value / room)) : 0;
+        legendPosition = {
+          x: fraction(box.left + current.x - drag.start.x - area.left - 6, area.width - 12 - box.width),
+          y: fraction(box.top + current.y - drag.start.y - area.top - 6, area.height - 12 - box.height),
+        };
+        chart.draw();
+      }
       return;
     }
     if (drag.mode === "pan") {
@@ -422,7 +440,7 @@ export function LineChart(props) {
   function updateSelection(event) {
     if (movieState) return;
     if (!drag) {
-      setLegendHover(Boolean(chart && legendItemAt(chartPoint(event))));
+      setLegendHover(Boolean(chart && legendAt(chartPoint(event))));
       return;
     }
     if (drag.pointerId !== event.pointerId) return;
@@ -438,11 +456,11 @@ export function LineChart(props) {
       const point = chartPoint(event);
       updateDrag(point);
       const item = legendItemAt(point), finished = releaseSelection();
-      if (!finished.moved && item?.index === finished.datasetIndex) {
+      if (!finished.moved && item && item.index === finished.datasetIndex) {
         chart.setDatasetVisibility(item.index, !chart.isDatasetVisible(item.index));
         chart.update("none");
       }
-      setLegendHover(Boolean(legendItemAt(point)));
+      setLegendHover(Boolean(legendAt(point)));
       return;
     }
     if (drag.mode === "pan") {
@@ -493,9 +511,8 @@ export function LineChart(props) {
         {props.toolbarEnd}
         <button type="button" disabled={capturing()} onClick={toggleAutoScale} aria-pressed={props.autoScaleToggle ? autoScale() : undefined}
           title={props.autoScaleToggle ? (autoScale() ? "Автомасштаб включён: нажмите, чтобы сохранить текущие пределы" : "Автомасштаб выключен: нажмите для автоматического подбора пределов") : "Автоматические пределы по обеим осям"}>Авто</button>
-        <Show when={props.legendMode !== "overlay"}>
-          <label title="Показать подписи и цвета кривых; щелчок по легенде скрывает или возвращает кривую"><input type="checkbox" disabled={capturing()} checked={showLegend()} onChange={event => { if (!movieState) setShowLegend(event.currentTarget.checked); }} />Показать легенду</label>
-        </Show>
+        {props.afterAuto}
+        <label title="Перетащите легенду внутри графика; щелчок по цветному квадрату скрывает или возвращает кривую"><input type="checkbox" disabled={capturing()} checked={showLegend()} onChange={event => { if (!movieState) setShowLegend(event.currentTarget.checked); }} />Показать легенду</label>
       </div>
     </div>
     <Show when={props.status}><div class="plot-status" role="status">{props.status}</div></Show>

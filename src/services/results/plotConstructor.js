@@ -107,10 +107,10 @@ export function validatePlotCurve(curve, existing) {
       throw new Error(`Ось ${axis.toUpperCase()}: номер точки должен быть от 1 до ${channel.points}.`);
     }
     const previous = existing?.[`${axis}Channel`];
-    if (previous && ((previous.unit ?? "").trim() !== (channel.unit ?? "").trim()
-      || (!channel.unit && previous.key !== channel.key))) {
-      throw new Error(`Ось ${axis.toUpperCase()}: единицы выбранной кривой (${channel.unit || "не указаны"}) `
-        + `не совпадают с активным графиком (${previous.unit || "не указаны"}). Добавьте отдельный график.`);
+    const identity = c => c.kind === "extra"
+      ? JSON.stringify([c.kind, c.source?.manifest.model || "ОМ", c.column]) : c.key;
+    if (previous && identity(previous) !== identity(channel)) {
+      throw new Error(`Ось ${axis.toUpperCase()}: выбранная величина и величина активного графика не совпадают. Добавьте отдельный график.`);
     }
   }
   return curve;
@@ -153,7 +153,7 @@ export function expandPlotComponents(curve) {
   const vector = axis => curve[`${axis}Channel`]?.components === 3 && !curve[`${axis}Channel`]?.productOffsets;
   if (!vector("x") && !vector("y")) return [curve];
   return ["0", "1", "2"].map(component => ({
-    ...curve, id: `${curve.id}:${component}`,
+    ...curve, groupId: curve.id, id: `${curve.id}:${component}`,
     x: { ...curve.x, ...(vector("x") ? { component } : {}) },
     y: { ...curve.y, ...(vector("y") ? { component } : {}) },
   }));
@@ -170,4 +170,25 @@ export function singleTimePlotRow(series) {
   if (series.some(item => !sameTime(item.points[0].time, time))) return null;
   return { time, values: series.map(item => item.points[0].y),
     comment: series.map(item => item.label).join("; ") };
+}
+
+// Each Add operation is a row; components share the originating group ID.
+export function singleTimePlotTable(curves, series) {
+  if (!singleTimePlotRow(series) || series.length !== curves.length) return null;
+  const values = new Map(series.map(item => [item.key, item.points[0].y]));
+  const columns = new Map(), groups = new Map();
+  for (const curve of curves) {
+    const component = curve.y.component ?? "scalar";
+    if (!columns.has(component)) {
+      const channel = curve.yChannel;
+      const suffix = component === "scalar" ? "" : ` · ${"XYZ"[Number(component)]}`;
+      columns.set(component, `${channel.label}${suffix}${channel.unit ? `, ${channel.unit}` : ""}`);
+    }
+    const id = curve.groupId ?? curve.id;
+    if (!groups.has(id)) groups.set(id, { id, values: new Map(), point: curve.yChannel.kind === "field" ? curve.y.point ?? 1 : null, comment: curve.taskLabel || "" });
+    groups.get(id).values.set(component, values.get(curve.id));
+  }
+  const keys = [...columns.keys()].sort();
+  return { headers: keys.map(key => columns.get(key)), hasPoint: curves.some(curve => curve.yChannel.kind === "field"),
+    rows: [...groups.values()].map(row => ({ ...row, values: keys.map(key => row.values.get(key) ?? "") })) };
 }

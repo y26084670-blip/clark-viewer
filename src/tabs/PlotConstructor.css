@@ -30,4 +30,9 @@
 .constructor-values { width: 100%; border-collapse: collapse; font-size: 13px; }
 .constructor-values th, .constructor-values td { border: 1px solid #99a9b8; padding: 7px 10px; text-align: right; }
 .constructor-values th { font-weight: 600; }
-.constructor-values tfoot td { text-align: left; overflow-wrap: anywhere; }
+
+.constructor-plot-slot { min-width: 0; }
+dialog.constructor-plot { position: static; width: 100%; max-width: none; max-height: none; margin: 0; padding: 0; color: inherit; }
+dialog.constructor-expanded { position: fixed; box-sizing: border-box; }
+dialog.constructor-expanded::backdrop { background: #182c4059; }
+.constructor-values .constructor-value-comment { text-align: left; overflow-wrap: anywhere; }

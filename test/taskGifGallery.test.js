@@ -178,23 +178,23 @@ test("image decode failures release only their matching current URL", async () =
 // Execute the actual gallery event/lifecycle setup without JSX. The thumbnail
 // subcomponent's JSX is excluded; its watchCell callback is exercised directly.
 const { readFileSync } = await import("node:fs");
-const source = readFileSync(new URL("../src/components/tasks/TaskGifGallery.jsx", import.meta.url), "utf8");
+const source = readFileSync(new URL("../src/components/tasks/TaskImageGallery.jsx", import.meta.url), "utf8");
+const gifSource = readFileSync(new URL("../src/components/tasks/TaskGifGallery.jsx", import.meta.url), "utf8");
 test("only the maximized player receives crossfade; gallery thumbnails stay native images",()=>{
-  assert.match(source,/<TaskGifPlayer[^>]*crossfade=\{maximized\(\)\}/);
+  assert.match(gifSource,/<TaskGifPlayer[^>]*crossfade=\{maximized\(\)\}/);
   assert.match(source,/<img[^>]*src=\{thumbnail\(\)\.url\}/);
 });
-const childStart = source.indexOf("  function GifCell(");
+const childStart = source.indexOf("  function ImageCell(");
 const effectsStart = source.indexOf("  createEffect(", childStart);
-const setup = (source.slice(source.indexOf("export function TaskGifGallery"), childStart)
+const setup = (source.slice(source.indexOf("export function TaskImageGallery"), childStart)
   + source.slice(effectsStart, source.indexOf('  return <section class="task-gif-gallery"'))).replace("export function", "function");
 const makeGallery = new Function("props", "createSignal", "createUniqueId", "createTaskGifGalleryController", "createEffect", "onMount", "onCleanup", "subscribeTaskGifs", "queueMicrotask", "window", "IntersectionObserver", `
   ${setup}
     return { requestDelete, confirmDelete, showPreview, watchCell, updateFallbackVisibility,
-      startDrag, moveDrag, stopDrag, clampPreview, view, setView, deleteRequest,
-      position: dialogPosition, maximized, toggleMaximized, dialogSize,
-      attach(refs) { grid=refs.grid; dialog=refs.dialog; dialogHeader=refs.dialogHeader; closeButton=refs.closeButton;
+      view, setView, deleteRequest,
+      attach(refs) { grid=refs.grid;
         confirmDialog=refs.confirmDialog; confirmCancelButton=refs.confirmCancelButton; } };
-  } return TaskGifGallery(props);
+  } return TaskImageGallery(props);
 `);
 function componentRuntime({ withObserver = true, deleteOperation = async () => true } = {}) {
   const effects = [], mounts = [], cleanup = [], queued = [], busy = [], calls = [], observers = [];
@@ -206,7 +206,7 @@ function componentRuntime({ withObserver = true, deleteOperation = async () => t
     getBoundingClientRect: () => ({ left: 50, top: 60, width: 300, height: 200 }) });
   const focus = () => ({ focused: 0, isConnected: true, focus() { this.focused++; } });
   const capture = new Set();
-  const refs = { grid: { getBoundingClientRect: () => ({ left: 0, right: 200, top: 100, bottom: 300 }) },
+  const refs = { grid: { getBoundingClientRect: () => ({ left: 0, right: 200, top: 100, bottom: 300, width: 200, height: 200 }) },
     dialog: dialog(), confirmDialog: dialog(), closeButton: focus(), confirmCancelButton: focus(),
     dialogHeader: { setPointerCapture: id => capture.add(id), hasPointerCapture: id => capture.has(id), releasePointerCapture: id => capture.delete(id) }, opener: focus() };
   const Observer = class {
@@ -215,15 +215,18 @@ function componentRuntime({ withObserver = true, deleteOperation = async () => t
     unobserve(element) { this.targets.delete(element); }
     disconnect() { this.targets.clear(); }
   };
-  const props = { taskHandle: { name: "Task" }, active: true, disabled: false, refreshKey: 0,
+  const props = { taskHandle: { name: "Task" }, active: true, disabled: false, visible: true, allowDelete: true, refreshKey: 0,
     onBusyChange(value) { busy.push(value); props.disabled = value; } };
   const controller = {
+    setDisplayActive: value => calls.push(["display", value]),
     setContext: (...args) => calls.push(["context", ...args]), refresh: () => calls.push(["refresh"]),
     setVisible: (...args) => calls.push(["visible", ...args]), openPreview: entry => calls.push(["open", entry]),
     closePreview: () => calls.push(["close"]),
     deleteEntry(entry) { calls.push(["delete", entry, [...busy]]); return deleteOperation(entry); },
     dispose: () => calls.push(["dispose"]),
   };
+  props.createController = () => controller;
+  props.subscribe = callback => { subscribers.add(callback); return () => subscribers.delete(callback); };
   const ui = makeGallery(props, initial => { let value = initial; return [() => value, next => { value = next; }]; },
     () => "gif-title", () => controller, callback => effects.push(callback), callback => mounts.push(callback),
     callback => cleanup.push(callback), callback => { subscribers.add(callback); return () => subscribers.delete(callback); },
@@ -255,6 +258,7 @@ test("pending Delete confirmation is discarded on task, active, disabled or refr
   for (const change of [
     ui => { ui.props.taskHandle = { name: "Other" }; },
     ui => { ui.props.active = false; },
+    ui => { ui.props.visible = false; },
     ui => { ui.props.disabled = true; },
     ui => { ui.setView({ ...ui.view(), entries: [file("exact.gif")] }); },
   ]) {
@@ -291,7 +295,7 @@ test("gallery observes only intersecting cells and refreshes through active cont
   ui.dispose(); assert.equal(ui.subscribers.size, 0); assert.equal(ui.listeners.size, 0);
 });
 
-test("fallback checks visible cell rectangles and preview dragging stays inside the viewport", () => {
+test("fallback checks visible cell rectangles", () => {
   const ui = componentRuntime({ withObserver: false });
   const visible = { getBoundingClientRect: () => ({ left: 0, right: 100, top: 120, bottom: 260 }) };
   const hidden = { getBoundingClientRect: () => ({ left: 0, right: 100, top: 500, bottom: 640 }) };
@@ -299,25 +303,55 @@ test("fallback checks visible cell rectangles and preview dragging stays inside 
   const visibility = ui.calls.filter(call => call[0] === "visible");
   assert.ok(visibility.some(call => call[1] === ui.entry && call[2] === true));
   assert.ok(visibility.some(call => call[1].name === "hidden.gif" && call[2] === false));
-  const event = { button: 0, pointerId: 1, clientX: 60, clientY: 70, target: { closest: () => null }, preventDefault() {} };
-  ui.startDrag(event); ui.moveDrag({ ...event, clientX: 2000, clientY: 2000 });
-  assert.deepEqual(ui.position(), { left: 200, top: 200 });
-  ui.moveDrag({ ...event, clientX: -2000, clientY: -2000 });
-  assert.deepEqual(ui.position(), { left: 0, top: 0 });
-  assert.equal(ui.capture.has(1), true); ui.stopDrag(); assert.equal(ui.capture.has(1), false); ui.dispose();
+  ui.dispose();
 });
 
+const dialogSource = readFileSync(new URL("../src/components/tasks/TaskMediaDialog.jsx", import.meta.url), "utf8");
+const dialogSetup = dialogSource.slice(dialogSource.indexOf("export function TaskMediaDialog"), dialogSource.indexOf("  return <Portal>"))
+  .replace("export function", "function");
+const makeDialog = new Function("props", "createSignal", "createUniqueId", "createEffect", "onMount", "onCleanup", "window", `
+  ${dialogSetup}
+    return { startDrag, moveDrag, stopDrag, toggleMaximized, position: dialogPosition, dialogSize, maximized,
+      attach(refs) { dialog=refs.dialog; dialogHeader=refs.dialogHeader; closeButton=refs.closeButton; } };
+  } return TaskMediaDialog(props);
+`);
+function dialogRuntime() {
+  const effects = [], cleanup = [], capture = new Set();
+  const refs = {
+    dialog: { open: false, showModal() { this.open=true; }, close() { this.open=false; },
+      getBoundingClientRect: () => ({ left: 50, top: 60, width: 300, height: 200 }) },
+    dialogHeader: { setPointerCapture: id => capture.add(id), hasPointerCapture: id => capture.has(id), releasePointerCapture: id => capture.delete(id) },
+    closeButton: { focus() {} },
+  };
+  const props = { open: true };
+  const ui = makeDialog(props, initial => { let value = initial; return [() => value, next => { value = next; }]; },
+    () => "dialog", fn => effects.push(fn), () => {}, fn => cleanup.push(fn), { innerWidth: 500, innerHeight: 400 });
+  ui.attach(refs);
+  return { ...ui, props, capture, flush: () => effects.forEach(fn => fn()), dispose: () => cleanup.forEach(fn => fn()) };
+}
+test("shared preview opens maximized, restores measured size, clamps dragging and releases capture", () => {
+  const ui=dialogRuntime(); ui.flush(); assert.equal(ui.maximized(),true);
+  const event = { button: 0, pointerId: 1, clientX: 60, clientY: 70, target: { closest: () => null }, preventDefault() {} };
+  ui.startDrag(event); assert.equal(ui.capture.size,0);
+  ui.toggleMaximized(); assert.equal(ui.dialogSize(),null);
+  ui.startDrag(event); ui.moveDrag({ ...event, clientX: 2000, clientY: 2000 });
+  assert.deepEqual(ui.position(),{left:200,top:200});
+  ui.moveDrag({ ...event, clientX: -2000, clientY: -2000 }); assert.deepEqual(ui.position(),{left:0,top:0});
+  assert.equal(ui.capture.has(1),true); ui.stopDrag(); assert.equal(ui.capture.size,0);
+  ui.toggleMaximized(); ui.toggleMaximized();
+  assert.deepEqual(ui.dialogSize(),{width:300,height:200}); assert.deepEqual(ui.position(),{left:50,top:60});
+  ui.props.open=false; ui.flush(); ui.props.open=true; ui.flush(); assert.equal(ui.maximized(),true); ui.dispose();
+});
 
-test("preview opens maximized, restores its size and reopens maximized",()=>{
-  const ui=componentRuntime();ui.showPreview(ui.entry,{currentTarget:ui.refs.opener});
-  assert.equal(ui.maximized(),true);
-  ui.startDrag({button:0,pointerId:1,target:{closest:()=>null},preventDefault(){}});
-  assert.equal(ui.capture.size,0);
-  ui.toggleMaximized();assert.equal(ui.maximized(),false);
-  assert.equal(ui.dialogSize(),null);assert.equal(ui.position(),null);
-  ui.toggleMaximized();assert.equal(ui.maximized(),true);
-  ui.toggleMaximized();assert.equal(ui.maximized(),false);
-  assert.deepEqual(ui.dialogSize(),{width:300,height:200});assert.deepEqual(ui.position(),{left:50,top:60});
-  ui.showPreview(ui.entry,{currentTarget:ui.refs.opener});assert.equal(ui.maximized(),true);
-  assert.equal(ui.dialogSize(),null);assert.equal(ui.position(),null);ui.dispose();
+test("hidden local tab keeps counts, reads no bytes and releases thumbnail and preview URLs", async () => {
+  let reads=0;
+  const ui=fixture({read:async()=>{reads++;return new Blob(["image"]);}});
+  ui.controller.setDisplayActive(false); ui.controller.setContext({}); await tick();
+  assert.equal(ui.state.entries.length,3);
+  ui.controller.setVisible(ui.state.entries[0],true); ui.controller.openPreview(ui.state.entries[0]); await tick(); assert.equal(reads,0);
+  ui.controller.setDisplayActive(true); await tick();
+  const entry=ui.state.entries[0]; ui.controller.setVisible(entry,true); ui.controller.openPreview(entry); await tick();
+  assert.equal(reads,2); ui.controller.setDisplayActive(false);
+  assert.equal(ui.state.entries.length,3); assert.equal(ui.state.preview,null); assert.equal(ui.revoked.length,2);
+  ui.controller.dispose(); assert.equal(ui.revoked.length,2);
 });

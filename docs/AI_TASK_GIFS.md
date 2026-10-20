@@ -1,6 +1,24 @@
-# GIF выбранного задания
+# GIF и DOCS выбранного задания
 
-Обновлено: 2026-10-12 23:18 UTC+3.
+Обновлено: 2026-10-21 02:10 UTC+3.
+
+<a id="task-docs"></a>
+## GIF/DOCS — 4.46.0
+
+Правая панель содержит локальные вкладки GIF (N) и DOCS (N). N — число
+изображений; обе вкладки доступны при нулевом счётчике. DOCS находится рядом
+с input3XX; непосредственные PNG/JPEG/WebP показаны сверху, TXT/MD в UTF-8 —
+снизу. Начальный выбор: README.txt, README.md, первый текст по имени. Markdown
+отображается буквально. Изображения и текст используют общий модальный просмотр.
+
+Подробные правила хранения, форматов, лимитов и жизненного цикла — в
+[каноническом контракте Editor](https://github.com/y26084670-blip/clark-editor/blob/main/docs/AI_UI_CONTRACTS.md#task-docs-gallery).
+[Практический сценарий](https://y26084670-blip.github.io/clark-editor/user-guide/index.html#task-docs).
+Viewer передаёт `candidate()?.handle` и `refreshKey={candidate()}`, поэтому
+повторный выбор строки обновляет и изображения, и текст. Скрытая локальная
+галерея перечисляет имена для счётчика, но освобождает URL и не читает байты.
+Просмотр DOCS не создаёт каталоги, не записывает файлы и не запрашивает разрешение
+на запись. GIF сохраняет прежнее подтверждение удаления и проигрыватель.
 
 <a id="viewer-stage-a"></a>
 ## Первый этап 4.18.0 — однокадровые файлы
@@ -20,7 +38,11 @@ M_B_3d_... и т.д. Однокадровый статический GIF про�
 
 Общие файлы копируются между проектами без изменений:
 
-- `src/components/tasks/TaskGifGallery.jsx` и `.css`: сетка, кнопки, модальные окна.
+- `src/components/tasks/TaskMediaPanel.jsx` и `.css`: локальные вкладки и счётчики.
+- `TaskImageGallery.jsx`, `TaskMediaDialog.jsx`, `TaskGifGallery.css` в том же каталоге: общая сетка и окно.
+- `TaskGifGallery.jsx`, `TaskDocsGallery.jsx`: GIF-плеер/удаление и документация только для чтения.
+- `src/services/taskImageGalleryController.js`, `taskDocsService.js`, `taskDocsTextController.js`: очередь изображений, файловое чтение DOCS и очередь выбранного текста.
+- `test/taskDocs.test.js`, `test/browser/taskMedia.html`, `test/browser/taskMedia.fixture.jsx`, `scripts/check-task-media-browser.mjs`: сервисные и браузерные проверки DOCS/общей панели.
 - `src/components/tasks/TaskGifPlayer.jsx`: canvas и управление воспроизведением.
 - `src/services/taskGifPlayback.js`, `taskGifDecoder.js`, `src/workers/taskGifDecode.worker.js`: таймеры, композиция и декодирование.
 - `test/taskGifPlayback.test.js`, `test/taskGifDecoder.test.js`: состояние плеера и синтетические GIF.
@@ -33,10 +55,11 @@ M_B_3d_... и т.д. Однокадровый статический GIF про�
 выбор задания и конфликтующие файловые операции блокируются через
 `onBusyChange`. В скрытой вкладке галерея не читает файлы.
 
-Высота верхней галереи совпадает с верхним 3D предпросмотром. Средняя и правая
-панели обоих приложений используют одинаковые строки
-`minmax(240px, 3fr) minmax(160px, 2fr)`, подпись 20 px, промежуток 10 px,
-внутренний отступ 20 px и границу 3 px. Текст результатов остаётся под галереей.
+Средняя панель сохраняет строки `minmax(240px, 3fr) minmax(160px, 2fr)`.
+Правая выделяет строку переключателям GIF/DOCS и делит оставшуюся высоту 3:2
+без фиксированного минимума, чтобы текст оставался доступен при 600 px высоты.
+Подпись 20 px, промежуток 10 px, внутренний отступ 20 px, граница 3 px.
+Текст результатов остаётся под галереей в локальной вкладке GIF.
 
 ## Галерея и время жизни
 
@@ -167,6 +190,25 @@ GIF непосредственно в `output3XX/demo`, без рекурсив�
 датой/временем описан в [AI_MOVIE_EXPORT.md](AI_MOVIE_EXPORT.md).
 
 ## Проверка
+
+### GIF/DOCS 4.46.0 — 21.10.2026
+
+Целевой набор — **91/91**: `node --test test/taskGifService.test.js
+test/taskGifGallery.test.js test/taskGifPlayback.test.js test/taskGifDecoder.test.js
+test/taskDocs.test.js test/taskDirectoryPermissions.test.js test/viewerToolsMenu.test.js
+test/movieFilename.test.js`. Полный `npm test` — **714/714**, Pages-сборка успешна.
+
+`PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs CHROMIUM_EXECUTABLE=/path/to/chromium
+CHECK_OUTPUT=/tmp/task-media-check node scripts/check-task-media-browser.mjs`
+(одна строка): **8/8** сценариев, без `pageerror`, снимки 1100×600 и 1440×900.
+Используются настоящие Solid, стили Viewer, OPFS, PNG/JPEG/WebP и GIF Worker/canvas.
+Проверены чтение только видимых файлов, счётчики, README/буквальный MD, навигация,
+разворот/drag/focus, обновление, ошибки и отмена, удаление GIF и cleanup URL.
+Системное окно выбора папки и реальный запрос разрешений Windows/Edge не входят
+в автоматическую проверку. Методика и границы —
+[AI_VERIFICATION Editor](https://github.com/y26084670-blip/clark-editor/blob/main/docs/AI_VERIFICATION.md#verification-task-docs).
+
+### Предшествующие проверки GIF
 
 Профильные проверки: `node --test test/taskGifService.test.js
 test/taskGifGallery.test.js test/taskDirectoryPermissions.test.js

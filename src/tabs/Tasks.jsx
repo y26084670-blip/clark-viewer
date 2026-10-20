@@ -5,7 +5,7 @@ import { loadTaskInput, readTaskSummaries } from "../services/taskLoadService.js
 import { useAsyncResult } from "../services/results/resultRequests.js";
 import { buildGeometryScene } from "../services/visualization/geometrySceneModel.js";
 import { ThreeGeometryViewport } from "../components/geometry/ThreeGeometryViewport.jsx";
-import { TaskGifGallery } from "../components/tasks/TaskGifGallery.jsx";
+import { TaskMediaPanel } from "../components/tasks/TaskMediaPanel.jsx";
 import { TaskStatusCells } from "../components/tasks/TaskStatusCells.jsx";
 import { LastOpenedTaskMarker, ProjectSelectValue } from "../components/tasks/LastOpenedTaskMarker.jsx";
 import { useTaskStatuses } from "../services/taskStatusMonitor.js";
@@ -205,12 +205,9 @@ export function Tasks(props) {
       <textarea readOnly aria-label="Сводка исходных данных" value={info.value()?.summary.input ?? ""} />
       <footer>исходные данные</footer>
     </section>
-    <section class="task-results-panel">
-      <TaskGifGallery taskHandle={candidate()?.handle} active={props.active} disabled={props.busy || selectionReceiving()}
-        onBusyChange={setGalleryBusy} />
-      <textarea readOnly aria-label="Сводка результатов расчёта" value={info.value()?.summary.output ?? ""} />
-      <footer>результаты</footer>
-    </section>
+    <TaskMediaPanel taskHandle={candidate()?.handle} active={props.active}
+      disabled={props.busy || selectionReceiving()} refreshKey={candidate()} onBusyChange={setGalleryBusy}
+      resultsSummary={info.value()?.summary.output ?? ""} />
     <dialog class="task-selection-error-dialog" aria-label="Не удалось показать задание в Editor"
       aria-describedby="task-selection-error-message" ref={selectionErrorDialog} onClose={() => {
         setSelectionError("");

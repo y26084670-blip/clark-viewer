@@ -93,7 +93,7 @@ textarea[readonly] { resize: none; width: 100%; margin: 0; padding: 12px; border
 .line-chart { display: flex; flex-direction: column; }
 .line-chart-canvas { flex: 1; min-height: 0; min-width: 0; position: relative; margin: 10px 16px; }
 .line-chart-canvas > canvas { display: block; touch-action: none; cursor: crosshair; }
-.line-chart-canvas > canvas.chart-legend-hover { cursor: pointer; }
+.line-chart-canvas > canvas.chart-legend-hover { cursor: grab; }
 .line-chart-canvas > canvas.chart-panning { cursor: grabbing; }
 .chart-selection-frame { position: absolute; pointer-events: none; border: 1px solid #1674ba; background: #2689cd28; }
 .chart-toolbar { gap: 6px 10px; }

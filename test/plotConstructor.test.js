@@ -37,13 +37,14 @@ test('field vector units/components reuse the Viewer quantity mapping',async()=>
  await assert.rejects(readPlotChannel(fieldTask,c,{point:2}),/Номер точки/);
 });
 
-test('adding a curve validates point indices and both axis units',()=>{
+test('adding a curve validates point indices and both quantities independently of units',()=>{
  const time={key:'time',kind:'time',unit:'с'}, field={key:'field:M',kind:'field',unit:'кА/м',points:2,components:3,label:'M'};
  const curve={id:'one',x:{},y:{point:1,component:'0'},xChannel:time,yChannel:field};
  assert.equal(validatePlotCurve(curve,curve),curve);
  assert.throws(()=>validatePlotCurve({...curve,y:{point:0}}),/номер точки/);
- assert.throws(()=>validatePlotCurve({...curve,yChannel:{...field,unit:'Тл'}},curve),/Ось Y/);
- assert.throws(()=>validatePlotCurve({...curve,xChannel:{...time,unit:'А'}},curve),/Ось X/);
+ assert.doesNotThrow(()=>validatePlotCurve({...curve,yChannel:{...field,unit:'Тл'}},curve));
+ assert.throws(()=>validatePlotCurve({...curve,yChannel:{...field,key:'field:H'}},curve),/Ось Y/);
+ assert.throws(()=>validatePlotCurve({...curve,xChannel:{...time,key:'other'}},curve),/Ось X/);
  assert.match(plotChannelLabel(field,curve.y),/X · точка 1, кА\/м/);
 });
 
@@ -126,4 +127,28 @@ test('zero intervals use a value row and exact legend comments; sparse histories
  assert.equal(isSingleTimePlot(t,[{...base,xChannel:base.yChannel}]),false);
  assert.equal(singleTimePlotRow([]),null);
  assert.equal(singleTimePlotRow([{points:[{time:0,y:1},{time:1,y:2}]}]),null);
+});
+
+test('single-time table groups additions into rows, separates point and path, preserves missing components', async () => {
+ const { expandPlotComponents, singleTimePlotTable } = await import('../src/services/results/plotConstructor.js');
+ const channel={key:'field:M',kind:'field',label:'M',components:3,unit:'кА/м'};
+ const base={id:'one',taskLabel:'Проект/A',x:{},y:{point:2},yChannel:channel};
+ const curves=[...expandPlotComponents(base),...expandPlotComponents({...base,id:'two',y:{point:7},taskLabel:'Проект/B'})];
+ const series=curves.map((c,i)=>({key:c.id,points:[{time:0,y:i-2}]}));
+ const table=singleTimePlotTable(curves,series);
+ assert.deepEqual(table.headers,['M · X, кА/м','M · Y, кА/м','M · Z, кА/м']);
+ assert.equal(table.hasPoint,true);
+ assert.deepEqual(table.rows.map(r=>[r.values,r.point,r.comment]),[[[-2,-1,0],2,'Проект/A'],[[1,2,3],7,'Проект/B']]);
+ assert.deepEqual(singleTimePlotTable(curves.slice(1),series.slice(1)).rows[0].values,['',-1,0]);
+ assert.equal(singleTimePlotTable(curves,series.slice(1)),null);
+ const scalar=[{...base,id:'scalar',yChannel:{key:'loss',kind:'loss',label:'Потери',unit:'Вт'}}];
+ assert.equal(singleTimePlotTable(scalar,[{key:'scalar',points:[{time:0,y:0}]}]).hasPoint,false);
+});
+
+test('OM quantity identity survives source reordering but distinguishes models and columns', () => {
+ const c={kind:'extra',key:'extra:0:a',column:'a',source:{manifest:{model:'one'}},unit:'Дж'};
+ const curve={x:{},y:{},xChannel:{key:'time'},yChannel:c};
+ assert.doesNotThrow(()=>validatePlotCurve({...curve,yChannel:{...c,key:'extra:5:a'}},curve));
+ assert.throws(()=>validatePlotCurve({...curve,yChannel:{...c,column:'b'}},curve),/Ось Y/);
+ assert.throws(()=>validatePlotCurve({...curve,yChannel:{...c,source:{manifest:{model:'two'}}}},curve),/Ось Y/);
 });

@@ -96,3 +96,34 @@ test('cross-task XY reads X from the current task; failed comparison leaves orig
  assert.deepEqual(result.series.map(s=>s.key),['a','b']);
  assert.match(result.error,/Кривая 3.*прочитать B/);
 });
+
+test('automatic vectors expand into three signed components, pairing vector axes by name', async () => {
+ const { expandPlotComponents } = await import('../src/services/results/plotConstructor.js');
+ const t=comparisonTask(.5,[3,-4,0]);
+ const time=plotChannels(t)[0], force=plotChannels(t).find(c=>c.key==='force');
+ const base={id:'vector',x:{},y:{},xChannel:time,yChannel:force};
+ const curves=expandPlotComponents(base);
+ assert.deepEqual(curves.map(c=>c.y.component),['0','1','2']);
+ assert.equal(new Set(curves.map(c=>c.id)).size,3);
+ const result=await readPlotCurves(t,curves);
+ assert.deepEqual(result.series.map(c=>c.points.map(p=>p.y)),[[3,-4,0],[0,0,0],[0,0,0]]);
+ assert.ok(result.series.every(c=>!c.label.includes('модуль')));
+ assert.deepEqual(expandPlotComponents({...base,xChannel:force}).map(c=>[c.x.component,c.y.component]),[['0','0'],['1','1'],['2','2']]);
+ assert.equal(expandPlotComponents({...base,yChannel:{...force,productOffsets:[0,3]}}).length,1);
+});
+
+test('zero intervals use a value row and exact legend comments; sparse histories remain plots', async () => {
+ const { expandPlotComponents, isSingleTimePlot, singleTimePlotRow } = await import('../src/services/results/plotConstructor.js');
+ const t=comparisonTask(.5,[7]), other=comparisonTask(.5,[1,2]);
+ const channels=plotChannels(t), base={id:'values',taskLabel:'Проект/Тест',x:{},y:{},xChannel:channels[0],yChannel:channels.find(c=>c.key==='force')};
+ const curves=expandPlotComponents(base), result=await readPlotCurves(t,curves);
+ assert.equal(isSingleTimePlot(t,curves),true);
+ const row=singleTimePlotRow(result.series);
+ assert.deepEqual(row.values,[7,0,0]); assert.equal(row.time,0);
+ assert.equal(row.comment,result.series.map(c=>c.label).join('; '));
+ assert.equal(isSingleTimePlot(other,curves),false);
+ assert.equal(isSingleTimePlot(other,curves.map(c=>({...c,yTask:t}))),true);
+ assert.equal(isSingleTimePlot(t,[{...base,xChannel:base.yChannel}]),false);
+ assert.equal(singleTimePlotRow([]),null);
+ assert.equal(singleTimePlotRow([{points:[{time:0,y:1},{time:1,y:2}]}]),null);
+});

@@ -147,3 +147,27 @@ export async function readPlotCurves(task, curves) {
   return { series: results.filter(r => r.status === "fulfilled").map(r => r.value),
     error: results.flatMap((r, i) => r.status === "rejected" ? [`Кривая ${i + 1}: ${r.reason.message ?? r.reason}`] : []).join("; ") };
 }
+
+// Expand the selected dependency, keeping each component independently hideable.
+export function expandPlotComponents(curve) {
+  const vector = axis => curve[`${axis}Channel`]?.components === 3 && !curve[`${axis}Channel`]?.productOffsets;
+  if (!vector("x") && !vector("y")) return [curve];
+  return ["0", "1", "2"].map(component => ({
+    ...curve, id: `${curve.id}:${component}`,
+    x: { ...curve.x, ...(vector("x") ? { component } : {}) },
+    y: { ...curve.y, ...(vector("y") ? { component } : {}) },
+  }));
+}
+
+export function isSingleTimePlot(task, curves) {
+  return curves.length > 0 && curves.every(curve => curve.xChannel?.kind === "time"
+    && (curve.yTask ?? task)?.general?.countTimeSteps === 0);
+}
+
+export function singleTimePlotRow(series) {
+  if (!series.length || series.some(item => item.points.length !== 1)) return null;
+  const time = series[0].points[0].time;
+  if (series.some(item => !sameTime(item.points[0].time, time))) return null;
+  return { time, values: series.map(item => item.points[0].y),
+    comment: series.map(item => item.label).join("; ") };
+}

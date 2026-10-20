@@ -23,3 +23,11 @@
 .constructor-source-dialog [role="alert"] { color: #ffb5ae; }
 .constructor-source-dialog > div { display: flex; justify-content: flex-end; gap: 8px; }
 .constructor-source-dialog button { background: #334252; color: #edf2f7; border: 1px solid #718498; padding: 7px 12px; border-radius: 4px; }
+
+.constructor-value-panel { height: auto; align-self: start; }
+.constructor-value-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px; }
+.constructor-value-scroll { overflow-x: auto; }
+.constructor-values { width: 100%; border-collapse: collapse; font-size: 13px; }
+.constructor-values th, .constructor-values td { border: 1px solid #99a9b8; padding: 7px 10px; text-align: right; }
+.constructor-values th { font-weight: 600; }
+.constructor-values tfoot td { text-align: left; overflow-wrap: anywhere; }

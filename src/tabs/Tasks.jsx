@@ -206,7 +206,12 @@ export function Tasks(props) {
       <footer>исходные данные</footer>
     </section>
     <TaskMediaPanel taskHandle={candidate()?.handle} active={props.active}
-      disabled={props.busy || selectionReceiving()} refreshKey={candidate()} onBusyChange={setGalleryBusy}
+      disabled={props.busy || selectionReceiving()} refreshKey={[candidate(), props.docsRevision]} onBusyChange={setGalleryBusy}
+      onEditProtocol={(filename, opener) => {
+        const item = candidate();
+        if (!item || props.busy || browserBusy()) return;
+        props.onEditProtocol?.({ ...item, plotLabel: `${root().name}/${project()}/${item.name}`, workspace: { rootHandle: root() } }, filename, opener);
+      }}
       resultsSummary={info.value()?.summary.output ?? ""} />
     <dialog class="task-selection-error-dialog" aria-label="Не удалось показать задание в Editor"
       aria-describedby="task-selection-error-message" ref={selectionErrorDialog} onClose={() => {

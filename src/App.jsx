@@ -1,10 +1,12 @@
 import { createEffect, createSignal, ErrorBoundary, For, lazy, onCleanup, onMount, Show, Switch, Match, Suspense } from "solid-js";
+import { Portal } from "solid-js/web";
 import { Tasks } from "./tabs/Tasks.jsx";
 import { loadTask } from "./services/taskLoadService.js";
 import { ResultService } from "./services/resultService.js";
 import { mapResultObjects } from "./services/results/resultMappings.js";
 import { AboutDialog } from "./components/AboutDialog.jsx";
 import { ViewerToolsMenu } from "./components/movie/ViewerToolsMenu.jsx";
+import { TaskProtocolDialog } from "./components/protocol/TaskProtocolDialog.jsx";
 import { createMovieExportController } from "./services/movie/movieExportController.js";
 import { createMovieGifEncoder } from "./services/movie/movieGifEncoder.js";
 import { backfillTaskResultRanges } from "./services/results/resultRangeBackfill.js";
@@ -49,6 +51,7 @@ export default function App() {
   const [time, setTime] = createSignal(0), [elements, setElements] = createSignal([]), [regions, setRegions] = createSignal([]);
   const [plotRecipes, setPlotRecipes] = createSignal([]);
   const [protocolEntries, setProtocolEntries] = createSignal({});
+  const [protocolRequest, setProtocolRequest] = createSignal(null), [docsRevision, setDocsRevision] = createSignal(0);
   const [plotSources, setPlotSources] = createSignal([]);
   const [activePlotId, setActivePlotId] = createSignal(null);
   const [plotRoot, setPlotRoot] = createSignal(null), [plotTaskSource, setPlotTaskSource] = createSignal({});
@@ -58,6 +61,29 @@ export default function App() {
   const [movieBusy, setMovieBusy] = createSignal(false), [movieAdapter, setMovieAdapter] = createSignal(null);
   const movieController = createMovieExportController({ createEncoder: createMovieGifEncoder,
     onAdapterChange: adapter => setMovieAdapter(() => adapter) });
+  function createProtocol(opener) {
+    if (!task() || busy() || movieBusy()) return;
+    setProtocolRequest({ task: task(), filename: "", opener, loadedTask: task() });
+  }
+  async function editProtocol(documentTask, filename, opener) {
+    if (busy() || movieBusy()) return;
+    const loaded = task();
+    let same = loaded?.handle === documentTask.handle;
+    setMovieBusy(true);
+    try {
+      if (!same && loaded?.handle?.isSameEntry) same = await loaded.handle.isSameEntry(documentTask.handle);
+    } catch { /* An unrelated or unavailable loaded task contributes no snapshots. */ }
+    finally { setMovieBusy(false); }
+    setProtocolRequest({ task: documentTask, filename, opener, loadedTask: same ? loaded : null });
+  }
+  const protocolUsesSelection = () => Boolean(protocolRequest()?.loadedTask) && protocolRequest().loadedTask === task();
+  // Keep the condition out of the JSX getter: the dialog also reads it after await.
+  const protocolDialogEntries = () => protocolUsesSelection() ? protocolEntries() : {};
+  function closeProtocol() {
+    const opener = protocolRequest()?.opener;
+    setProtocolRequest(null);
+    queueMicrotask(() => { if (opener?.isConnected) opener.focus(); });
+  }
   let loadRevision = 0, activeReader;
   async function load(handle, newPath, workspace) {
     const revision = ++loadRevision;
@@ -170,8 +196,7 @@ export default function App() {
       <For each={tabs}>{(title, i) => <button classList={{ active: active() === i() }} aria-current={active() === i() ? "page" : undefined}
         disabled={movieBusy()} onClick={() => { if (!movieBusy()) setActive(i()); }}>{title}</button>}</For>
       <ViewerToolsMenu task={task()} tabIndex={active()} frameCount={(task()?.general.countTimeSteps ?? 0) + 1}
-        protocolEntries={protocolEntries()}
-        onRemoveProtocolBlock={id => setProtocolEntries(previous => Object.fromEntries(Object.entries(previous).filter(([, block]) => block.id !== id)))}
+        onCreateProtocol={createProtocol}
         eligible={!movieDisabledReason()} disabledReason={movieDisabledReason()}
         backfillEligible={Boolean(task()) && !busy() && !movieBusy()}
         backfillDisabledReason={!task() ? "Загрузите задание." : busy() ? "Дождитесь загрузки задания." : movieBusy() ? "Дождитесь завершения текущей операции." : ""}
@@ -179,7 +204,8 @@ export default function App() {
     </nav>
     <main class="tabs-body" inert={movieBusy()} aria-busy={movieBusy()}>
       <div class="task-tab" style={{ display: active() === 0 ? "flex" : "none" }}>
-        <Tasks active={active() === 0} onRootChange={setPlotRoot} onShowTasks={() => setActive(0)} onLoad={(...args) => { if (!movieBusy()) return load(...args); }} loadedHandle={task()?.handle} busy={busy() || movieBusy()} error={error()} />
+        <Tasks active={active() === 0} onRootChange={setPlotRoot} onShowTasks={() => setActive(0)} onLoad={(...args) => { if (!movieBusy()) return load(...args); }} loadedHandle={task()?.handle} busy={busy() || movieBusy()} error={error()}
+          onEditProtocol={editProtocol} docsRevision={docsRevision()} />
       </div>
       <Show when={active() !== 0}>
         <Show when={task()} fallback={<div class="empty-task"><p>Загрузите задание на первой вкладке</p><button onClick={() => setActive(0)}>Выбор задания</button></div>}>
@@ -199,5 +225,9 @@ export default function App() {
         </Show>
       </Show>
     </main>
+    <Portal><TaskProtocolDialog open={Boolean(protocolRequest())} task={protocolRequest()?.task}
+      initialFilename={protocolRequest()?.filename ?? ""} entries={protocolDialogEntries()}
+      onRemoveBlock={id => { if (protocolUsesSelection()) setProtocolEntries(previous => Object.fromEntries(Object.entries(previous).filter(([, block]) => block.id !== id))); }}
+      onSaved={() => setDocsRevision(value => value + 1)} onBusyChange={setMovieBusy} onClose={closeProtocol} /></Portal>
   </div>;
 }

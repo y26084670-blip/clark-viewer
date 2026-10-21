@@ -11,12 +11,13 @@ const server = await createServer({ root, server: { host: "127.0.0.1", port: 0, 
   optimizeDeps: { entries: ["test/browser/taskMedia.html"] }, cacheDir: `${output}/vite-cache` });
 await server.listen();
 let browser;
-const checks = [], errors = [];
+const checks = [], errors = [], forbiddenRequests = [];
 try {
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_EXECUTABLE, headless: true,
     args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"] });
   const page = await browser.newPage({ viewport: { width: 1100, height: 600 } });
   page.on("pageerror", error => errors.push(error.message));
+  page.on("request", request => { if (request.url().includes("/forbidden-")) forbiddenRequests.push(request.url()); });
   page.setDefaultTimeout(10_000);
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/test/browser/taskMedia.html`);
   await page.waitForFunction(() => window.mediaReady);
@@ -28,14 +29,14 @@ try {
   const docsTab = () => page.getByRole("tab", { name: /^DOCS/ });
   const waitText = value => page.waitForFunction(value => document.querySelector('[aria-label="Содержимое документа DOCS"]').value.includes(value), value);
   await page.waitForFunction(() => document.querySelector('[role="tab"][aria-selected="true"]').textContent === "GIF (2)");
-  await page.waitForFunction(() => [...document.querySelectorAll('[role="tab"]')].some(tab => tab.textContent === "DOCS (19)"));
-  assert.equal(await page.evaluate(() => mediaFixture.stats().reads.some(name => /\.(png|jpeg|webp|txt|md)$/i.test(name))), false);
+  await page.waitForFunction(() => [...document.querySelectorAll('[role="tab"]')].some(tab => tab.textContent === "DOCS (24)"));
+  assert.equal(await page.evaluate(() => mediaFixture.stats().reads.some(name => /\.(png|jpeg|webp|txt|md|html?)$/i.test(name))), false);
   assert.equal(await page.evaluate(() => mediaFixture.stats().permission.length), 0);
-  checks.push("hidden DOCS enumerates 19 images without reading image/text bytes or requesting write permission");
+  checks.push("hidden DOCS counts 19 images and 5 documents without reading bytes or requesting write permission");
 
   await docsTab().click(); await waitText("Строка 1:");
   await page.waitForFunction(() => [...document.querySelectorAll('[role="tabpanel"]:not([hidden]) .task-gif-thumbnail img')].length >= 2);
-  assert.equal(await page.getByLabel("Текстовый документ DOCS").inputValue(), "README.txt");
+  assert.equal(await page.getByLabel("Документ DOCS").inputValue(), "README.txt");
   const initialReads = await page.evaluate(() => mediaFixture.stats().reads.filter(name => name.endsWith(".png")).length);
   assert.ok(initialReads < 19, "offscreen thumbnails must be lazy");
   await page.getByLabel("Содержимое документа DOCS", { exact: true }).evaluate(node => { node.scrollTop = 400; node.scrollLeft = 120; });
@@ -66,13 +67,38 @@ try {
   assert.deepEqual(await page.getByLabel("Содержимое документа DOCS", { exact: true }).evaluate(node => [node.scrollTop, node.scrollLeft]), scroll);
   checks.push("PNG/JPEG/WebP, maximized preview, arrows, restore/drag, Escape/focus and independent README scroll");
 
-  await page.getByLabel("Текстовый документ DOCS").selectOption("README.md"); await waitText("<script>");
+  await page.getByLabel("Документ DOCS").selectOption("README.md"); await waitText("<script>");
   assert.equal(await page.evaluate(() => window.injected), undefined);
-  await page.getByRole("button", { name: "Развернуть текст документа" }).click();
+  await page.getByRole("button", { name: "Развернуть документ" }).click();
   assert.ok((await dialog.getByLabel("Полный текст документа DOCS").inputValue()).startsWith("# Исходный Markdown"));
   assert.ok(await dialog.evaluate(node => node.classList.contains("is-maximized")));
   await page.keyboard.press("Escape");
   checks.push("Markdown remains literal text; text expands using the same window");
+
+  await page.getByLabel("Документ DOCS", { exact: true }).selectOption("protocol.html");
+  const inlineHtml = () => page.frameLocator('iframe[title="HTML-документ DOCS"]');
+  await inlineHtml().getByRole("heading", { name: "Снимок поля", exact: true }).waitFor();
+  assert.equal(await inlineHtml().locator("img").evaluate(img => img.complete && img.naturalWidth === 360), true);
+  assert.equal(await inlineHtml().locator("table tbody td").count(), 2);
+  await page.getByRole("button", { name: "Открыть протокол для редактирования", exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => mediaFixture.stats().edits), [{ task: "Sketch", name: "protocol.html" }]);
+  assert.equal(await page.locator("dialog[open]").count(), 0);
+  await page.screenshot({ path: `${output}/docs-protocol-1100x600.png` });
+  await page.getByLabel("Документ DOCS", { exact: true }).selectOption("legacy.HTM");
+  await inlineHtml().getByRole("heading", { name: "Обычный HTML" }).waitFor();
+  assert.equal(await inlineHtml().locator("h1").evaluate(node => getComputedStyle(node).color), "rgb(1, 2, 3)");
+  assert.equal(await inlineHtml().locator("a").getAttribute("href"), null);
+  assert.equal(await page.evaluate(() => window.injected), undefined);
+  await page.getByRole("button", { name: "Развернуть документ", exact: true }).click();
+  await page.frameLocator('iframe[title="Полный HTML-документ DOCS"]').getByRole("heading", { name: "Обычный HTML" }).waitFor();
+  await dialog.getByRole("button", { name: "Закрыть просмотр документа" }).click();
+  assert.deepEqual(forbiddenRequests, []);
+  await gifTab().click();
+  assert.equal(await page.locator("iframe").count(), 0);
+  await docsTab().click(); await inlineHtml().getByRole("heading", { name: "Обычный HTML" }).waitFor();
+  await page.getByLabel("Документ DOCS", { exact: true }).selectOption("README.txt"); await waitText("Строка 1:");
+  checks.push("HTML image/table preview; protocols route directly to editing; other HTML expands without scripts, navigation or remote requests");
+
 
   await page.locator('[role="tabpanel"]:not([hidden]) .task-gif-grid').evaluate(node => { node.scrollTop = node.scrollHeight; });
   await page.getByRole("button", { name: "Открыть 19_broken.png", exact: true }).first().click();
@@ -81,10 +107,15 @@ try {
   checks.push("corrupt image reports its own error without hiding the gallery");
 
   await page.evaluate(() => mediaFixture.pick("second")); await waitText("Только текст");
-  assert.equal(await docsTab().innerText(), "DOCS (0)");
-  assert.equal(await page.getByLabel("Текстовый документ DOCS").inputValue(), "README.md");
+  assert.equal(await docsTab().innerText(), "DOCS (1)");
+  assert.equal(await page.getByLabel("Документ DOCS").inputValue(), "README.md");
+  await page.evaluate(() => mediaFixture.pick("htmlOnly"));
+  await inlineHtml().getByRole("heading", { name: "Снимок поля", exact: true }).waitFor();
+  assert.equal(await docsTab().innerText(), "DOCS (1)");
+  await page.getByRole("button", { name: "Открыть протокол для редактирования", exact: true }).click();
+  assert.deepEqual((await page.evaluate(() => mediaFixture.stats().edits)).at(-1), { task: "HtmlOnly", name: "protocol.html" });
   await page.evaluate(() => mediaFixture.pick("empty"));
-  await page.getByText("В DOCS нет текстовых файлов TXT/MD", { exact: true }).waitFor();
+  await page.getByText("В DOCS нет документов TXT/MD/HTML", { exact: true }).waitFor();
   await page.evaluate(() => mediaFixture.pick("restricted"));
   await page.locator('[role="tabpanel"]:not([hidden])').getByText("Нет доступа", { exact: true }).first().waitFor();
   checks.push("text-only and absent DOCS, changed task, and access-denied states");

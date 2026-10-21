@@ -7,7 +7,7 @@ import { createPlotTaskStore } from "../src/services/results/plotTaskSources.js"
 const source = readFileSync(new URL("../src/components/movie/ViewerToolsMenu.jsx", import.meta.url), "utf8");
 const setup = source.slice(source.indexOf("export function ViewerToolsMenu"), source.indexOf("  return <>"))
   .replace("export function", "function");
-const createRuntime = new Function("props", "createSignal", "createUniqueId", "createEffect", "onCleanup", "queueMicrotask", "window", "document", "URL", "saveTaskGif", "listTaskTestProtocols", "readTaskTestProtocol", `
+const createRuntime = new Function("props", "createSignal", "createMemo", "createUniqueId", "createEffect", "onCleanup", "queueMicrotask", "window", "document", "URL", "saveTaskGif", "listTaskTestProtocols", "readTaskTestProtocol", `
   ${setup}
     return { toggleMenu, closeMenu, openSetup, closeDialog, startCapture, cancelCapture,
       openBackfill, closeBackfill, startBackfill, backfillProgressText,
@@ -58,7 +58,7 @@ function runtime(overrides = {}) {
   const api = createRuntime(props, initial => {
     let value = initial;
     return [() => value, next => { value = typeof next === "function" ? next(value) : next; }];
-  }, () => `menu-${++nextId}`, callback => effects.push({ callback, cleanups: [] }),
+  }, callback => callback, () => `menu-${++nextId}`, callback => effects.push({ callback, cleanups: [] }),
   callback => (currentEffect?.cleanups ?? cleanups).push(callback), callback => callback(), window, document,
   { createObjectURL(blob) { const url = `blob:test/${urls.length + 1}`; urls.push({ url, blob }); return url; },
     revokeObjectURL(url) { revoked.push(url); } }, overrides.saveTaskGif ?? (async () => ({ name: "example.gif" })),

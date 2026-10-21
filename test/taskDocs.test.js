@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { listTaskDocs, preferredTaskDoc, readTaskDocsImage, readTaskDocsText,
-  TASK_DOCS_IMAGE_MAX_BYTES, TASK_DOCS_TEXT_MAX_BYTES } from "../src/services/taskDocsService.js";
+import { listTaskDocs, preferredTaskDoc, readTaskDocsImage, readTaskDocsText, readTaskDocsDocument,
+  TASK_DOCS_IMAGE_MAX_BYTES, TASK_DOCS_TEXT_MAX_BYTES, TASK_DOCS_HTML_MAX_BYTES } from "../src/services/taskDocsService.js";
 import { createTaskDocsTextController } from "../src/services/taskDocsTextController.js";
 import { createTaskImageGalleryController } from "../src/services/taskImageGalleryController.js";
 
@@ -11,7 +11,7 @@ const handle = (name, body = name) => ({ kind: "file", name, getFile: async () =
 const entry = name => ({ name, handle: handle(name) });
 
 test("DOCS lists immediate supported files, sorts naturally and never reads bytes or asks write permission", async () => {
-  const entries = ["10_end.PNG", "2_view.WebP", "01_sketch.JPEG", "README.txt", "README.md", "notes.TXT", "extra.json", "movie.gif", "bad/escape.png"]
+  const entries = ["10_end.PNG", "2_view.WebP", "01_sketch.JPEG", "README.txt", "README.md", "notes.TXT", "report10.HTML", "report2.htm", "extra.json", "movie.gif", "bad/escape.png"]
     .map(name => [name, { kind: "file", name, getFile() { assert.fail("metadata scan read a file"); } }]);
   entries.push(["nested.png", { kind: "directory" }]);
   const task = { kind: "directory", async getDirectoryHandle(name, options) {
@@ -20,12 +20,31 @@ test("DOCS lists immediate supported files, sorts naturally and never reads byte
   }, requestPermission() { assert.fail("read-only scan requested permission"); } };
   const result = await listTaskDocs(task);
   assert.deepEqual(result.images.map(item => item.name), ["01_sketch.JPEG", "2_view.WebP", "10_end.PNG"]);
-  assert.deepEqual(result.documents.map(item => item.name), ["notes.TXT", "README.md", "README.txt"]);
+  assert.deepEqual(result.documents.map(item => item.name), ["notes.TXT", "README.md", "README.txt", "report2.htm", "report10.HTML"]);
   assert.equal(preferredTaskDoc(result.documents).name, "README.txt");
   assert.equal(preferredTaskDoc(result.documents, "notes.TXT").name, "notes.TXT");
   assert.equal(preferredTaskDoc([entry("a.txt"), entry("readme.MD")]).name, "readme.MD");
   assert.equal(preferredTaskDoc([entry("a.txt")]).name, "a.txt");
   assert.equal(preferredTaskDoc([]), null);
+});
+
+test("HTML documents support embedded images beyond the plain-text limit and retain the original source", async () => {
+  const html = '<!doctype html><title>Протокол</title><p>' + 'x'.repeat(TASK_DOCS_TEXT_MAX_BYTES) + '</p>';
+  assert.equal(await readTaskDocsDocument(handle("protocol.HTML", html)), html);
+  assert.equal(await readTaskDocsDocument(handle("report.htm", "<b>Отчёт</b>")), "<b>Отчёт</b>");
+  assert.equal(await readTaskDocsDocument(handle("README.md", "# Текст")), "# Текст");
+  await assert.rejects(readTaskDocsDocument(handle("README.txt", html)), /2 МиБ/);
+  const huge = new Blob([]); Object.defineProperty(huge, "size", { value: TASK_DOCS_HTML_MAX_BYTES + 1 });
+  await assert.rejects(readTaskDocsDocument(handle("huge.html", huge)), /64 МиБ/);
+  await assert.rejects(readTaskDocsDocument(handle("bad.html", new Blob([new Uint8Array([0xff, 0xfe])]))), /UTF-8/);
+  await assert.rejects(readTaskDocsDocument(handle("data.json")), /Выберите/);
+});
+
+test("an HTML read cancelled during native file access does not publish stale content", async () => {
+  const pending = deferred(), abort = new AbortController();
+  const operation = readTaskDocsDocument({ ...handle("late.html"), getFile: () => pending.promise }, { signal: abort.signal });
+  abort.abort(); pending.resolve(new Blob(["<p>old task</p>"]));
+  await assert.rejects(operation, { name: "AbortError" });
 });
 
 test("missing DOCS is empty; permission errors and cancellation are not disguised as an empty directory", async () => {

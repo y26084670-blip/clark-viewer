@@ -1,6 +1,7 @@
-// Read-only documentation directly under <task>/DOCS. Shared with Viewer.
+// Read-only documentation directly under <task>/DOCS.
 export const TASK_DOCS_IMAGE_MAX_BYTES = 64 * 1024 * 1024;
 export const TASK_DOCS_TEXT_MAX_BYTES = 2 * 1024 * 1024;
+export const TASK_DOCS_HTML_MAX_BYTES = 64 * 1024 * 1024;
 const imageTypes = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" };
 
 function assertCurrent(signal) {
@@ -33,7 +34,7 @@ export async function listTaskDocs(taskHandle, { signal } = {}) {
     if (handle.kind !== "file") continue;
     const ext = extension(name), entry = { name, handle };
     if (Object.hasOwn(imageTypes, ext)) images.push(entry);
-    else if (ext === "txt" || ext === "md") documents.push(entry);
+    else if (["txt", "md", "html", "htm"].includes(ext)) documents.push(entry);
   }
   assertCurrent(signal);
   return { images: images.sort(compare), documents: documents.sort(compare) };
@@ -68,9 +69,22 @@ export async function readTaskDocsImage(handle, { signal } = {}) {
 export async function readTaskDocsText(handle, { signal } = {}) {
   assertCurrent(signal);
   if (handle?.kind !== "file" || !["txt", "md"].includes(extension(handle.name))) throw new Error("Выберите TXT или MD в DOCS");
+  return readUtf8(handle, TASK_DOCS_TEXT_MAX_BYTES, "Текст DOCS превышает 2 МиБ", signal);
+}
+
+// HTML protocols embed their images and therefore use the protocol file limit.
+// This returns source text only; the UI renders it in an isolated static preview.
+export async function readTaskDocsDocument(handle, { signal } = {}) {
+  assertCurrent(signal);
+  if (["txt", "md"].includes(extension(handle?.name))) return readTaskDocsText(handle, { signal });
+  if (handle?.kind !== "file" || !["html", "htm"].includes(extension(handle.name))) throw new Error("Выберите TXT, MD или HTML в DOCS");
+  return readUtf8(handle, TASK_DOCS_HTML_MAX_BYTES, "HTML в DOCS превышает 64 МиБ", signal);
+}
+
+async function readUtf8(handle, maximum, limitMessage, signal) {
   const file = await handle.getFile();
   assertCurrent(signal);
-  if (!(file instanceof Blob) || file.size > TASK_DOCS_TEXT_MAX_BYTES) throw new Error("Текст DOCS превышает 2 МиБ");
+  if (!(file instanceof Blob) || file.size > maximum) throw new Error(limitMessage);
   const bytes = await file.arrayBuffer();
   assertCurrent(signal);
   try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }

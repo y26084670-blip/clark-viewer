@@ -5,20 +5,20 @@ import "./Protocol.css";
 
 export function TaskProtocolDialog(props) {
   let dialog, revision = 0, saved = null, saveAbort, previewUrl;
-  const [doc, setDoc] = createSignal(null), [names, setNames] = createSignal([]);
+  const [doc, setDoc] = createSignal(null);
   const [filename, setFilename] = createSignal("protocol.html"), [selected, setSelected] = createSignal("");
   const [loading, setLoading] = createSignal(false), [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal(""), [notice, setNotice] = createSignal("");
   const pending = () => Object.values(props.entries ?? {});
   const additions = () => pending().filter(block => !doc()?.blocks.some(existing => existing.id === block.id));
+  const title = () => props.initialFilename ? "Редактировать протокол" : "Создать протокол";
   function discardPreview() { if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null; }
   async function read(name = "") {
     const current = ++revision, task = props.task;
     setLoading(true); setError(""); setNotice(""); setDoc(null); saved = null; setSelected(name);
     try {
-      const available = await listTaskProtocols(task);
+      const available = name ? [] : await listTaskProtocols(task);
       if (current !== revision) return;
-      setNames(available);
       const existing = name ? await readTaskProtocol(task, name) : null;
       if (name && !existing) throw new Error("Протокол удалён или перемещён. Обновите список файлов.");
       const draft = existing?.document ?? appendProtocolBlocks(await createTaskProtocol(task), pending());
@@ -27,11 +27,12 @@ export function TaskProtocolDialog(props) {
       let next = "protocol.html", suffix = 2;
       while (!name && available.includes(next)) next = `protocol-${suffix++}.html`;
       setFilename(name || next);
+      dialog.scrollTop = 0;
     } catch (failure) { if (current === revision) setError(failure.message); }
     finally { if (current === revision) setLoading(false); }
   }
-  createEffect(on(() => [props.open, props.task], ([open]) => {
-    if (open && props.task) { if (!dialog.open) dialog.showModal(); void read(); }
+  createEffect(on(() => [props.open, props.task, props.initialFilename], ([open]) => {
+    if (open && props.task) { if (!dialog.open) dialog.showModal(); void read(props.initialFilename || ""); }
     else { revision++; if (dialog.open) dialog.close(); discardPreview(); }
   }));
   onCleanup(() => { revision++; saveAbort?.abort(); discardPreview(); if (dialog?.open) dialog.close(); });
@@ -75,21 +76,18 @@ export function TaskProtocolDialog(props) {
     setSaving(true); props.onBusyChange?.(true); setError(""); setNotice("");
     try {
       saved = await operation; setDoc(saved.document); setSelected(saved.name); setFilename(saved.name);
-      setNames(previous => [...new Set([...previous, saved.name])].sort());
-      setNotice(`Сохранено: DOCS/${saved.name}. Файл можно открыть здесь позднее и продолжить редактирование.`);
+      setNotice(`Сохранено: DOCS/${saved.name}. Для повторного редактирования разверните протокол во вкладке DOCS.`);
+      props.onSaved?.({ task, name: saved.name });
     } catch (failure) { setError(failure.message); }
     finally { saveAbort = null; setSaving(false); props.onBusyChange?.(false); }
   }
-  return <dialog ref={dialog} class="viewer-movie-dialog protocol-dialog" aria-label="Создать протокол"
+  return <dialog ref={dialog} class="viewer-movie-dialog protocol-dialog" aria-label={title()}
     aria-busy={loading() || saving()} onCancel={event => { event.preventDefault(); close(); }}>
-    <h2>Создать протокол</h2>
+    <h2>{title()}</h2>
     <p class="viewer-movie-note">Один HTML-файл в DOCS: автономный просмотр и повторное редактирование блоков в Viewer.</p>
     <fieldset disabled={loading() || saving()} style={{ border: "0", padding: "0", margin: "0" }}>
-      <label>Открыть существующий <select aria-label="Открыть существующий протокол" value={selected()}
-        onChange={event => void read(event.currentTarget.value)}>
-        <option value="">Новый протокол</option><For each={names()}>{name => <option value={name}>{name}</option>}</For>
-      </select><button type="button" onClick={() => void read(selected())}>Перечитать</button></label>
-      <p class="viewer-movie-note">Открытие другого файла или «Перечитать» отменяет несохранённые правки в этом окне.</p>
+      <Show when={selected()}><p class="viewer-movie-note">Файл: DOCS/{selected()} <button type="button" onClick={() => void read(selected())}>Перечитать</button></p>
+        <p class="viewer-movie-note">«Перечитать» отменяет несохранённые правки в этом окне.</p></Show>
       <label>Имя файла <input type="text" aria-label="Имя файла протокола" value={filename()} onInput={event => setFilename(event.currentTarget.value)} /></label>
       <Show when={doc()}>
         <p class="viewer-movie-note">Задание в протоколе: {doc()?.taskPath}</p>

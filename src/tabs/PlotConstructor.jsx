@@ -1,5 +1,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { LineChart } from "../components/LineChart.jsx";
+import { ProtocolCheck } from "../components/protocol/ProtocolCheck.jsx";
+import { captureProtocolRenderer } from "../services/protocol/protocolCapture.js";
 import { TimeSlider } from "../components/TimeSlider.jsx";
 import { plotChannels, plotChannelLabel, plotCurveLabel, plotPointAtStep, readPlotCurves, validatePlotCurve, expandPlotComponents, isSingleTimePlot, singleTimePlotTable } from "../services/results/plotConstructor.js";
 import { listPlotTasks } from "../services/results/plotTaskSources.js";
@@ -108,8 +110,14 @@ export function PlotConstructor(props) {
   function removeCurve(plot, id) {
     if (props.movieBusy) return;
     const curves = plot.curves.filter(curve => curve.id !== id);
+    if (!curves.length) props.setProtocolEntry?.(`plot:${plot.id}`, null);
     props.setPlotRecipes(curves.length ? recipes().map(r => r.id === plot.id ? { ...r, curves } : r)
       : recipes().filter(r => r.id !== plot.id));
+  }
+  function removePlot(id) {
+    if (props.movieBusy) return;
+    props.setProtocolEntry?.(`plot:${id}`, null);
+    props.setPlotRecipes(recipes().filter(recipe => recipe.id !== id));
   }
   function AxisPicker(p) {
     const spec = () => p.get(), c = () => byKey(spec().key, p.axis);
@@ -193,6 +201,16 @@ export function PlotConstructor(props) {
       const unit = recipe().curves[0]?.[`${axis}Channel`].unit;
       return `${axis.toUpperCase()}${unit ? `, ${unit}` : ""} (величины указаны в легенде)`;
     };
+    const protocol = () => <ProtocolCheck context={props} entryKey={`plot:${p.id}`} title={`График ${number()}`}
+      compact={!expanded()} disabled={data.loading() || !!failure()}
+      comment={recipe().curves.map(curve => `${plotCurveLabel(curve, "y")} / ${plotCurveLabel(curve, "x")}`).join("; ")}
+      capture={options => {
+        if (!singleTime()) return captureProtocolRenderer(renderer(), frameKey(), options);
+        const table = valueTable();
+        if (!table) throw new Error("Таблица ещё не готова.");
+        return { kind: "table", table: { headers: [...table.headers, ...(table.hasPoint ? ["Точка"] : []), "Комментарий"],
+          rows: table.rows.map(row => [...row.values, ...(table.hasPoint ? [row.point ?? ""] : []), row.comment].map(String)) } };
+      }} />;
     function ActiveMovie() {
       const movie = createMovieTabAdapter(props, { title: "Графики", filenamePrefix: "graphs", readFrame: index => {
         const current = completedMovieFrame(data.state(), { task: props.task, index, timed: false });
@@ -223,10 +241,12 @@ export function PlotConstructor(props) {
           title={expanded() ? "Вернуть обычный размер окна" : "Развернуть активный график на доступную область панели"}
           onClick={toggleExpanded}>{expanded() ? "Свернуть" : "Развернуть"}</button>}
         toolbarEnd={<button type="button" title="Удалить этот график со всеми его кривыми; файлы результатов сохраняются"
-          onClick={() => !props.movieBusy && props.setPlotRecipes(recipes().filter(r => r.id !== p.id))}>Удалить график</button>} />
+          onClick={() => removePlot(p.id)}>Удалить график</button>}
+        toolbarLast={protocol()} />
       }>
         <div class="constructor-value-toolbar"><strong>Значения {number()}{activeId() === p.id ? " · активные" : ""}</strong>
-          <button type="button" onClick={() => !props.movieBusy && props.setPlotRecipes(recipes().filter(r => r.id !== p.id))}>Удалить таблицу</button>
+          <button type="button" onClick={() => removePlot(p.id)}>Удалить таблицу</button>
+          {protocol()}
         </div>
         <Show when={valueTable()} fallback={<p role="status">{data.loading() ? "Чтение результатов…" : failure() || "Нет значений для единственного момента времени"}</p>}>
           {table => <div class="constructor-value-scroll"><table class="constructor-values" aria-label="Значения в единственный момент времени">

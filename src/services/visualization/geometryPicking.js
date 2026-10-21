@@ -104,12 +104,14 @@ export function formatGeometryTooltip(source, instance, coordinates) {
 /** Solution tips use the saved node and vector, independent of arrow scale. */
 export function formatResultVectorTooltip(item, { showMagnitude = false } = {}) {
     const magnitude = showMagnitude ? `; модуль = ${formatCoordinate(item.magnitude)} ${item.unit}` : "";
-    return `${formatCoordinates(item.origin)} мм\n${item.quantity}: (${item.vector.map(formatCoordinate).join("; ")}) ${item.unit}${magnitude}`;
+    const volume = Number.isSafeInteger(item.volumeNumber) && item.volumeNumber > 0 ? `; ЭО №${item.volumeNumber}` : "";
+    return `${formatCoordinates(item.origin)} мм${volume}\n${item.quantity}: (${item.vector.map(formatCoordinate).join("; ")}) ${item.unit}${magnitude}`;
 }
 
 /** Scalar values belong to the same saved nodes as their vector factors. */
 export function formatResultScalarTooltip(item) {
-    return `${formatCoordinates(item.origin)} мм\n${item.quantity}: ${formatCoordinate(item.value)} ${item.unit}`;
+    const volume = Number.isSafeInteger(item.volumeNumber) && item.volumeNumber > 0 ? `; ЭО №${item.volumeNumber}` : "";
+    return `${formatCoordinates(item.origin)} мм${volume}\n${item.quantity}: ${formatCoordinate(item.value)} ${item.unit}`;
 }
 
 export function resultHitScalar(hit) {

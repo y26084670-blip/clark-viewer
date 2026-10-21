@@ -37,6 +37,7 @@ export function scalarScene(frames, quantity, task = null) {
       const savedRow = frame.rowIndices?.[row] ?? row * (frame.every ?? 1);
       const { ls, as, ps } = layout.indices(savedRow);
       const item = { origin, value, quantity: label, unit: quantity.unit,
+        volumeNumber: ["MH", "JE"].includes(quantity.file) && Number.isSafeInteger(frame.start) ? frame.start + savedRow + 1 : null,
         source: { schemaId: quantity.group, recordIndex: record.recordIndex, name: record.name }, instance: { ls, as, ps } };
       const quantityKey = Object.keys(QUANTITIES).find(key => QUANTITIES[key] === quantity);
       const expanded = task ? expandResultScalar(task, record, quantityKey, item) : [item];
@@ -80,6 +81,7 @@ export function vectorScene(frames, quantity, task = null) {
       const item = { origin, vector, magnitude, kind: "magnetization", characteristicSize: 1,
         source: { schemaId: quantity.group, recordIndex: record.recordIndex, name: record.name }, instance: { ls, as: az, ps },
         quantity: quantity.label, unit: quantity.unit, quantityKey, savedRow,
+        volumeNumber: ["MH", "JE"].includes(quantity.file) && Number.isSafeInteger(frame.start) ? frame.start + savedRow + 1 : null,
         node: quantity.group === "elements" ? Math.floor(savedRow / copyCount) : null };
       const expanded = task ? expandResultVector(task, record, quantityKey, item) : [item];
       vectors.push(...expanded);

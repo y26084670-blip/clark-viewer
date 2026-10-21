@@ -15,6 +15,17 @@ function fixture({failBlend=false}={}){
     for(const [id,t] of [...timers])if(t.at<=time){timers.delete(id);t.fn();}},paint(){
     for(const [id,fn] of [...animations]){animations.delete(id);fn();}}};
 }
+test("enabling loop resumes a paused GIF and restarts a finished GIF without toggling a running one",()=>{
+  const h=fixture();h.player.open("a");const w=h.workers[0];w.frame(0,2);
+  h.advance(40);h.player.toggle();h.player.setLoop(true);
+  assert.equal(h.state.playing,true);h.advance(60);w.frame(1,2);
+  h.player.setLoop(true);assert.equal(h.state.playing,true);
+  h.player.setLoop(false);h.advance(100);assert.equal(h.state.ended,true);
+  h.player.setLoop(true);assert.equal(h.state.playing,true);
+  assert.deepEqual(w.messages.at(-1),{type:"next",reset:true});w.frame(0,2);
+  h.player.setLoop(false);assert.equal(h.state.playing,true);
+  h.player.dispose();
+});
 test("default is one automatic pass, pause retains remaining delay, restart follows the final frame",()=>{
   const h=fixture();h.player.open("blob:a");const w=h.workers[0];w.frame(0);
   assert.equal(h.state.loop,false);h.advance(40);h.player.toggle();h.advance(1000);

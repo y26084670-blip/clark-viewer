@@ -48,6 +48,7 @@ export default function App() {
   const [active, setActive] = createSignal(0), [task, setTask] = createSignal(null), [path, setPath] = createSignal("");
   const [time, setTime] = createSignal(0), [elements, setElements] = createSignal([]), [regions, setRegions] = createSignal([]);
   const [plotRecipes, setPlotRecipes] = createSignal([]);
+  const [protocolEntries, setProtocolEntries] = createSignal({});
   const [plotSources, setPlotSources] = createSignal([]);
   const [activePlotId, setActivePlotId] = createSignal(null);
   const [plotRoot, setPlotRoot] = createSignal(null), [plotTaskSource, setPlotTaskSource] = createSignal({});
@@ -80,6 +81,7 @@ export default function App() {
       activeReader?.close(); activeReader = reader;
       setTime(0); setElements([]); setRegions([]);
       setPlotRecipes([]);
+      setProtocolEntries({});
       plotTaskStore.clear();
       setPlotSources([]);
       setActivePlotId(null);
@@ -145,6 +147,11 @@ export default function App() {
     setTime: index => { if (!movieBusy()) changeTime(index); }, setMovieTime: changeTime,
     registerMovieAdapter: movieController.register,
     get movieBusy() { return movieBusy(); },
+    get protocolEntries() { return protocolEntries(); },
+    setProtocolEntry: (key, block) => setProtocolEntries(previous => {
+      const next = { ...previous }; if (block) next[key] = block; else delete next[key]; return next;
+    }),
+    setProtocolBusy: setMovieBusy,
     get elements() { return elements(); }, setElements: value => { if (!movieBusy()) setElements(value); },
     get regions() { return regions(); }, setRegions: value => { if (!movieBusy()) setRegions(value); },
     get plotRecipes() { return plotRecipes(); }, setPlotRecipes,
@@ -163,6 +170,8 @@ export default function App() {
       <For each={tabs}>{(title, i) => <button classList={{ active: active() === i() }} aria-current={active() === i() ? "page" : undefined}
         disabled={movieBusy()} onClick={() => { if (!movieBusy()) setActive(i()); }}>{title}</button>}</For>
       <ViewerToolsMenu task={task()} tabIndex={active()} frameCount={(task()?.general.countTimeSteps ?? 0) + 1}
+        protocolEntries={protocolEntries()}
+        onRemoveProtocolBlock={id => setProtocolEntries(previous => Object.fromEntries(Object.entries(previous).filter(([, block]) => block.id !== id)))}
         eligible={!movieDisabledReason()} disabledReason={movieDisabledReason()}
         backfillEligible={Boolean(task()) && !busy() && !movieBusy()}
         backfillDisabledReason={!task() ? "Загрузите задание." : busy() ? "Дождитесь загрузки задания." : movieBusy() ? "Дождитесь завершения текущей операции." : ""}

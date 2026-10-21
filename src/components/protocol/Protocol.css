@@ -1,0 +1,19 @@
+.protocol-check-wrap { margin-left: auto; display: inline-flex; align-items: center; position: relative; flex-shrink: 0; }
+.protocol-check { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.protocol-check input { margin: 0; }
+.sources-fields-toolbar > .protocol-check-wrap + .geometry-material-help-button { margin-left: 0; }
+.protocol-check-error { position: absolute; right: 0; top: 100%; z-index: 20; background: #fff1ef; color: #9b2215; padding: 8px; width: 300px; max-width: 80vw; box-shadow: 0 2px 6px #0004; }
+.viewer-movie-dialog.protocol-dialog { width: 960px; }
+.protocol-dialog label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.protocol-dialog input[type="text"], .protocol-dialog select, .protocol-dialog textarea { background: #151b21; color: #f0f4f7; border: 1px solid #7f8d99; padding: 6px; }
+.protocol-dialog input[type="text"] { flex: 1; min-width: 160px; }
+.protocol-dialog-toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+.protocol-block { border: 1px solid #596773; margin: 14px 0; padding: 12px; border-radius: 4px; }
+.protocol-block-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.protocol-block-header strong { flex: 1; }
+.protocol-block img { display: block; max-width: 100%; max-height: 360px; object-fit: contain; margin: 0 auto 10px; background: white; }
+.protocol-block pre { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.protocol-block textarea { display: block; width: 100%; min-height: 60px; resize: vertical; }
+.protocol-block table { border-collapse: collapse; font-size: 13px; width: 100%; }
+.protocol-block th, .protocol-block td { border: 1px solid #596773; padding: 5px; overflow-wrap: anywhere; }
+.protocol-block .protocol-table { overflow: auto; max-height: 300px; }

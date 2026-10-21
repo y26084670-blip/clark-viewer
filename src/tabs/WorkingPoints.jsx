@@ -1,5 +1,6 @@
 import { createMemo } from "solid-js";
 import { createGeometryViewSetting } from "../services/visualization/geometryViewSettings.js";
+import { ProtocolCheck } from "../components/protocol/ProtocolCheck.jsx";
 import { ObjectList } from "../components/ObjectList.jsx";
 import { LineChart } from "../components/LineChart.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
@@ -92,6 +93,8 @@ export function WorkingPoints(props) {
         </label></>}
         toolbarEnd={<span class="chart-toolbar-status" role="status">{points.loading() || curves.loading()
           ? "Чтение…" : `Рабочих точек: ${points.value()?.count ?? 0}`}</span>}
+        toolbarLast={<ProtocolCheck context={props} entryKey="working-points" title="Рабочие точки M(H)" adapter={movie.adapter}
+          disabled={points.loading() || curves.loading()} comment={`Элементы ФММ: ${selected().map(row => row.id).join(", ")}`} />}
         status={warnings()}
         xLabel="H, кА/м" yLabel="M, кА/м" emptyText={warnings() || "Выберите элементы ФММ"} />
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />

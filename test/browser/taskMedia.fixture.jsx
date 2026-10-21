@@ -35,7 +35,7 @@ await put(first, "DOCS/notes.txt", "Пояснения к JSON за предел
 await put(first, "DOCS/data.json", "{}");
 await put(first, "DOCS/nested/hidden.png", await blob("image/png"));
 await put(second, "DOCS/README.md", "# Только текст\nДокументация без изображений.");
-const gif = Uint8Array.from(atob("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"), char => char.charCodeAt(0));
+const gif = Uint8Array.from(atob("R0lGODlhUAA8APAAAB5GtOagPCH5BABGAAAALAAAAABQADwAAAhxAAEIHEiwoMGDCBMqXMiwocOHECNKnEixosWLGDNq3Mixo8ePIEOKHEmypMmTKFOqXMmypcuXMGPKnEmzps2bOHPq3Mmzp8+fQIMKHUq0qNGjSJMqXcq0qdOnUKNKnUq1qtWrWLNq3cq1q9evYMO+DAgAIfkEAEYAAAAsAAAAAFAAPACAHka05qA8CHEAAwgcSLCgwYMIEypcyLChw4cQI0qcSLGixYsYM2rcyLGjx48gQ4ocSbKkyZMoU6pcybKly5cwY8qcSbOmzZs4c+rcybOnz59AgwodSrSo0aNIkypdyrSp06dQo0qdSrWq1atYs2rdyrWr169gw74MCAAh+QQARgAAACwAAAAAUAA8AIAeRrTmoDwIcQABCBxIsKDBgwgTKlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkyhTqlzJsqXLlzBjypxJs6bNmzhz6tzJs6fPn0CDCh1KtKjRo0iTKl3KtKnTp1CjSp1KtarVq1izat3KtavXr2DDvgwIADs="), char => char.charCodeAt(0));
 await put(first, "output3XX/demo/one.gif", gif); await put(first, "output3XX/demo/two.gif", gif);
 
 const metrics = { reads: [], permission: [], busy: [], liveURLs: new Set() };

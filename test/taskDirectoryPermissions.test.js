@@ -132,7 +132,7 @@ const loadEnd = appSource.indexOf("  function changeTime(", loadStart);
 assert.ok(loadStart >= 0 && loadEnd > loadStart);
 const createViewerLoad = new Function("dependencies", `
     const { loadTask, ResultService, mapResultObjects, setBusy, setError, setTime,
-        setElements, setRegions, setActivePlotId, setPlotRecipes, setPlotSources, plotTaskStore, setTask, setPath, setActive } = dependencies;
+        setElements, setRegions, setActivePlotId, setPlotRecipes, setPlotSources, setProtocolEntries, plotTaskStore, setTask, setPath, setActive } = dependencies;
     ${appSource.slice(loadStart, loadEnd)}
     return load;
 `);
@@ -147,6 +147,7 @@ function viewerLoadingRuntime(loadTask, openResults = async () => ({})) {
         setBusy: value => { state.busy = value; }, setError: value => { state.error = value; },
         setTime() {}, setElements: value => { state.elements = value; }, setRegions: value => { state.regions = value; },
         setActivePlotId() {}, setPlotRecipes() {}, setPlotSources() {}, plotTaskStore: { clear() {} },
+        setProtocolEntries: value => { state.protocolEntries = value; },
         setTask: value => { state.task = value; }, setPath: value => { state.path = value; },
         setActive: value => { state.active = value; state.opened.push({ active: value, task: state.task, path: state.path }); },
     });
@@ -161,7 +162,7 @@ test("viewer opens 3D only after the task and HDF5 metadata finish loading", asy
     const metadata = new Promise(resolve => { finish = resolve; });
     const h = viewerLoadingRuntime(async () => ({ ...viewerTaskData("New", { JE: {} }),
         elements: [{ id: 1 }, { id: 2 }], regions: [{ id: 1 }] }), () => { entered(); return metadata; });
-    h.state.elements = [99]; h.state.regions = [99];
+    h.state.elements = [99]; h.state.regions = [99]; h.state.protocolEntries = { old: { id: "old" } };
     const loading = h.load({}, "Projects/New");
     await ready;
     assert.equal(h.state.active, 0); assert.equal(h.state.task, null);
@@ -170,6 +171,7 @@ test("viewer opens 3D only after the task and HDF5 metadata finish loading", asy
     assert.equal(h.state.opened[0].task.name, "New"); assert.equal(h.state.opened[0].path, "Projects/New");
     assert.equal(h.state.busy, false);
     assert.deepEqual(h.state.elements, []); assert.deepEqual(h.state.regions, []);
+    assert.deepEqual(h.state.protocolEntries, {});
     assert.match(source, /onClick=\{\(\) => \{ if \(!browserBusy\(\)\) setCandidate\(\{ \.\.\.item \}\); \}\}/u);
 });
 
@@ -177,9 +179,11 @@ test("viewer load errors preserve the current tab and previously loaded task", a
     const h = viewerLoadingRuntime(async () => { throw new Error("Unreadable task"); });
     const previous = viewerTaskData("Previous");
     h.state.active = 4; h.state.task = previous; h.state.path = "Projects/Previous";
+    const previousSelection = h.state.protocolEntries = { old: { id: "keep" } };
     assert.equal(await h.load({}, "Projects/Broken"), false);
     assert.equal(h.state.active, 4); assert.equal(h.state.task, previous);
     assert.equal(h.state.path, "Projects/Previous"); assert.deepEqual(h.state.opened, []);
+    assert.equal(h.state.protocolEntries, previousSelection);
     assert.match(h.state.error, /Unreadable task/u);
 });
 

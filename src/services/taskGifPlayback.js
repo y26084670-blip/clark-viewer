@@ -93,7 +93,9 @@ export function createTaskGifPlayback({publish,draw,
     }catch(error){fail(error);}
   }
   function setLoop(value) {
+    const start=!!value&&!state.loop&&!state.playing;
     state.loop=!!value;emit();
+    if(start)toggle();
     try {
       if(crossfade&&frame) {
         if(canAdvance()){requestNext();animate();}

@@ -513,6 +513,7 @@ export function LineChart(props) {
           title={props.autoScaleToggle ? (autoScale() ? "Автомасштаб включён: нажмите, чтобы сохранить текущие пределы" : "Автомасштаб выключен: нажмите для автоматического подбора пределов") : "Автоматические пределы по обеим осям"}>Авто</button>
         {props.afterAuto}
         <label title="Перетащите легенду внутри графика; щелчок по цветному квадрату скрывает или возвращает кривую"><input type="checkbox" disabled={capturing()} checked={showLegend()} onChange={event => { if (!movieState) setShowLegend(event.currentTarget.checked); }} />Показать легенду</label>
+        {props.toolbarLast}
       </div>
     </div>
     <Show when={props.status}><div class="plot-status" role="status">{props.status}</div></Show>

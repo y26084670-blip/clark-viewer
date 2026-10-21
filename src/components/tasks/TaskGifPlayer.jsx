@@ -1,4 +1,4 @@
-import { createEffect,createSignal,onCleanup,Show } from "solid-js";
+import { createEffect,createSignal,onCleanup,onMount,Show } from "solid-js";
 import { createTaskGifPlayback } from "../../services/taskGifPlayback.js";
 
 export function TaskGifPlayer(props) {
@@ -32,11 +32,22 @@ export function TaskGifPlayer(props) {
   }});
   createEffect(()=>{if(props.url)player.open(props.url);});
   createEffect(()=>player.setCrossfade(props.crossfade));
+  onMount(()=>{
+    const dialog=canvas.closest("dialog");
+    const keydown=event=>{
+      if(event.code!=="Space"||event.ctrlKey||event.altKey||event.metaKey||event.shiftKey||event.isComposing
+        ||event.target?.isContentEditable||/^(INPUT|SELECT|TEXTAREA)$/.test(event.target?.tagName))return;
+      event.preventDefault();event.stopPropagation();
+      if(!event.repeat)player.toggle();
+    };
+    dialog?.addEventListener("keydown",keydown);
+    onCleanup(()=>dialog?.removeEventListener("keydown",keydown));
+  });
   onCleanup(()=>{player.dispose();surfaces=[];});
   return <div class="task-gif-player">
     <div class="task-gif-playback-controls">
       <button type="button" disabled={state().loading||!!state().error||state().count<2}
-        aria-label={state().playing?"Остановить GIF":"Запустить GIF"} onClick={player.toggle}>
+        aria-label={state().playing?"Остановить GIF":"Запустить GIF"} aria-keyshortcuts="Space" title="Старт / Стоп — Пробел" onClick={player.toggle}>
         {state().playing?"Стоп":"Старт"}
       </button>
       <label><input type="checkbox" checked={state().loop} onChange={event=>player.setLoop(event.currentTarget.checked)} /> Циклически</label>

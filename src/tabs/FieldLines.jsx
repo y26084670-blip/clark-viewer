@@ -4,6 +4,8 @@ import { ObjectList } from "../components/ObjectList.jsx";
 import { LineChart } from "../components/LineChart.jsx";
 import { QuantitySelect } from "../components/QuantitySelect.jsx";
 import { FieldComponentsMenu } from "../components/FieldComponentsMenu.jsx";
+import { LocalImagesMenu } from "../components/LocalImagesMenu.jsx";
+import { ProtocolCheck } from "../components/protocol/ProtocolCheck.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
 import { QUANTITIES } from "../services/results/resultMappings.js";
 import { fieldLineChartRange, fieldLineCycleRange, normalizeFieldLineComponents } from "../services/results/fieldLineComponents.js";
@@ -64,15 +66,11 @@ export function FieldLines(props) {
             onChange={event => setGlobalScale(event.currentTarget.checked)} />За весь расчёт
         </label>
         <label>По оси X <select value={direction()} onChange={event => setDirection(event.currentTarget.value)}><option value="i1">i1</option><option value="i2">i2</option></select></label>
-        <label>Локальный образ <input type="number" min="1" max={copyCount()} step="1" value={localCopy() + 1}
-          aria-label="Номер локального образа LS" disabled={allCopies() || !selectedRecords().length}
-          onChange={event => {
-            const value = event.currentTarget.valueAsNumber;
-            const next = Number.isFinite(value) ? Math.max(1, Math.min(copyCount(), Math.trunc(value))) : localCopy() + 1;
-            event.currentTarget.value = String(next); setCopy(next - 1);
-          }} /><span>из {copyCount()}</span></label>
-        <label><input type="checkbox" checked={allCopies()} onChange={event => setAllCopies(event.currentTarget.checked)} />Все локальные образы</label>
+        <LocalImagesMenu all={allCopies()} onAll={setAllCopies} value={localCopy()} onValue={setCopy}
+          count={copyCount()} empty={!selectedRecords().length} disabled={props.movieBusy} />
         </>}
+        toolbarLast={<ProtocolCheck context={props} entryKey="field-lines" title="Поле на линиях" adapter={movie.adapter}
+          disabled={result().loading} comment={`${QUANTITIES[quantityKey()].label}; площадки ${props.regions.join(", ")}; ${direction()}; ${allCopies() ? "все LS" : `LS ${localCopy() + 1}`}; компоненты ${components().map(value => value === "norm" ? "модуль" : "XYZ"[Number(value)]).join(", ")}`} />}
         status={status()}
         xLabel={allCopies() ? `Сквозной номер узла ${direction()} по LS` : `Номер узла ${direction()}`} integerX={true}
         yLabel={`${QUANTITIES[quantityKey()].label}, ${QUANTITIES[quantityKey()].unit}`}

@@ -101,6 +101,18 @@ try {
   await gifTab().click();
   await page.locator('[role="tabpanel"]:not([hidden]) .task-gif-thumbnail').first().click();
   await dialog.locator("canvas").waitFor({ state: "visible" });
+  await page.keyboard.press("Space");
+  await dialog.getByRole("button", { name: "Запустить GIF", exact: true }).waitFor();
+  assert.equal(await dialog.isVisible(), true);
+  await page.keyboard.down("Space"); await page.keyboard.down("Space"); await page.keyboard.up("Space");
+  await dialog.getByRole("button", { name: "Остановить GIF", exact: true }).waitFor();
+  await dialog.getByRole("button", { name: "Запустить GIF", exact: true }).waitFor();
+  await dialog.getByRole("checkbox", { name: "Циклически" }).check();
+  await dialog.getByRole("button", { name: "Остановить GIF", exact: true }).waitFor();
+  await dialog.getByRole("checkbox", { name: "Циклически" }).uncheck();
+  await dialog.getByRole("button", { name: "Остановить GIF", exact: true }).waitFor();
+  checks.push("Space toggles playback once, does not close the dialog, and enabling loop restarts a finished GIF");
+  await dialog.locator("header button").last().focus();
   await page.keyboard.press("ArrowRight");
   await page.waitForFunction(() => document.querySelector(".task-gif-dialog[open] h2").textContent === "two.gif");
   assert.equal(await dialog.getByRole("button", { name: "Следующий GIF" }).isDisabled(), true);

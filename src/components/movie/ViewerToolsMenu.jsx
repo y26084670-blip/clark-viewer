@@ -1,13 +1,17 @@
-import { createEffect, createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { saveTaskGif } from "../../services/taskGifService.js";
 import { listTaskTestProtocols, readTaskTestProtocol } from "../../services/taskTestProtocolService.js";
 import { TaskConditionsDialog } from "./TaskConditionsDialog.jsx";
+import { TaskProtocolDialog } from "../protocol/TaskProtocolDialog.jsx";
 import "./ViewerToolsMenu.css";
 
 export function ViewerToolsMenu(props) {
   const menuId = createUniqueId(), titleId = createUniqueId(), protocolsTitleId = createUniqueId();
   const [conditionsOpen, setConditionsOpen] = createSignal(false);
+  const [taskProtocolOpen, setTaskProtocolOpen] = createSignal(false);
+  const canEditProtocol = createMemo(() => Boolean(props.backfillEligible));
+  let taskProtocolMenuItem;
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [menuPosition, setMenuPosition] = createSignal({ left: 8, top: 8 });
   const [dialogOpen, setDialogOpen] = createSignal(false);
@@ -273,7 +277,7 @@ export function ViewerToolsMenu(props) {
   function onMenuKeyDown(event) {
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.code)) {
       event.preventDefault();
-      const items = [menuItem, rangeMenuItem, protocolsMenuItem, conditionsMenuItem].filter(item => item && !item.disabled);
+      const items = [menuItem, taskProtocolMenuItem, rangeMenuItem, protocolsMenuItem, conditionsMenuItem].filter(item => item && !item.disabled);
       const current = Math.max(0, items.indexOf(event.target));
       const index = event.code === "Home" ? 0 : event.code === "End" ? items.length - 1
         : event.code === "ArrowUp" ? (current + items.length - 1) % items.length : (current + 1) % items.length;
@@ -358,6 +362,9 @@ export function ViewerToolsMenu(props) {
     <button ref={trigger} type="button" class="viewer-tools-trigger" aria-haspopup="menu" aria-expanded={menuOpen()}
       aria-controls={menuId} onClick={toggleMenu} onKeyDown={onTriggerKeyDown}>Инструменты</button>
     <Portal>
+      <TaskProtocolDialog open={taskProtocolOpen()} task={props.task} entries={props.protocolEntries}
+        onRemoveBlock={props.onRemoveProtocolBlock}
+        onBusyChange={props.onBusyChange} onClose={() => { setTaskProtocolOpen(false); trigger?.focus(); }} />
       <TaskConditionsDialog open={conditionsOpen()} task={props.task} onBusyChange={props.onBusyChange}
         onClose={() => { setConditionsOpen(false); trigger?.focus(); }} />
       <Show when={menuOpen()}>
@@ -365,6 +372,8 @@ export function ViewerToolsMenu(props) {
           style={{ left: `${menuPosition().left}px`, top: `${menuPosition().top}px` }} onKeyDown={onMenuKeyDown}>
           <button ref={menuItem} type="button" role="menuitem" aria-disabled={!props.eligible}
             onClick={openSetup}>Создать moview</button>
+          <button ref={taskProtocolMenuItem} type="button" role="menuitem" disabled={!canEditProtocol()}
+            onClick={() => { if (canEditProtocol()) { closeMenu(); setTaskProtocolOpen(true); } }}>Создать протокол</button>
           <Show when={!props.eligible}><p class="viewer-tools-disabled-reason">{props.disabledReason}</p></Show>
           <button ref={rangeMenuItem} type="button" role="menuitem" aria-disabled={!props.backfillEligible}
             onClick={openBackfill}>Дозаписать глобальные минмакс</button>

@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { createGeometryViewSetting } from "../services/visualization/geometryViewSettings.js";
 import { ObjectList } from "../components/ObjectList.jsx";
+import { ProtocolCheck } from "../components/protocol/ProtocolCheck.jsx";
 import { SurfaceChart } from "../components/SurfaceChart.jsx";
 import { QuantitySelect } from "../components/QuantitySelect.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
@@ -78,6 +79,8 @@ export function FieldAreas(props) {
             const next = Number.isFinite(value) ? Math.max(1, Math.min(layout()?.copies ?? 1, Math.trunc(value))) : copy() + 1;
             event.currentTarget.value = String(next); setCopy(next - 1);
           }} /></label></Show>
+        <ProtocolCheck context={props} entryKey="field-areas" title="Поле в областях" adapter={movie.adapter}
+          disabled={result().loading || !record()} comment={`${QUANTITIES[quantityKey()].label}; площадка ${record()?.id}; LS ${copy() + 1}; компоненты X, Y, Z`} />
       </div>
       <div class="plot-status" role="status">{status()}</div>
       <div class="field-area-plots"><For each={[0, 1, 2]}>{index => <section class="field-area-component" aria-label={`Компонента ${"XYZ"[index]}`}>

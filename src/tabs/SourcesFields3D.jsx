@@ -1,4 +1,5 @@
 import { createGeometryViewSetting } from "../services/visualization/geometryViewSettings.js";
+import { ProtocolCheck } from "../components/protocol/ProtocolCheck.jsx";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { installSourcesFieldsKeyboard } from "../services/sourcesFieldsKeyboard.js";
 import { ObjectList } from "../components/ObjectList.jsx";
@@ -278,6 +279,10 @@ export function SourcesFields3D(props) {
           </Show>
         </div>
         </div>
+        <ProtocolCheck context={props} entryKey="sources" title="Источники / Поле 3D" adapter={movie.adapter}
+          disabled={flightBusy() || result().loading}
+          comment={requestedLayers().filter(layer => layer.quantityKey !== "none").map(layer =>
+            `${QUANTITIES[layer.quantityKey]?.label}: объекты ${layer.selected.join(", ")}`).join("; ")} />
         <GeometryMaterialLegend buttonClass="source-toolbar-menu-button"
           onOpen={() => setOpenSourceMenu(null)} />
       </div>

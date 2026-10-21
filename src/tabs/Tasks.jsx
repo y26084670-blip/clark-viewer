@@ -1,5 +1,6 @@
-import { batch, createSignal, For, Show, onCleanup } from "solid-js";
+import { batch, createSignal, For, Show, onCleanup, onMount } from "solid-js";
 import { createLastOpenedTaskHistory, sortTaskDirectories } from "../services/taskLastOpenedService.js";
+import { listProjectCatalogs, readProjectDisk, saveProjectDisk, watchProjectDisk, projectDiskPermission } from "../services/projectDiskAccessService.js";
 import { createTaskSelectionChannel, readTaskSelection } from "../services/taskSelectionChannel.js";
 import { loadTaskInput, readTaskSummaries } from "../services/taskLoadService.js";
 import { useAsyncResult } from "../services/results/resultRequests.js";
@@ -13,6 +14,9 @@ import { createTaskTestProtocolWindow } from "../services/taskTestProtocolWindow
 import "../components/geometry/ResultsGeometryViewport.css";
 
 export function Tasks(props) {
+  const [disk, setDisk] = createSignal(null), [catalogs, setCatalogs] = createSignal([]);
+  const [pendingDisk, setPendingDisk] = createSignal(null), [accessBusy, setAccessBusy] = createSignal(false);
+  const [accessNotice, setAccessNotice] = createSignal("");
   const [root, setRoot] = createSignal(null), [projects, setProjects] = createSignal([]);
   const [project, setProject] = createSignal(""), [tasks, setTasks] = createSignal([]);
   const taskStatus = useTaskStatuses(
@@ -25,7 +29,7 @@ export function Tasks(props) {
   const [selectionSending, setSelectionSending] = createSignal(false);
   const [selectionNotice, setSelectionNotice] = createSignal("");
   const [selectionError, setSelectionError] = createSignal("");
-  const browserBusy = () => galleryBusy() || selectionReceiving() || protocolBusy();
+  const browserBusy = () => accessBusy() || galleryBusy() || selectionReceiving() || protocolBusy();
   let taskListElement, selectionErrorDialog, selectionErrorReturnFocus;
   const [lastTask, setLastTask] = createSignal(null), [lastTaskNotice, setLastTaskNotice] = createSignal("");
   const lastTaskHistory = createLastOpenedTaskHistory({ app: "viewer", onChange: setLastTask, onNotice: setLastTaskNotice });
@@ -44,6 +48,13 @@ export function Tasks(props) {
   const selectionChannel = createTaskSelectionChannel({ app: "viewer", onSelection: receiveTaskSelection });
   onCleanup(() => selectionChannel.dispose());
   onCleanup(() => { disposed = true; revision++; pickRevision++; loadRequest++; lastTaskHistory.dispose(); });
+  onMount(() => {
+    const restore = () => { void restoreDisk(); };
+    const stopWatching = watchProjectDisk(restore);
+    window.addEventListener("focus", restore);
+    restore();
+    onCleanup(() => { stopWatching(); window.removeEventListener("focus", restore); });
+  });
   function showSelectionError(message, returnFocus) {
     selectionErrorReturnFocus = returnFocus;
     setSelectionError(message);
@@ -91,26 +102,82 @@ export function Tasks(props) {
     for await (const [name, item] of handle.entries()) if (item.kind === "directory") result.push({ name, handle: item });
     return sortTaskDirectories(result);
   }
+  async function selectCatalog(catalog, isCurrent = () => true) {
+    const current = ++revision, picked = catalog?.handle ?? null, previous = root();
+    const handle = previous && picked && await previous.isSameEntry(picked) ? previous : picked;
+    if (disposed || current !== revision || !isCurrent()) return;
+    const entries = handle ? await subdirectories(handle) : [];
+    if (disposed || current !== revision || !isCurrent()) return;
+    loadRequest++;
+    batch(() => {
+      setRoot(handle); setProjects(entries); setProject(""); setTasks([]); setCandidate(null); setError("");
+    });
+    props.onRootChange?.(handle);
+    if (handle) await lastTaskHistory.open(handle);
+    else { lastTaskHistory.dispose(); setLastTask(null); setLastTaskNotice(""); }
+  }
+  const accessIsCurrent = request => !disposed && request === pickRevision;
+  async function openDisk(handle, request) {
+    const entries = await listProjectCatalogs(handle);
+    if (!accessIsCurrent(request)) return;
+    await selectCatalog(entries.find(item => item.name === root()?.name) ?? entries[0], () => accessIsCurrent(request));
+    if (!accessIsCurrent(request)) return;
+    batch(() => { setDisk(handle); setCatalogs(entries); setPendingDisk(null); setAccessNotice(""); });
+  }
+  async function restoreDisk() {
+    // Уведомление другого GUI не переключает уже выбранный диск/задание.
+    if (disposed || disk() || pendingDisk() || browserBusy() || props.busy) return;
+    const request = ++pickRevision;
+    try {
+      const handle = await readProjectDisk();
+      if (!handle || !accessIsCurrent(request)) return;
+      const permission = await projectDiskPermission(handle);
+      if (!accessIsCurrent(request)) return;
+      if (permission !== "granted") { setPendingDisk(handle); return; }
+      setAccessBusy(true);
+      await openDisk(handle, request);
+    } catch {
+      if (accessIsCurrent(request)) setAccessNotice("Сохранённый диск недоступен. Выберите диск с проектами кнопкой справа от списка.");
+    } finally { if (accessIsCurrent(request)) setAccessBusy(false); }
+  }
+  async function allowDisk() {
+    if (props.busy || browserBusy() || !pendingDisk()) return;
+    const handle = pendingDisk(), request = ++pickRevision;
+    setAccessBusy(true); setAccessNotice("");
+    try {
+      const permission = await projectDiskPermission(handle, { request: true });
+      if (!accessIsCurrent(request)) return;
+      if (permission !== "granted") {
+        setAccessNotice("Доступ к диску не разрешён. Повторите разрешение или выберите диск кнопкой справа от списка."); return;
+      }
+      await openDisk(handle, request);
+    } catch {
+      if (accessIsCurrent(request)) setAccessNotice("Не удалось открыть сохранённый диск. Выберите диск с проектами кнопкой справа от списка.");
+    } finally { if (accessIsCurrent(request)) setAccessBusy(false); }
+  }
   async function pickRoot() {
-    if (browserBusy()) return;
-    setError("");
+    if (props.busy || browserBusy()) return;
     if (!window.isSecureContext || typeof window.showDirectoryPicker !== "function") {
       setError("Выбор каталога недоступен. Откройте приложение по HTTPS или localhost в Chrome либо Edge."); return;
     }
     const request = ++pickRevision;
+    setAccessBusy(true); setError("");
     try {
-      const picked = await window.showDirectoryPicker({ mode: "readwrite" });
-      const previous = root();
-      const sameDirectory = previous ? await previous.isSameEntry(picked) : false;
-      const handle = sameDirectory ? previous : picked;
-      if (disposed || request !== pickRevision) return;
-      const current = ++revision;
-      const entries = await subdirectories(handle);
-      if (disposed || current !== revision || request !== pickRevision) return;
-      setRoot(handle); setProjects(entries); setProject(""); setTasks([]); setCandidate(null);
-      props.onRootChange?.(handle);
-      await lastTaskHistory.open(handle);
-    } catch (error) { if (!disposed && request === pickRevision && error.name !== "AbortError") setError(error.message); }
+      const handle = await window.showDirectoryPicker({ id: "clark-project-disk", mode: "readwrite" });
+      if (!accessIsCurrent(request)) return;
+      await openDisk(handle, request);
+      if (!accessIsCurrent(request)) return;
+      try { await saveProjectDisk(handle); }
+      catch { if (accessIsCurrent(request)) setAccessNotice("Диск открыт. Не удалось сохранить доступ; после перезагрузки выберите его снова."); }
+    } catch (error) { if (accessIsCurrent(request) && error.name !== "AbortError") setError(error.message); }
+    finally { if (accessIsCurrent(request)) setAccessBusy(false); }
+  }
+  async function changeCatalog(name) {
+    if (props.busy || browserBusy()) return;
+    pickRevision++; setAccessBusy(true);
+    try { await selectCatalog(catalogs().find(item => item.name === name)); }
+    catch (error) { if (!disposed) setError("Не удалось открыть каталог: " + error.message); }
+    finally { if (!disposed) setAccessBusy(false); }
   }
   async function pickProject(name) {
     if (browserBusy()) return;
@@ -145,7 +212,22 @@ export function Tasks(props) {
   return <div class="tasks-layout">
     <section class="task-browser-panel">
       <div class="task-browser-content">
-        <button class="folder-button" disabled={browserBusy()} onClick={pickRoot}>Выбрать каталог с проектами</button>
+        <label class="field-label" for="projectCatalog">Каталоги с проектами</label>
+        <div class="task-catalog-row">
+          <select id="projectCatalog" class="project-select" aria-label="Каталоги с проектами"
+            value={root()?.name ?? ""} disabled={props.busy || browserBusy() || !catalogs().length}
+            onChange={event => changeCatalog(event.currentTarget.value)}>
+            <Show when={!catalogs().length}><option value="">{disk() ? "Нет каталогов clark.*" : "Выберите диск с проектами"}</option></Show>
+            <For each={catalogs()}>{item => <option value={item.name}>{item.name}</option>}</For>
+          </select>
+          <button type="button" class="folder-button task-disk-button" disabled={props.busy || browserBusy()}
+            aria-label="Выбрать диск с проектами" title="Выбрать другой диск с проектами" onClick={pickRoot}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v12H3z" fill="none" stroke="currentColor" stroke-width="2" /></svg>
+          </button>
+        </div>
+        <Show when={pendingDisk()}><button type="button" class="folder-button" disabled={props.busy || browserBusy()}
+          onClick={allowDisk}>Разрешить доступ к диску «{pendingDisk().name}»</button></Show>
+        <Show when={accessNotice()}><div class="task-access-notice" role="status">{accessNotice()}</div></Show>
         <div class="root-name">{root() ? `Корневой каталог: ${root().name}` : "Каталог не выбран"}</div>
         <label class="field-label">Список проектов</label>
         <select class="project-select task-project-select" value={project()} disabled={browserBusy()} onChange={event => pickProject(event.currentTarget.value)} aria-label="Список проектов">
@@ -206,7 +288,7 @@ export function Tasks(props) {
       <footer>исходные данные</footer>
     </section>
     <TaskMediaPanel taskHandle={candidate()?.handle} active={props.active}
-      disabled={props.busy || selectionReceiving()} refreshKey={[candidate(), props.docsRevision]} onBusyChange={setGalleryBusy}
+      disabled={props.busy || selectionReceiving() || accessBusy()} refreshKey={[candidate(), props.docsRevision]} onBusyChange={setGalleryBusy}
       onEditProtocol={(filename, opener) => {
         const item = candidate();
         if (!item || props.busy || browserBusy()) return;

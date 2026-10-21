@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { listProjectCatalogs } from "../src/services/projectDiskAccessService.js";
 import { sortTaskDirectories } from "../src/services/taskLastOpenedService.js";
 
 const source = await readFile(new URL("../src/tabs/Tasks.jsx", import.meta.url), "utf8");
@@ -10,7 +11,7 @@ assert.ok(start >= 0 && end > start);
 
 // Run the actual picker and directory enumeration without mounting unrelated JSX.
 const createPicker = new Function("dependencies", `
-    const { props, window, root, setError, setRoot, setProjects, setProject, setTasks, setCandidate, browserBusy, onCleanup, lastTaskHistory, sortTaskDirectories, createTaskSelectionChannel } = dependencies;
+    const { batch, onMount, accessBusy, setAccessBusy, setAccessNotice, disk, setDisk, pendingDisk, setPendingDisk, catalogs, setCatalogs, setLastTask, setLastTaskNotice, listProjectCatalogs, saveProjectDisk, props, window, root, setError, setRoot, setProjects, setProject, setTasks, setCandidate, browserBusy, onCleanup, lastTaskHistory, sortTaskDirectories, createTaskSelectionChannel } = dependencies;
     ${source.slice(start, end)}
     return pickRoot;
 `);
@@ -29,7 +30,7 @@ function runtime(picker, windowOverrides = {}) {
             isSecureContext: true,
             showDirectoryPicker: async options => {
                 state.permissions.push(options);
-                return picker();
+                return directory("User disk", [await picker()]);
             },
             ...windowOverrides,
         },
@@ -42,21 +43,28 @@ function runtime(picker, windowOverrides = {}) {
         setCandidate: value => { state.candidate = value; },
         browserBusy: () => state.galleryBusy,
         createTaskSelectionChannel: () => ({ dispose() {} }),
-        onCleanup() {}, sortTaskDirectories,
+        onCleanup() {}, onMount() {}, batch: action => action(), sortTaskDirectories, listProjectCatalogs,
+        saveProjectDisk: async () => {},
+        accessBusy: () => state.accessBusy, setAccessBusy: value => { state.accessBusy = value; },
+        setAccessNotice: value => { state.notice = value; },
+        disk: () => state.disk, setDisk: value => { state.disk = value; },
+        pendingDisk: () => null, setPendingDisk() {},
+        catalogs: () => state.catalogs, setCatalogs: value => { state.catalogs = value; },
+        setLastTask() {}, setLastTaskNotice() {},
         lastTaskHistory: { async open(handle) { state.historyRoots.push(handle); } },
     });
     return { state, pick };
 }
 
-test("viewer accepts any root name, lists sorted projects and requests read-write access for the service JSON", async () => {
-    for (const name of ["clark.projects", "Расчёты 2026", "custom-projects"]) {
+test("viewer selects clark catalogs, lists sorted projects and requests disk read-write access", async () => {
+    for (const name of ["clark.projects", "CLARK.Расчёты 2026", "clark.custom-projects"]) {
         const handle = directory(name, [directory("Project 10"), { name: "note.txt", kind: "file" }, directory("Project 2")]);
         const { state, pick } = runtime(() => handle);
         await pick();
         assert.equal(state.root, handle);
         assert.equal(state.plotRoot, handle);
         assert.deepEqual(state.projects.map(item => item.name), ["Project 2", "Project 10"]);
-        assert.deepEqual(state.permissions, [{ mode: "readwrite" }]);
+        assert.deepEqual(state.permissions, [{ id: "clark-project-disk", mode: "readwrite" }]);
         assert.equal(state.project, "");
         assert.deepEqual(state.tasks, []);
         assert.equal(state.candidate, null);
@@ -98,7 +106,7 @@ test("viewer checks browser support and secure context before opening the picker
 });
 
 test("viewer waits for GIF deletion before allowing a different root", async () => {
-    const handle = directory("Next"), { state, pick } = runtime(() => handle);
+    const handle = directory("clark.Next"), { state, pick } = runtime(() => handle);
     const previous = directory("Previous");state.root = previous;state.galleryBusy = true;
     await pick();assert.equal(state.root, previous);assert.deepEqual(state.permissions, []);
     state.galleryBusy = false;await pick();assert.equal(state.root, handle);
@@ -108,12 +116,12 @@ test("a delayed previous directory cannot replace the newest viewer selection", 
     let finish, entered;
     const ready = new Promise(resolve => { entered = resolve; });
     const pending = new Promise(resolve => { finish = resolve; });
-    const old = { name: "Old", async *entries() {
+    const old = { name: "clark.Old", kind: "directory", async *entries() {
         entered();
         await pending;
         yield ["Old project", directory("Old project")];
     } };
-    const latest = directory("Latest", [directory("New project")]);
+    const latest = directory("clark.Latest", [directory("New project")]);
     const handles = [old, latest];
     const { state, pick } = runtime(() => handles.shift());
     const firstPick = pick();
@@ -247,17 +255,17 @@ test("viewer does not save failed, blocked or superseded loads", async () => {
 
 test("a delayed system picker result cannot replace the most recent root", async () => {
     let finish;
-    const latest = directory("Latest");
+    const latest = directory("clark.Latest");
     const results = [new Promise(resolve => { finish = resolve; }), latest];
     const h = runtime(() => results.shift());
-    const old = h.pick(); await h.pick(); finish(directory("Old")); await old;
+    const old = h.pick(); await h.pick(); finish(directory("clark.Old")); await old;
     assert.equal(h.state.root, latest); assert.deepEqual(h.state.historyRoots, [latest]);
 });
 
 test("reselecting the same physical root keeps its handle to serialize file writes", async () => {
-    const previous = directory("Base", [directory("Project")]);
+    const previous = directory("clark.Base", [directory("Project")]);
     previous.isSameEntry = async () => true;
-    const h = runtime(() => directory("Base")); h.state.root = previous;
+    const h = runtime(() => directory("clark.Base")); h.state.root = previous;
     await h.pick();
     assert.equal(h.state.root, previous);
     assert.deepEqual(h.state.historyRoots, [previous]);

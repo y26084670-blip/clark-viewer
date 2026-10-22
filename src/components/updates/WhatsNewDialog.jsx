@@ -29,7 +29,7 @@ export function WhatsNewDialog(props) {
     if (!installed()) return "Версия Clark не определена";
     if (!recommended()) return "Рекомендуемая версия Clark пока не указана";
     return comparison() === -1 ? "Рекомендуется обновить Clark"
-      : comparison() === 0 ? "Установлена рекомендуемая версия Clark" : "Установлена более новая версия Clark";
+      : comparison() === 0 ? "Установлена рекомендуемая версия Clark" : "Установлена более новая версия Clark. Обновление не требуется";
   };
   async function resolveContext() {
     const revision = ++contextRevision;
@@ -103,7 +103,7 @@ export function WhatsNewDialog(props) {
           <button type="button" ref={closer} onClick={close} aria-label="Закрыть уведомления">Закрыть</button></div>
         <section class="whats-new-version" aria-label="Обновление Clark">
           <strong classList={{ "whats-new-important": comparison() === -1 }}>{versionLabel()}</strong>
-          <div>Установлено: {installed()?.version ?? "—"}; рекомендуется: {recommended()?.version ?? "—"}.</div>
+          <div>Установлено: {installed()?.version ?? "—"}; {comparison() === -1 ? "доступно обновление" : "версия в журнале"}: {recommended()?.version ?? "—"}.</div>
           <Show when={installed()}><div class="whats-new-meta">Последняя проверка установленной версии: {formatDate(installed()?.checkedAt)}</div></Show>
           <div class="whats-new-version-actions">
             <button type="button" onClick={checkUpdates} disabled={state().loading || versionBusy()}>

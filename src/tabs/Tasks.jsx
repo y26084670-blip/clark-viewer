@@ -70,14 +70,20 @@ export function Tasks(props) {
     setSelectionNotice(""); setSelectionError("");
     try {
       const selected = await readTaskSelection(handle, request, {
+        catalogs: catalogs(),
         isCurrent: () => !disposed && handle === root() && current === revision && !props.busy,
       });
       batch(() => {
+        setRoot(selected.root);
         setProjects(selected.projects); setProject(selected.project.name);
         setTasks(selected.tasks); setCandidate({ ...selected.task }); setError("");
       });
+      if (selected.root !== handle) {
+        props.onRootChange?.(selected.root);
+        await lastTaskHistory.open(selected.root);
+      }
       props.onShowTasks?.();
-      setSelectionNotice(`Выбрано задание из Editor: ${selected.project.name}/${selected.task.name}`);
+      setSelectionNotice(`Выбрано задание из Editor: ${selected.root.name}/${selected.project.name}/${selected.task.name}`);
       queueMicrotask(() => {
         if (!disposed && current === revision) {
           const row = taskListElement?.querySelector(".selected");
@@ -268,7 +274,7 @@ export function Tasks(props) {
         <button type="button" class="task-cross-open-button"
           disabled={!candidate() || !selectionChannel.supported || props.busy || browserBusy() || selectionSending()}
           aria-busy={selectionSending()}
-          title="Выделить задание и перейти на вкладку открытого Editor с тем же базовым каталогом; браузер может ограничить переключение"
+          title="Выбрать каталог проектов, проект и задание в открытом Editor; браузер может ограничить переключение вкладки"
           onClick={showInEditor}>Выбрать в Editor</button>
         </div>
         <Show when={props.loadedHandle === candidate()?.handle && props.loadedHandle}><div class="loaded-note">✓ Задание загружено</div></Show>

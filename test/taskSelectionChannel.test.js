@@ -51,6 +51,33 @@ test("different roots with identical names fail before directory enumeration", a
   assert.equal(reads, 0);
 });
 
+test("full selection switches to another accessible catalog using receiver handles", async () => {
+  const { root, project, task } = fixture();
+  const previous = directory("clark.other", []);
+  const result = await readTaskSelection(previous, selection({ identity: root.identity }), {
+    catalogs: [{ name: previous.name, handle: previous }, { name: root.name, handle: root }],
+  });
+  assert.equal(result.root, root); assert.equal(result.project.handle, project); assert.equal(result.task.handle, task);
+});
+
+test("catalog lookup works without a current catalog but cannot use sender-only access", async () => {
+  const { root } = fixture();
+  const result = await readTaskSelection(null, selection(root), { catalogs: [{ name: root.name, handle: root }] });
+  assert.equal(result.root, root);
+  await assert.rejects(readTaskSelection(directory("clark.other"), selection(root)), /недоступен/);
+});
+
+test("catalog identity lookup rejects stale requests and lost permission on the destination", async () => {
+  const old = directory("clark.old"), { root } = fixture();
+  let current = true;
+  old.isSameEntry = async () => { current = false; return false; };
+  await assert.rejects(readTaskSelection(old, selection(root), {
+    catalogs: [{ handle: root }], isCurrent: () => current,
+  }), /отменён/);
+  const denied = directory("clark.denied", [], { permission: "denied" });
+  await assert.rejects(readTaskSelection(null, selection(denied), { catalogs: [{ handle: denied }] }), /утрачен/);
+});
+
 test("missing root and lost permissions require explicit directory selection", async () => {
   const { root } = fixture();
   await assert.rejects(readTaskSelection(null, selection(root)), /не выбран/u);

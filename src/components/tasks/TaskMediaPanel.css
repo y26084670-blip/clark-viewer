@@ -29,3 +29,11 @@
 .task-docs-html { display: block; flex: 1 1 0; width: 100%; height: 100%; min-width: 0; min-height: 0; box-sizing: border-box; border: 0; background: #fff; }
 .task-docs-text-panel .task-docs-html { border-top: 1px solid #596773; }
 .task-results-panel .task-media-caption { margin: 0; padding: 0; border: 0; background: transparent; text-align: center; color: #dce5ec; font: 600 14px/20px Arial, sans-serif; }
+
+.task-readme-actions { display: flex; flex-wrap: wrap; align-items: center; flex: none; gap: 6px; padding: 5px 8px; }
+.task-readme-actions button { padding: 5px 8px; border: 1px solid #71818e; border-radius: 3px; background: #303b45; color: #f0f4f7; font: 13px Arial, sans-serif; cursor: pointer; }
+.task-readme-actions button:disabled { opacity: .45; cursor: default; }
+.task-readme-actions button:focus-visible { outline: 2px solid #74c5ff; outline-offset: 1px; }
+.task-readme-editor { display: flex; flex-direction: column; align-self: stretch; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: auto; color: #eef3f7; }
+.task-readme-editor > p { padding: 8px; margin: 0; }
+.task-readme-error { flex: none; color: #ffcdca; white-space: pre-wrap; }

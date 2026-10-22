@@ -7,18 +7,27 @@ const validName = name => typeof name === "string" && name.length > 0
   && name !== "." && name !== ".." && !/[\\/\0]/u.test(name);
 
 // Read through the receiving page's own handle. No permission prompts or writes.
-export async function readTaskSelection(root, request, { isCurrent = () => true } = {}) {
+export async function readTaskSelection(root, request, { catalogs = [], isCurrent = () => true } = {}) {
   const checkCurrent = () => {
     if (!isCurrent()) throw new Error("Выбор задания отменён: состояние страницы изменилось.");
   };
   checkCurrent();
-  if (!root) throw new Error("В принимающем приложении не выбран базовый каталог. Ограничения браузера требуют ручной выбор базового каталога.");
   if (!request?.baseHandle || !validName(request.projectName) || !validName(request.taskName)) {
     throw new Error("Получена некорректная команда выбора задания.");
   }
-  const sameRoot = await root.isSameEntry(request.baseHandle);
+  // Resolve identity through the receiver's accessible disk, never by name.
+  let selectedRoot = null;
+  for (const handle of [root, ...catalogs.map(item => item.handle)].filter(Boolean)) {
+    const same = await handle.isSameEntry(request.baseHandle);
+    checkCurrent();
+    if (same) { selectedRoot = handle; break; }
+  }
   checkCurrent();
-  if (!sameRoot) throw new Error("В Editor и Viewer выбраны разные базовые каталоги. Ограничения браузера требуют ручной выбор базового каталога.");
+  if (!selectedRoot) {
+    if (!root && !catalogs.length) throw new Error("В принимающем приложении не выбран диск с проектами. Разрешите доступ к диску.");
+    throw new Error("В Editor и Viewer выбраны разные базовые каталоги, а нужный каталог недоступен на выбранном диске. Выберите диск с этим каталогом.");
+  }
+  root = selectedRoot;
   if (typeof root.queryPermission === "function") {
     const permission = await root.queryPermission({ mode: "read" });
     checkCurrent();
@@ -40,7 +49,7 @@ export async function readTaskSelection(root, request, { isCurrent = () => true 
     const tasks = await subdirectories(project.handle);
     const task = tasks.find(item => item.name === request.taskName);
     if (!task) throw new Error(`Задание «${request.taskName}» отсутствует в проекте «${request.projectName}».`);
-    return { projects, project, tasks, task };
+    return { root, projects, project, tasks, task };
   } catch (error) {
     if (error?.name === "NotAllowedError" || error?.name === "SecurityError") {
       throw new Error("Нет доступа к каталогам проекта. Повторно выберите базовый каталог.");

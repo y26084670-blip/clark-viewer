@@ -38,7 +38,7 @@ export function TaskMediaPanel(props) {
     </div>
     <div class="task-media-page" role="tabpanel" id={`${id}-docs-panel`} aria-labelledby={`${id}-docs-tab`} hidden={tab() !== "docs"}>
       <TaskDocsGallery taskHandle={props.taskHandle} active={props.active} visible={tab() === "docs"}
-        disabled={disabled()} refreshKey={props.refreshKey} onCountChange={setDocsCount} onEditProtocol={props.onEditProtocol} />
+        disabled={disabled()} refreshKey={props.refreshKey} onBusyChange={busyChanged} onCountChange={setDocsCount} onEditProtocol={props.onEditProtocol} />
     </div>
     <footer class="task-panel-caption task-media-caption">{tab() === "gif" ? "результаты" : "документация"}</footer>
   </section>;

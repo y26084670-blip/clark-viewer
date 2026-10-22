@@ -30,5 +30,5 @@ test("Show panel exposes performance toggle and the canvas owns the adaptive ove
   assert.match(jsx, /class="geometry-performance-overlay"/);
   assert.match(jsx, />TIME</);
   assert.match(jsx, />VECTOR LINE</);
-  assert.match(css, /\.geometry-performance-overlay\s*\{[\s\S]*top:\s*8px;[\s\S]*right:\s*8px;/);
+  assert.match(css, /\.geometry-performance-overlay\s*\{[^}]*top:\s*8px;[^}]*left:\s*8px;/);
 });

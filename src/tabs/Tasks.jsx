@@ -70,10 +70,14 @@ export function Tasks(props) {
     setSelectionNotice(""); setSelectionError("");
     try {
       const selected = await readTaskSelection(handle, request, {
-        catalogs: catalogs(),
+        catalogs: catalogs(), diskHandle: disk(),
         isCurrent: () => !disposed && handle === root() && current === revision && !props.busy,
       });
       batch(() => {
+        if (selected.diskHandle) {
+          setDisk(selected.diskHandle); setCatalogs(selected.catalogs);
+          setPendingDisk(null); setAccessNotice("");
+        }
         setRoot(selected.root);
         setProjects(selected.projects); setProject(selected.project.name);
         setTasks(selected.tasks); setCandidate({ ...selected.task }); setError("");
@@ -98,7 +102,7 @@ export function Tasks(props) {
     const item = candidate(), name = project(), handle = root();
     setSelectionSending(true); setSelectionNotice(""); setSelectionError("");
     try {
-      await selectionChannel.select({ baseHandle: handle, projectName: name, taskName: item.name });
+      await selectionChannel.select({ baseHandle: handle, diskHandle: disk(), projectName: name, taskName: item.name });
       if (!disposed) setSelectionNotice(`В Editor выделено задание: ${name}/${item.name}`);
     } catch (error) { if (!disposed) showSelectionError(error.message, sourceButton); }
     finally { if (!disposed) setSelectionSending(false); }

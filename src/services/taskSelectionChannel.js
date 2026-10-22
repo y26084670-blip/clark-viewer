@@ -1,3 +1,4 @@
+import { listProjectCatalogs } from "./projectDiskAccessService.js";
 import { sortTaskDirectories } from "./taskLastOpenedService.js";
 
 export const TASK_SELECTION_CHANNEL = "clark.task-selection.v1";
@@ -6,8 +7,9 @@ const appName = app => app === "editor" ? "Editor" : "Viewer";
 const validName = name => typeof name === "string" && name.length > 0
   && name !== "." && name !== ".." && !/[\\/\0]/u.test(name);
 
-// Read through the receiving page's own handle. No permission prompts or writes.
-export async function readTaskSelection(root, request, { catalogs = [], isCurrent = () => true } = {}) {
+// An explicit user command can carry an already granted disk handle.
+// Resolve exact entry identity; never prompt for permission or write files.
+export async function readTaskSelection(root, request, { catalogs = [], diskHandle = null, isCurrent = () => true } = {}) {
   const checkCurrent = () => {
     if (!isCurrent()) throw new Error("Выбор задания отменён: состояние страницы изменилось.");
   };
@@ -15,12 +17,35 @@ export async function readTaskSelection(root, request, { catalogs = [], isCurren
   if (!request?.baseHandle || !validName(request.projectName) || !validName(request.taskName)) {
     throw new Error("Получена некорректная команда выбора задания.");
   }
-  // Resolve identity through the receiver's accessible disk, never by name.
-  let selectedRoot = null;
-  for (const handle of [root, ...catalogs.map(item => item.handle)].filter(Boolean)) {
-    const same = await handle.isSameEntry(request.baseHandle);
-    checkCurrent();
-    if (same) { selectedRoot = handle; break; }
+  const findRoot = async handles => {
+    for (const handle of handles.filter(Boolean)) {
+      const same = await handle.isSameEntry(request.baseHandle);
+      checkCurrent();
+      if (same) return handle;
+    }
+    return null;
+  };
+  let selectedRoot = await findRoot([root, ...catalogs.map(item => item.handle)]);
+  let selectedDisk = diskHandle, selectedCatalogs = catalogs;
+  if (!selectedRoot) {
+    // Refresh stale lists first, then resolve the sender's explicit disk. A
+    // different selected disk must not make Editor -> Viewer asymmetric.
+    for (const disk of [...new Set([diskHandle, request.diskHandle].filter(Boolean))]) {
+      if (disk.kind !== "directory" || typeof disk.entries !== "function") continue;
+      try {
+        const permission = typeof disk.queryPermission === "function"
+          ? await disk.queryPermission({ mode: "read" }) : "granted";
+        checkCurrent();
+        if (permission !== "granted") continue;
+        const fresh = await listProjectCatalogs(disk);
+        checkCurrent();
+        selectedRoot = await findRoot(fresh.map(item => item.handle));
+        if (selectedRoot) { selectedDisk = disk; selectedCatalogs = fresh; break; }
+      } catch (error) {
+        checkCurrent();
+        if (!["NotAllowedError", "SecurityError", "NotFoundError"].includes(error?.name)) throw error;
+      }
+    }
   }
   checkCurrent();
   if (!selectedRoot) {
@@ -49,7 +74,7 @@ export async function readTaskSelection(root, request, { catalogs = [], isCurren
     const tasks = await subdirectories(project.handle);
     const task = tasks.find(item => item.name === request.taskName);
     if (!task) throw new Error(`Задание «${request.taskName}» отсутствует в проекте «${request.projectName}».`);
-    return { root, projects, project, tasks, task };
+    return { root, diskHandle: selectedDisk, catalogs: selectedCatalogs, projects, project, tasks, task };
   } catch (error) {
     if (error?.name === "NotAllowedError" || error?.name === "SecurityError") {
       throw new Error("Нет доступа к каталогам проекта. Повторно выберите базовый каталог.");
@@ -106,7 +131,7 @@ export function createTaskSelectionChannel({ app, onSelection,
   };
   return {
     supported: Boolean(channel),
-    select({ baseHandle, projectName, taskName }) {
+    select({ baseHandle, diskHandle, projectName, taskName }) {
       if (disposed) return Promise.reject(new Error("Страница закрыта."));
       if (!channel) return Promise.reject(new Error("Обмен между страницами недоступен в этом браузере."));
       if (!baseHandle || !validName(projectName) || !validName(taskName)) {
@@ -119,7 +144,7 @@ export function createTaskSelectionChannel({ app, onSelection,
         pending.set(requestId, { resolve, reject, timer });
         try {
           channel.postMessage({ version: 1, type: "select-task", source: app,
-            target: otherApp(app), requestId, baseHandle, projectName, taskName });
+            target: otherApp(app), requestId, baseHandle, diskHandle, projectName, taskName });
         } catch (error) { finish(requestId, `Не удалось передать команду: ${error?.message || String(error)}`); }
       });
     },

@@ -205,3 +205,53 @@ test("a receiver disposed during selection cannot raise a stale tab", async () =
   try { await assert.rejects(editor.select(selection(root)), /Viewer не ответил/u); assert.equal(focused, 0); }
   finally { editor.dispose(); viewer.dispose(); }
 });
+
+
+test("refresh a stale receiving disk catalog list by exact handle identity", async () => {
+  const { root, task } = fixture(), old = directory("clark.old");
+  const disk = directory("Disk", [old, root]);
+  const selected = await readTaskSelection(old, selection(root), { diskHandle: disk, catalogs: [{ name: old.name, handle: old }] });
+  assert.equal(selected.diskHandle, disk); assert.equal(selected.root, root); assert.equal(selected.task.handle, task);
+  assert.deepEqual(selected.catalogs.map(item => item.name), ["clark.old", "clark.projects"]);
+});
+
+test("explicit selection adopts the sender disk even when receiver has a different disk or none", async () => {
+  const { root } = fixture(), sameName = directory(root.name), oldDisk = directory("Other disk", [sameName]);
+  const disk = directory("Sender disk", [root, directory("clark.app"), directory("System")]);
+  for (const old of [null, sameName]) {
+    const selected = await readTaskSelection(old, { ...selection(root), diskHandle: disk }, { diskHandle: old ? oldDisk : null });
+    assert.equal(selected.diskHandle, disk); assert.equal(selected.root, root);
+    assert.deepEqual(selected.catalogs.map(item => item.name), [root.name]);
+  }
+});
+
+test("sender handle must belong to the supplied project disk; names and nested directories cannot substitute", async () => {
+  const { root } = fixture();
+  for (const disk of [directory("Disk", [directory(root.name)]), directory("Disk", [directory("nested", [root])])]) {
+    await assert.rejects(readTaskSelection(directory("clark.old"), { ...selection(root), diskHandle: disk }), /недоступен/);
+  }
+});
+
+test("transferred disks never prompt for permission, enumerate denied content, or accept a stale request", async () => {
+  const { root } = fixture();
+  for (const permission of ["prompt", "denied"]) {
+    const disk = directory("Disk", [root], { permission, beforeRead() { assert.fail("denied disk was enumerated"); } });
+    disk.requestPermission = () => assert.fail("background prompt");
+    await assert.rejects(readTaskSelection(directory("clark.old"), { ...selection(root), diskHandle: disk }), /недоступен/);
+  }
+  let current = true;
+  const disk = directory("Disk", [root], { beforeRead() { current = false; } });
+  await assert.rejects(readTaskSelection(null, { ...selection(root), diskHandle: disk }, { isCurrent: () => current }), /отменён/);
+});
+
+test("selection transport includes the granted disk for both directions", async () => {
+  for (const app of ["editor", "viewer"]) {
+    const { Channel } = bus(), { root } = fixture(), disk = directory("Disk", [root]);
+    let received;
+    const receiver = createTaskSelectionChannel({ app: app === "editor" ? "viewer" : "editor", BroadcastChannelClass: Channel,
+      onSelection: message => { received = message; } });
+    const sender = createTaskSelectionChannel({ app, BroadcastChannelClass: Channel });
+    try { await sender.select({ ...selection(root), diskHandle: disk }); assert.equal(received.diskHandle, disk); }
+    finally { sender.dispose(); receiver.dispose(); }
+  }
+});

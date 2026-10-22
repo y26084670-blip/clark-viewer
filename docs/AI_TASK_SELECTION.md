@@ -1,6 +1,6 @@
 # Выбор задания и отметка последнего открытия
 
-Обновлено: 2026-10-21 19:20 UTC+3.
+Обновлено: 2026-10-22 21:21 UTC+3.
 
 <a id="project-disk-access"></a>
 ## Диск и общий доступ с Editor — 4.48.0
@@ -165,3 +165,21 @@ Chromium/OPFS: 11 сценариев Viewer и 12 Editor — загрузка, �
 Отказ `focus()` не отменяет выбор, не создаёт новую вкладку и не перезагружает
 данные. При ошибке выбора или закрытии принимающей страницы фокус не запрашивается.
 Транспорт и тест `taskSelectionChannel` синхронизированы между Editor и Viewer.
+
+<a id="explicit-task-selection"></a>
+## Выбор из другого приложения — 4.49.1
+
+Команды «Выбрать в Viewer» и «Выбрать в Editor» больше не зависят от совпадения
+выбранных каталогов или ранее сохранённого списка. Явная команда передаёт
+доступный diskHandle; получатель может перечислить его и выбрать каталог по
+точному isSameEntry. Загруженное задание не меняется. Никаких фоновых запросов
+разрешения или записей доступа эта команда не добавляет.
+Полный [протокол и совместимость](https://github.com/y26084670-blip/clark-editor/blob/main/docs/AI_CLARK_INTEGRATION.md#explicit-task-selection)
+принадлежит Editor; требуется Editor 4.74.0 для передачи diskHandle.
+
+Владельцы: `src/services/taskSelectionChannel.js`, `src/tabs/Tasks.jsx`.
+Общий сервис и `test/taskSelectionChannel.test.js` совпадают с Editor.
+Проверка: профильные Node-тесты и `scripts/check-shared-disk-browser.mjs`
+из Editor с VIEWER_ROOT. Новые случаи используют реально разные OPFS-диски
+и каталог, добавленный после открытия принимающей страницы.
+[Датированные результаты](https://github.com/y26084670-blip/clark-editor/blob/main/docs/AI_VERIFICATION.md#verification-contact-element).

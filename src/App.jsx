@@ -5,6 +5,7 @@ import { loadTask } from "./services/taskLoadService.js";
 import { ResultService } from "./services/resultService.js";
 import { mapResultObjects } from "./services/results/resultMappings.js";
 import { AboutDialog } from "./components/AboutDialog.jsx";
+import { WhatsNewDialog } from "./components/updates/WhatsNewDialog.jsx";
 import { ViewerToolsMenu } from "./components/movie/ViewerToolsMenu.jsx";
 import { TaskProtocolDialog } from "./components/protocol/TaskProtocolDialog.jsx";
 import { createMovieExportController } from "./services/movie/movieExportController.js";
@@ -190,6 +191,7 @@ export default function App() {
     <header class="task-info-bar">
       <span class="program-name">E3D Viewer</span>
       <div class="task-path" title={path()}>{path() || "Задание не загружено"}</div>
+      <WhatsNewDialog app="viewer" />
       <AboutDialog />
     </header>
     <nav class="tabs-header" aria-label="Вкладки просмотра" inert={movieBusy()}>

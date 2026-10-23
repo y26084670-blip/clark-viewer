@@ -125,7 +125,12 @@ export function WhatsNewDialog(props) {
         </div>
         <div class="whats-new-messages" role="tabpanel" aria-label={NEWS_CATEGORIES[category()]}>
           <For each={entries()}>{item => <article class="whats-new-entry" classList={{ unread: !read(item), important: item.importance === "important" }}>
-            <div class="whats-new-entry-top"><h3>{item.title}</h3><span>{item.date}</span></div>
+            <div class="whats-new-entry-top">
+              <div class="whats-new-entry-title"><h3>{item.title}</h3>
+                <Show when={item.status}><span class="whats-new-entry-status">{item.status}</span></Show>
+              </div>
+              <span>{item.date}</span>
+            </div>
             <Show when={item.importance === "important"}><strong class="whats-new-important">Влияет на результаты расчёта</strong></Show>
             <p>{item.summary}</p>
             <Show when={item.action}><p>{item.action}</p></Show>

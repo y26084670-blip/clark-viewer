@@ -4,7 +4,7 @@ const BASELINE_KEY = "clark.updates.baseline.v1";
 const CHANGE_EVENT = "clark-updates-changed";
 const VERSION_KEY = "clark.updates.installed.v1";
 const GUID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
-export const NEWS_CATEGORIES = Object.freeze({ interface: "Интерфейс", computation: "Алгоритмы и вычисления" });
+export const NEWS_CATEGORIES = Object.freeze({ interface: "Интерфейс", computation: "Алгоритмы" });
 
 export function validVersion(value) {
   return typeof value === "string" && value.length <= 64 && /^\d+\.\d+\.\d+$/.test(value);
@@ -38,7 +38,7 @@ export function validateUpdatesFeed(value) {
       throw new Error("Некорректная запись журнала обновлений.");
     }
     ids.add(item.id);
-    for (const key of ["action", "limitations", "detailsUrl"]) {
+    for (const key of ["action", "limitations", "detailsUrl", "status"]) {
       if (item[key] !== undefined && typeof item[key] !== "string") throw new Error("Некорректная запись журнала обновлений.");
     }
   }

@@ -1,8 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createResultLayerReader, allocateResultLayerPointBudgets } from "../src/services/results/resultLayerRequests.js";
+import { createResultLayerReader } from "../src/services/results/resultLayerRequests.js";
 import { createResultFrameController, sameFrameContext } from "../src/services/results/resultFrameController.js";
-import { boundedVolumeFallbackPoints } from "../src/services/results/resultVolumeRequests.js";
 import { buildResultVolumeField } from "../src/services/visualization/resultVolumeField.js";
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -78,26 +77,31 @@ test("one group's metadata or read error leaves both other result groups availab
   reader.close();
 });
 
-test("global point allowances and volume fallback stay below the common 5000-node display limit", async () => {
-  for (const quantityKey of ["M", "MHdot", "JEdot"]) {
-    const f = fixture([60_000, 8000, 60_000]);
+test("all result groups retain every node above the former point and volume limits", async () => {
+  for (const volumeMode of [false, true]) {
+    const f = fixture([60_000, 8000, 60_001]);
     let processors = 0;
-    const reader = createResultLayerReader({ processorFactory: () => { processors++; throw new Error("full-volume worker must not start"); } });
-    const result = await reader.read(f.request(0, { elements: { volumeMode: true, quantityKey }, virtual: { volumeMode: true } }));
-    assert.ok(result.layers.every(layer => layer.state === "ready"));
-    assert.equal(processors, 0);
-    assert.ok(result.layers.reduce((sum, layer) => sum + (layer.scene?.vectors ?? layer.scalarScene.points).length, 0) <= 5000);
-    for (const index of [0, 2]) {
-      assert.equal(result.layers[index].volumeFields.domains.length, 0);
-      assert.match(result.layers[index].volumeNotice, /вместе требуют 120/);
-      assert.match(result.layers[index].volumeNotice, /общий предел/);
-    }
-    assert.ok(f.reads.every(read => read.every > 1));
-    reader.close();
+    const reader = createResultLayerReader({ processorFactory: () => {
+      processors++;
+      return { process: async domains => ({ domains: [], fallbackPoints: domains.flatMap(d => d.points),
+        fallbackDomainKeys: domains.map(d => d.key), notice: "" }), close() {} };
+    } });
+    try {
+      const result = await reader.read(f.request(0, { elements: { volumeMode, quantityKey: "J" }, virtual: { volumeMode } }));
+      assert.deepEqual(result.errors, []);
+      assert.deepEqual(result.layers.map(layer => layer.scene.vectors.length), [60_000, 8000, 60_001]);
+      assert.ok(result.layers.every(layer => !layer.sampled));
+      assert.ok(f.reads.every(read => read.every === 1));
+      assert.equal(result.layers[0].scene.vectors.at(-1).origin[0], 59_999);
+      assert.equal(processors, volumeMode ? 2 : 0);
+      if (volumeMode) for (const index of [0, 2]) {
+        assert.equal(result.layers[index].volumeFields.fallbackPoints.length, result.layers[index].scene.vectors.length);
+      }
+    } finally { reader.close(); }
   }
 });
 
-test("scalar volume requests read full signed grids before sharing a bounded fallback with other layers", async () => {
+test("scalar volume and fallback retain every signed value alongside other layers", async () => {
   for (const [quantityKey, factor, unit] of [["MHdot", 0.4 * Math.PI, "Дж/м³"], ["JEdot", 1e-3, "Вт/мм³"]]) {
     const f = fixture([6000, 6, 8]), received = [];
     f.task.reader.read = async request => {
@@ -133,26 +137,13 @@ test("scalar volume requests read full signed grids before sharing a bounded fal
         assert.equal(received[0][0].values[row], expected);
         assert.equal(layer.scalarScene.points[row].value, expected);
       }
-      assert.ok(layer.sampled);
+      assert.equal(layer.sampled, false);
       const visiblePoints = layer.volumeFields.fallbackPoints.length
         + result.layers.slice(1).reduce((sum, other) => sum + other.scene.vectors.length, 0);
-      assert.ok(visiblePoints <= 5000);
+      assert.equal(visiblePoints, 6014);
       assert.ok(layer.volumeFields.fallbackPoints.every(point => layer.scalarScene.points.includes(point)));
     } finally { reader.close(); }
   }
-});
-
-test("fallback sampling retains every symmetry image while sharing the common allowance", () => {
-  const points = Array.from({ length: 30 }, (_, index) => ({ origin: [index, 0, 0],
-    source: { schemaId: "elements", recordIndex: 0 }, instance: { ls: index % 3, as: 0, ps: 0 } }));
-  const sampled = boundedVolumeFallbackPoints(points, 7);
-  assert.ok(sampled.length <= 7);
-  assert.equal(new Set(sampled.map(point => point.instance.ls)).size, 3);
-  assert.ok(sampled.every(point => points.includes(point)));
-  const { allocations, errors } = allocateResultLayerPointBudgets([
-    { key: "too-many-images", minimum: 5001, count: 5001 }, { key: "healthy", minimum: 1, count: 20000 },
-  ]);
-  assert.equal(allocations.get("healthy"), 5000); assert.equal(errors.size, 1);
 });
 
 test("per-group volume processors reuse plans and close on disable, quantity or task changes", async () => {

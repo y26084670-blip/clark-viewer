@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildResultSurfaceField, isResultSurfaceDomain } from "../src/services/visualization/resultSurfaceField.js";
 import { buildResultVolumeField } from "../src/services/visualization/resultVolumeField.js";
-import { readResultVolumeFrame, VOLUME_MAX_NODES } from "../src/services/results/resultVolumeRequests.js";
+import { readResultVolumeFrame } from "../src/services/results/resultVolumeRequests.js";
 
 function domain({ n1 = 2, n2 = 3, ls = 0, value = (i, j) => 10 + i + j } = {}) {
   const positions = [], values = [], points = [];
@@ -81,8 +81,8 @@ test("malformed, degenerate, bow-tie and line grids retain only their original f
     assert.deepEqual(field.fallbackDomainKeys, [input.key]); assert.match(field.notice, /Цветные узлы вместо поверхности/);
   }
   const large = domain(); large.positions = new Float64Array(0);
-  large.points = Array.from({ length: VOLUME_MAX_NODES }, (_, index) => ({ index }));
-  assert.equal(buildResultSurfaceField({ domains: [large] }).fallbackPoints.length, VOLUME_MAX_NODES);
+  large.points = Array.from({ length: 100_001 }, (_, index) => ({ index }));
+  assert.equal(buildResultSurfaceField({ domains: [large] }).fallbackPoints.length, 100_001);
 });
 
 for (const Type of [Float32Array, Float64Array]) for (const [quantityKey, name, unit, factor] of [
@@ -120,7 +120,7 @@ test("real read returns zero/constant surface ranges and never introduces an emp
   }
 });
 
-test("mixed plane/line/degenerate regions use one fallback budget while only nonsurface grids reach volume processing", async () => {
+test("mixed plane/line/degenerate regions retain every fallback point", async () => {
   const { task } = taskFixture([{}, { n1: 1, n2: 8 }, { n1: 3, n2: 4, degenerate: true, copies: 2 }]);
   const routed = [];
   const processor = { process(domains) { routed.push(...domains); return buildResultVolumeField({ domains }); } };
@@ -128,30 +128,30 @@ test("mixed plane/line/degenerate regions use one fallback budget while only non
   assert.equal(result.volumeFields.surfaces.length, 1); assert.equal(routed.length, 1);
   assert.deepEqual(routed[0].dimensions, [1, 8, 1]);
   assert.equal(result.volumeFields.domains.length, 0);
-  assert.ok(result.volumeFields.fallbackPoints.length <= 6);
+  assert.equal(result.volumeFields.fallbackPoints.length, 32);
   assert.equal(new Set(result.volumeFields.fallbackPoints.map(point => `${point.source.recordIndex}:${point.instance.ls}`)).size, 3);
   assert.equal(result.volumeFields.fallbackDomainKeys.length, 3);
-  assert.match(result.volumeNotice, /вместо поверхности/); assert.match(result.volumeNotice, /общем пределе кадра/);
-  assert.equal(result.sampled, true);
+  assert.match(result.volumeNotice, /вместо поверхности/); assert.doesNotMatch(result.volumeNotice, /общем пределе кадра/);
+  assert.equal(result.sampled, false);
 });
 
-test("surface nodes and images obey the shared 100000/128 limits before interpolation", async () => {
-  for (const [spec, limitText, expectFullRead] of [
-    [{ n1: 317, n2: 316 }, /100.*000/, false],
-    [{ copies: 129 }, /128/, true],
-  ]) {
+test("surface nodes and images remain complete above the former 100000/128 limits", async () => {
+  for (const spec of [{ n1: 317, n2: 316 }, { copies: 129 }]) {
     const { task, reads } = taskFixture([spec]);
-    let calls = 0;
-    const result = await readResultVolumeFrame({ task, quantityKey: "Bs", selected: [1], time: 0, fallbackBudget: 300 }, null,
-      { process() { calls++; throw new Error("limit must be checked before processing"); } });
-    assert.equal(calls, 0); assert.deepEqual(result.volumeFields.surfaces, []); assert.deepEqual(result.volumeFields.domains, []);
-    assert.ok(result.volumeFields.fallbackPoints.length <= 300); assert.equal(result.sampled, true);
-    assert.match(result.volumeNotice, limitText);
-    assert.equal(reads[0].every === 1, expectFullRead);
-    if (spec.copies) assert.equal(new Set(result.volumeFields.fallbackPoints.map(point => point.instance.ls)).size, spec.copies);
+    const result = await readResultVolumeFrame({ task, quantityKey: "Bs", selected: [1], time: 0 }, null,
+      { process() { throw new Error("surfaces must not enter the volume processor"); } });
+    const nodes = (spec.n1 ?? 2) * (spec.n2 ?? 3);
+    const copies = spec.copies ?? 1;
+    assert.equal(result.volumeFields.surfaces.length, copies);
+    assert.equal(result.volumeFields.domains.length, 0);
+    assert.equal(result.volumeFields.fallbackPoints.length, 0);
+    assert.equal(result.sampled, false);
+    assert.equal(result.scene.vectors.length, nodes * copies);
+    assert.equal(result.volumeFields.surfaces.reduce((n, surface) => n + surface.positions.length / 3, 0), nodes * copies);
+    assert.equal(result.volumeNotice, "");
+    assert.equal(reads[0].every, 1);
   }
 });
-
 
 test("surface triangles use relative 1e-6 degeneracy and orientation thresholds", () => {
   for (const size of [1,1e-9,1e9]) for (const width of [.5e-6,2e-6]) {

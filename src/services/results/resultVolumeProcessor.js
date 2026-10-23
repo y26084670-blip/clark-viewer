@@ -1,5 +1,3 @@
-import { ResultVolumeLimitError } from "../visualization/resultVolumeField.js";
-
 /** One worker and at most one in-flight interpolation. Frame coalescing stays in
  * resultFrameController. Input grid buffers are consumed; scene/picking points
  * and the original HDF5 frame are retained on the main thread.
@@ -22,7 +20,7 @@ export function createResultVolumeProcessor({ workerFactory = () => new Worker(
       if (!pending || pending.id !== data.id || closed) return;
       const job = pending; pending = null;
       if (data.error) {
-        const error = data.limit ? new ResultVolumeLimitError(data.error) : new Error(data.error);
+        const error = new Error(data.error);
         job.reject(error); return;
       }
       const fields = data.result;

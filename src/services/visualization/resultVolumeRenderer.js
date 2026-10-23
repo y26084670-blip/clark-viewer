@@ -37,14 +37,14 @@ void main() {
   float leave = min(min(hi.x, hi.y), hi.z);
   if (leave <= enter) discard;
   float lengthInVoxels = length(ray * uDimensions) * (leave - enter);
-  int steps = int(clamp(ceil(lengthInVoxels * 1.25), 1.0, 192.0));
+  int steps = int(max(ceil(lengthInVoxels * 1.25), 1.0));
   vec3 stepLocal = ray * ((leave - enter) / float(steps));
   float stepRelative = length(stepLocal * uWorldSize) / max(max(uWorldSize.x, uWorldSize.y), uWorldSize.z);
   float density = -log(max(0.001, 1.0 - uOpacity));
   vec4 accumulated = vec4(0.0);
   vec3 location = origin + ray * enter + stepLocal * 0.5 + vec3(0.5);
-  for (int index = 0; index < 192; index++) {
-    if (index >= steps || accumulated.a > 0.995) break;
+  for (int index = 0; index < steps; index++) {
+    if (accumulated.a > 0.995) break;
     vec3 texcoord = (location * (uDimensions - vec3(1.0)) + vec3(0.5)) / uDimensions;
     vec4 sampleValue = texture(uField, texcoord);
     if (sampleValue.a > 0.001) {

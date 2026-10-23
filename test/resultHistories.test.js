@@ -169,14 +169,14 @@ test("Nonfinite saved data and mismatched history metadata are rejected before p
   });
 });
 
-test("Selecting many coil histories enforces the combined memory limit before worker reads", async () => {
+test("Selecting many coil histories is not rejected by the former 64 MB display quota", async () => {
   let readCount = 0;
   const task = { general: { timeStep: .1 },
     elements: Array.from({ length: 1025 }, (_, i) => ({ id: i + 1, targ: 3, indCoil: i + 1 })),
     metadata: { PSI: { pointCount: 1025, steps: Array.from({ length: 8192 }, (_, index) => ({ index })) } },
-    reader: { history: async () => { readCount++; throw new Error("Unexpected worker request"); } } };
-  await assert.rejects(readFluxHistories({ task, selected: task.elements.map(record => record.id) }), /64 МБ/);
-  assert.equal(readCount, 0);
+    reader: { history: async () => { readCount++; throw new Error("reader reached"); } } };
+  await assert.rejects(readFluxHistories({ task, selected: task.elements.map(record => record.id) }), /reader reached/);
+  assert.equal(readCount, 1025);
 });
 
 test("History conversion validates dimensions, time indices, values and component choices", () => {

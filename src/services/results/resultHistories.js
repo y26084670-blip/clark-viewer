@@ -79,8 +79,7 @@ export async function readFluxHistories({ task, selected = [] }) {
   const coils = measurementCoils(task);
   const metadata = historyMetadata(task, "PSI", coils.at(-1)?.id ?? 0);
   const records = coils.filter(record => selected.includes(record.id));
-  // Ctrl+A reads many complete histories; apply the same 64 MB budget to
-  // their combined result before submitting any requests to the worker.
+  // Validate dimensions without imposing a display memory quota.
   const valueCount = records.length * metadata.steps.length;
   checkReadRange(0, valueCount, valueCount, 1);
   return Promise.all(records.map(async record => {

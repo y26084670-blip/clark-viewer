@@ -1,6 +1,5 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import { mapResultObjects, QUANTITIES, regionLayout } from "./resultMappings.js";
-import { planResultSampling } from "./resultSampling.js";
 import { createResultFrameController } from "./resultFrameController.js";
 import { regionSurfaceGrid } from "./resultPlots.js";
 import { lineComponentSeries, normalizeFieldLineComponents } from "./fieldLineComponents.js";
@@ -67,32 +66,16 @@ export function resultObjects(task, quantityKey) {
     .filter(item => (!quantity.solvedOnly || item.record.targ === 0) && (!quantity.fmmOnly || isFmm(item.record)));
 }
 
-export async function readObjectFrames({ task, quantityKey, selected, time, budget }) {
+// Every selected saved node is read. Display size never changes the solution grid.
+export async function readObjectFrames({ task, quantityKey, selected, time }) {
   const quantity = QUANTITIES[quantityKey];
   const objects = resultObjects(task, quantityKey).filter(item => selected.includes(item.record.id));
   if (!objects.length) throw new Error("Для выбранных объектов нет этой величины");
-  const plans = budget == null ? objects.map(object => ({ object, ranges: [{ start: object.start, count: object.count, every: 1 }] }))
-    : planResultSampling(objects, quantity, budget);
-  return completeReads(plans.map(async ({ object, ranges }) => {
-    const parts = await completeReads(ranges.map(range => task.reader.read({ name: quantity.file, step: time, ...range })));
-    let frame = parts[0];
-    if (ranges.length > 1 || frame.every !== 1) {
-      const count = parts.reduce((sum, part) => sum + part.count, 0);
-      const stride = frame.stride;
-      const values = new frame.values.constructor(count * stride);
-      const rowIndices = new Float64Array(count);
-      let offset = 0;
-      parts.forEach((part, index) => {
-        if (part.stride !== stride || part.values.constructor !== values.constructor) throw new Error("Несогласованный формат выборок HDF5");
-        values.set(part.values, offset * stride);
-        const range = ranges[index];
-        for (let row = 0; row < part.count; row++) rowIndices[offset + row] = range.start - object.start + row * range.every;
-        offset += part.count;
-      });
-      frame = { values, rowIndices, stride, count, start: object.start, every: 1 };
-    }
-    return { frame, record: object.record, originalCount: object.count };
-  }));
+  return completeReads(objects.map(async object => ({
+    frame: await task.reader.read({ name: quantity.file, step: time,
+      start: object.start, count: object.count, every: 1 }),
+    record: object.record, originalCount: object.count,
+  })));
 }
 
 // Keep all slices inside one controller operation, including a failed slice.

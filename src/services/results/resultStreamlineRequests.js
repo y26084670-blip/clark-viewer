@@ -6,7 +6,6 @@ import { unpackKvVertices } from "../solver/geometryKv.js";
 import { expandElementSymmetry } from "../solver/symmetryExpansion.js";
 import { applyMatrix4ToPoint } from "../solver/rotation3d.js";
 import { buildGeometryTimeModel } from "../visualization/geometryTimeModel.js";
-import { STREAMLINE_LIMITS } from "../visualization/resultStreamlineField.js";
 
 export const streamlineDomainKey = (source, instance) => `${source.schemaId}:${source.recordIndex}:${instance.ls}:${instance.as}:${instance.ps}`;
 
@@ -31,8 +30,6 @@ function descriptors(task, quantityKey, projected) {
     if(unpacked.err)continue;
     const order=streamlineVertexOrder(record,full), vertices=order.map(i=>unpacked.vertices[i]);
     const copyCount=layout.copies.reduce((a,b)=>a*b,1), nodeCount=layout.dimensions.reduce((a,b)=>a*b,1);
-    // Bound descriptor construction before expanding any large symmetry table.
-    if(result.length+copyCount>4096)throw new Error("Для поиска соседних ШГ доступно не более 4096 образов");
     const images=expandElementSymmetry({...record,symLs:layout.copies[0],symAs:layout.copies[1],symPs:layout.copies[2]});
     for(const image of images) {
       const source={schemaId:"elements",recordIndex:object.record.recordIndex,name:record.name};
@@ -58,7 +55,6 @@ function connectedCandidates(all,seeds) {
       const size=Math.min(Math.hypot(...a.max.map((v,k)=>v-a.min[k])),Math.hypot(...b.max.map((v,k)=>v-b.min[k])));
       if(a.min.every((v,k)=>v<=b.max[k]+size*1e-6&&a.max[k]>=b.min[k]-size*1e-6)) {
         kept.set(b.key,b);queue.push(b);
-        if(kept.size>STREAMLINE_LIMITS.domains)throw new Error("Связная группа линий превышает 128 образов ШГ");
       }
     }
   }
@@ -68,7 +64,6 @@ function connectedCandidates(all,seeds) {
 export async function readResultStreamlines(request,processor) {
   const seeds=request.streamlineSeeds??[];
   if(!seeds.length)return [];
-  if(seeds.length>STREAMLINE_LIMITS.lines)throw new Error("Допускается не более 64 линий поля");
   const groups=new Map();
   for(const seed of seeds) {
     if(!groups.has(seed.quantityKey))groups.set(seed.quantityKey,[]);
@@ -85,7 +80,6 @@ export async function readResultStreamlines(request,processor) {
       const selected=connectedCandidates(descriptors(request.task,quantityKey,projected),saved);
       if (timing) timing.prepareMs = performance.now() - prepareStart;
       const nodeCount=selected.reduce((n,d)=>n+d.nodeCount,0);
-      if(nodeCount>STREAMLINE_LIMITS.nodes)throw new Error("Для линий поля связная группа превышает 200 000 узлов");
       const q=QUANTITIES[quantityKey], domains=[];
       // Read one saved image by HDF5 stride, without all the other symmetry
       // images or a display sample. The task reader already serializes I/O.

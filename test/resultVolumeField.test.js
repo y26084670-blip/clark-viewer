@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildResultVolumeField, ResultVolumeLimitError } from "../src/services/visualization/resultVolumeField.js";
+import { buildResultVolumeField } from "../src/services/visualization/resultVolumeField.js";
 import { resultVolumeDomains, vectorScene } from "../src/services/results/resultPlots.js";
 import { QUANTITIES, elementLayout } from "../src/services/results/resultMappings.js";
-import { readResultVolumeFrame, VOLUME_MAX_NODES } from "../src/services/results/resultVolumeRequests.js";
+import { readResultVolumeFrame } from "../src/services/results/resultVolumeRequests.js";
 
 function grid({ key = "first", dimensions = [2, 2, 2], transform = (x, y, z) => [x, y, z], value = (x, y, z) => 3 + 2 * x - y + 0.5 * z } = {}) {
   const positions = [], values = [], points = [];
@@ -100,11 +100,18 @@ test("time updates reuse spatial weights while updating all values and holes", (
   assert.equal(fourth.domains.length, 0);
 });
 
-test("voxel allocation is globally bounded and domain count fails explicitly", () => {
-  const domains = Array.from({ length: 11 }, (_, i) => grid({ key: String(i) }));
-  const result = buildResultVolumeField({ domains, maxVoxels: 1000 });
-  assert.ok(result.domains.reduce((sum, field) => sum + field.values.length, 0) <= 1000);
-  assert.throws(() => buildResultVolumeField({ domains: Array.from({ length: 129 }, () => domains[0]) }), ResultVolumeLimitError);
+test("volume resolution follows the saved grid beyond 64 samples and 262144 voxels", () => {
+  const domain = grid({ dimensions: [66, 66, 66] });
+  const result = buildResultVolumeField({ domains: [domain] });
+  assert.deepEqual(result.domains[0].dimensions, [66, 66, 66]);
+  assert.equal(result.domains[0].values.length, 66 ** 3);
+  const last = result.domains[0].values.at(-1);
+  assert.ok(Math.abs(last - domain.values.at(-1)) < 1e-5);
+});
+
+test("every volume domain is preserved above the former 128-domain ceiling", () => {
+  const domains = Array.from({ length: 129 }, (_, i) => grid({ key: String(i) }));
+  assert.equal(buildResultVolumeField({ domains }).domains.length, domains.length);
   assert.throws(() => buildResultVolumeField({ domains: [{ ...domains[0], positions: new Float64Array(3) }] }), /Полная сетка/);
 });
 
@@ -151,7 +158,7 @@ test("volume reader reads a complete grid and reuses only its spatial plan", asy
   const reads = [];
   const task = { elements: [record], metadata: { MH: { steps: [0, 1], header: { inds1: [1], numbs: [frame.count] } } },
     reader: { read: async request => { reads.push(request); return frame; } } };
-  const request = { task, quantityKey: "M", selected: [1], time: 0, budget: VOLUME_MAX_NODES };
+  const request = { task, quantityKey: "M", selected: [1], time: 0 };
   const first = await readResultVolumeFrame(request);
   assert.equal(reads[0].every, 1);
   assert.equal(reads[0].count, frame.count);
@@ -161,19 +168,18 @@ test("volume reader reads a complete grid and reuses only its spatial plan", asy
   assert.equal(next.volumeFields.domains[0].samplingPlan, first.volumeFields.domains[0].samplingPlan);
 });
 
-test("volume reader announces the full-node limit and reads only bounded point samples", async () => {
-  const source = { ...record, dp: [[VOLUME_MAX_NODES + 1], [1], [1]], symLs: 1, symAs: 1, symPs: 1 };
+test("volume reader preserves every node and fallback marker above 100000 nodes", async () => {
+  const source = { ...record, dp: [[100_001], [1], [1]], symLs: 1, symAs: 1, symPs: 1 };
   let count = 0;
-  const task = { elements: [source], metadata: { MH: { steps: [0], header: { inds1: [1], numbs: [VOLUME_MAX_NODES + 1] } } },
+  const task = { elements: [source], metadata: { MH: { steps: [0], header: { inds1: [1], numbs: [100_001] } } },
     reader: { read: async request => { const sampled = Math.ceil(request.count / request.every); count += sampled;
       return { values: new Float64Array(sampled * 9), count: sampled, stride: 9, every: request.every, start: request.start }; } } };
   const result = await readResultVolumeFrame({ task, quantityKey: "M", selected: [1], time: 0 });
-  assert.ok(count <= 5000);
+  assert.equal(count, 100_001);
   assert.equal(result.volumeFields.domains.length, 0);
   assert.equal(result.volumeFields.fallbackPoints.length, result.scene.vectors.length);
-  assert.equal(result.sampled, true);
-  assert.match(result.volumeNotice, /предел/);
-  assert.match(result.volumeNotice, /выборка/);
+  assert.equal(result.sampled, false);
+  assert.doesNotMatch(result.volumeNotice, /предел|выборка/);
 });
 
 

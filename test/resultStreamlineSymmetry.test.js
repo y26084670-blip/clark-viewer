@@ -90,17 +90,18 @@ test("a curve crossing elements is copied only under a common transform and fiel
   }
 });
 
-test("copy limits preserve the original curve and seed and preflight huge symmetry tables", () => {
+test("all curve copies and their points remain visible above the former display limits", () => {
   const original = line();
-  const limited = expandResultStreamline(task(), original, { images: 2, points: 100 });
-  assert.equal(limited.starts.length, 2); assert.ok(limited.notice);
-  const points = expandResultStreamline(task(), original, { images: 100, points: 4 });
-  assert.equal(points.starts.length, 1); assert.equal(points.paths[0], original.paths[0]); assert.ok(points.notice);
-  const huge = expandResultStreamline(task({ symAs: 1e8 }), original);
-  assert.equal(huge.starts.length, 1); assert.ok(huge.notice);
+  original.paths = original.paths.map(p => ({ ...p,
+    positions: Float64Array.from({ length: 300 }, (_, i) => i / 3), magnitudes: new Float64Array(100).fill(1) }));
+  const expanded = expandResultStreamline(task({ symAs: 1, symPs: 300 }), original);
+  assert.equal(expanded.starts.length, 300);
+  assert.equal(expanded.paths.length, 600);
+  assert.equal(expanded.paths.reduce((n, p) => n + p.positions.length / 3, 0), 60_000);
+  assert.equal(expanded.paths[0], original.paths[0]);
+  assert.equal(expanded.notice, "");
   const errored = { ...original, error: "no data" }; assert.equal(expandResultStreamline(task(), errored), errored);
 });
-
 
 test("a multi-element curve accepts transform rounding within 1e-6+32e-6*scale and rejects larger changes", () => {
   for (const translation of [10,1e6]) for (const factor of [.9,1.1]) {

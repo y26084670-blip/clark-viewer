@@ -30,6 +30,8 @@ import {
   normalizeGeometryCameraCommand,
 } from "../../services/visualization/geometryCameraView.js";
 import { fitCameraToVisibleObjects } from "../../services/visualization/geometryCameraFit.js";
+import { createViewCube, installViewCubeControls, syncViewCubeCamera,
+  VIEW_CUBE_SIZE, VIEW_CUBE_MARGIN } from "../../services/visualization/geometryViewCube.js";
 import { createGeometryFlightController } from "../../services/visualization/geometryFlightController.js";
 import { pickGeometryFlightPivot } from "../../services/visualization/geometryFlightPivot.js";
 import { installGeometryOverlayDrag } from "../../services/visualization/geometryOverlayDrag.js";
@@ -75,8 +77,6 @@ export const GEOMETRY_DISCRETIZATION_POINT_BUDGET =
 const INSTANCE_CATEGORIES = Object.freeze(["base", "copy", "mirror"]);
 const DEFAULT_PROJECTION = "orthographic";
 const PERSPECTIVE_FOV = 45;
-const AXES_GIZMO_SIZE = 104;
-const AXES_GIZMO_MARGIN = 8;
 const VERTEX_POINT_SIZE = 9;
 const DISCRETIZATION_POINT_SIZE = 8;
 const DEGENERATE_POINT_SIZE = 13;
@@ -131,7 +131,7 @@ function renderObjectCost(primitive, mode, showEdges) {
 
 function disposeMaterial(material) {
   if (Array.isArray(material)) {
-    for (const item of material) item?.dispose?.();
+    for (const item of material) disposeMaterial(item);
     return;
   }
   material?.map?.dispose?.();
@@ -1378,101 +1378,6 @@ function createDiscretizationPoints(THREE, positions) {
   return points;
 }
 
-function createAxisLabel(THREE, text, color) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
-  const context = canvas.getContext("2d");
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = color;
-  context.font = "bold 40px sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(text, 32, 33);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-    depthTest: false,
-    depthWrite: false,
-    map: texture,
-    transparent: true,
-  }));
-  sprite.scale.set(0.34, 0.34, 0.34);
-  sprite.renderOrder = 4;
-  return sprite;
-}
-
-function createAxisArrow(THREE, direction, color, label, cssColor) {
-  const root = new THREE.Group();
-  const material = new THREE.MeshBasicMaterial({
-    color,
-    depthTest: true,
-    depthWrite: true,
-  });
-  const shaft = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.035, 0.035, 0.72, 12),
-    material,
-  );
-  shaft.position.y = 0.36;
-  const head = new THREE.Mesh(
-    new THREE.ConeGeometry(0.11, 0.28, 16),
-    material.clone(),
-  );
-  head.position.y = 0.86;
-  const rearCap = new THREE.Mesh(
-    new THREE.CircleGeometry(0.115, 20),
-    new THREE.MeshBasicMaterial({
-      color: 0x11161b,
-      depthTest: true,
-      depthWrite: true,
-      side: THREE.DoubleSide,
-    }),
-  );
-  rearCap.position.y = 0.718;
-  rearCap.rotation.x = Math.PI / 2;
-  rearCap.name = `axis-${label.toLowerCase()}-rear-cap`;
-  root.add(shaft, head, rearCap);
-  root.quaternion.setFromUnitVectors(
-    new THREE.Vector3(0, 1, 0),
-    direction,
-  );
-
-  const labelSprite = createAxisLabel(THREE, label, cssColor);
-  labelSprite.position.set(0, 1.17, 0);
-  root.add(labelSprite);
-  return root;
-}
-
-function createAxesGizmo(THREE) {
-  const root = new THREE.Group();
-  root.name = "screen-axes-gizmo";
-  root.add(
-    createAxisArrow(
-      THREE,
-      new THREE.Vector3(1, 0, 0),
-      0xf05252,
-      "X",
-      "#ff6b6b",
-    ),
-    createAxisArrow(
-      THREE,
-      new THREE.Vector3(0, 1, 0),
-      0x4bc26b,
-      "Y",
-      "#62dc82",
-    ),
-    createAxisArrow(
-      THREE,
-      new THREE.Vector3(0, 0, 1),
-      0x4c8ff2,
-      "Z",
-      "#75aaff",
-    ),
-  );
-  return root;
-}
-
 function worldUnitsPerPixel(camera, target, viewportHeight) {
   const height = Math.max(1, viewportHeight);
   if (camera.isOrthographicCamera) {
@@ -1534,9 +1439,10 @@ export function ThreeGeometryViewport(props) {
   };
   let renderer;
   let threeScene;
-  let axesScene;
-  let axesCamera;
-  let axesRoot;
+  let viewCubeScene;
+  let viewCubeCamera;
+  let viewCubeRoot;
+  let viewCubeControls;
   let camera;
   let controls;
   const flightSourceSizes = new Map();
@@ -1726,30 +1632,25 @@ export function ThreeGeometryViewport(props) {
       }
       rememberCamera();
 
-      if (axesScene && axesCamera && axesRoot && controls) {
-        const size = axesGizmoSize();
-        const direction = camera.position.clone().sub(controls.target);
-        if (direction.lengthSq() < 1e-6) direction.set(1, 1, 1);
-        axesCamera.position.copy(direction.normalize().multiplyScalar(5));
-        axesCamera.up.copy(camera.up);
-        axesCamera.lookAt(0, 0, 0);
-        axesCamera.updateMatrixWorld();
+      if (viewCubeScene && viewCubeCamera && viewCubeRoot && controls) {
+        const size = viewCubeSize();
+        syncViewCubeCamera(viewCubeCamera, camera);
 
         renderer.clearDepth();
         renderer.setScissor(
-          AXES_GIZMO_MARGIN,
-          AXES_GIZMO_MARGIN,
+          VIEW_CUBE_MARGIN,
+          VIEW_CUBE_MARGIN,
           size,
           size,
         );
         renderer.setViewport(
-          AXES_GIZMO_MARGIN,
-          AXES_GIZMO_MARGIN,
+          VIEW_CUBE_MARGIN,
+          VIEW_CUBE_MARGIN,
           size,
           size,
         );
         renderer.setScissorTest(true);
-        renderer.render(axesScene, axesCamera);
+        renderer.render(viewCubeScene, viewCubeCamera);
         renderer.setScissorTest(false);
         renderer.setViewport(0, 0, viewportWidth, viewportHeight);
       }
@@ -1911,12 +1812,12 @@ export function ThreeGeometryViewport(props) {
     setHoverTooltip(null);
   };
 
-  const axesGizmoSize = () => Math.max(
+  const viewCubeSize = () => Math.max(
     1,
     Math.min(
-      AXES_GIZMO_SIZE,
-      viewportWidth - 2 * AXES_GIZMO_MARGIN,
-      viewportHeight - 2 * AXES_GIZMO_MARGIN,
+      VIEW_CUBE_SIZE,
+      viewportWidth - 2 * VIEW_CUBE_MARGIN,
+      viewportHeight - 2 * VIEW_CUBE_MARGIN,
     ),
   );
 
@@ -2022,15 +1923,15 @@ export function ThreeGeometryViewport(props) {
       return;
     }
 
-    const gizmoSize = axesGizmoSize();
+    const cubeSize = viewCubeSize();
     if (
-      x <= AXES_GIZMO_MARGIN + gizmoSize &&
-      y >= bounds.height - AXES_GIZMO_MARGIN - gizmoSize
+      x <= VIEW_CUBE_MARGIN + cubeSize &&
+      y >= bounds.height - VIEW_CUBE_MARGIN - cubeSize
     ) {
       showTooltip(
-        "Alt+X/Y/Z + движение мыши — вокруг оси из центра вида\nShift+X/Y/Z + движение мыши — вокруг оси из начала координат",
-        AXES_GIZMO_MARGIN,
-        Math.max(0, bounds.height - AXES_GIZMO_MARGIN - gizmoSize - 54),
+        "ViewCube: щелчок по грани, ребру или углу — выбор вида\nПеретаскивание куба — поворот сцены",
+        VIEW_CUBE_MARGIN,
+        Math.max(0, bounds.height - VIEW_CUBE_MARGIN - cubeSize - 54),
       );
       return;
     }
@@ -2681,8 +2582,8 @@ export function ThreeGeometryViewport(props) {
       THREE = threeModule;
       threeScene = new THREE.Scene();
       threeScene.background = new THREE.Color(0x141a20);
-      axesScene = new THREE.Scene();
-      axesCamera = new THREE.OrthographicCamera(
+      viewCubeScene = new THREE.Scene();
+      viewCubeCamera = new THREE.OrthographicCamera(
         -1.35,
         1.35,
         1.35,
@@ -2690,8 +2591,8 @@ export function ThreeGeometryViewport(props) {
         0.1,
         20,
       );
-      axesRoot = createAxesGizmo(THREE);
-      axesScene.add(axesRoot);
+      viewCubeRoot = createViewCube(THREE);
+      viewCubeScene.add(viewCubeRoot);
       activeProjection = normalizeProjection(pendingCameraState?.projection ?? props.projection);
       camera = createCamera(THREE, activeProjection, 1);
       raycaster = new THREE.Raycaster();
@@ -2715,6 +2616,17 @@ export function ThreeGeometryViewport(props) {
         controlsInteracting = false;
       };
       controls = createOrbitControls();
+
+      viewCubeControls = installViewCubeControls({
+        THREE, element: renderer.domElement, root: viewCubeRoot, viewCamera: viewCubeCamera,
+        getCamera: () => camera, getControls: () => controls, getSize: viewCubeSize,
+        canInteract: () => ready() && !disposed && !contextLost && !movieSnapshot && !error()
+          && (!flightController || flightController.state === "idle") && !axisRotationController?.active,
+        onChange: changed => {
+          if (changed) { hasFramedGeometry = true; rebuildOrbitControls(); clearHoverTooltip(); }
+          requestRender();
+        },
+      });
 
       flightController = createGeometryFlightController({
         THREE, element: renderer.domElement,
@@ -2964,6 +2876,7 @@ export function ThreeGeometryViewport(props) {
   onCleanup(() => {
     rememberCamera();
     disposed = true;
+    viewCubeControls?.dispose();
     axisRotationController?.dispose();
     flightController?.dispose();
     props.onFlightReady?.(null);
@@ -2982,7 +2895,7 @@ export function ThreeGeometryViewport(props) {
     // the owning renderer before the generic helper traversal.
     if (THREE && streamlineRoot) updateStreamlineMeshes(THREE, streamlineRoot, []);
     disposeObject(helperRoot);
-    disposeObject(axesRoot);
+    disposeObject(viewCubeRoot);
     if (renderer?.domElement) {
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       renderer.domElement.removeEventListener("click", handleClick);
@@ -3005,9 +2918,9 @@ export function ThreeGeometryViewport(props) {
     renderer?.domElement?.remove();
     renderer = null;
     threeScene = null;
-    axesScene = null;
-    axesCamera = null;
-    axesRoot = null;
+    viewCubeScene = null;
+    viewCubeCamera = null;
+    viewCubeRoot = null;
     raycaster = null;
     pointerNdc = null;
   });

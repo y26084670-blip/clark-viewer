@@ -14,7 +14,7 @@ import { createResultLayerReader } from "../services/results/resultLayerRequests
 import { applyResultGlobalRange, resultGlobalScale } from "../services/results/resultGlobalScale.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import { movie3DFilenamePrefix } from "../services/movie/movieFilename.js";
-import { STREAMLINE_LIMITS, STREAMLINE_METHODS, STREAMLINE_DEFAULT_TOLERANCE } from "../services/visualization/resultStreamlineField.js";
+import { STREAMLINE_METHODS, STREAMLINE_DEFAULT_TOLERANCE } from "../services/visualization/resultStreamlineField.js";
 import "./SourcesFields3D.css";
 
 // Switching tabs unmounts this component. Retain only small seed descriptors,
@@ -60,7 +60,6 @@ export function SourcesFields3D(props) {
   function addStreamline(vector) {
     if (vector?.source?.schemaId !== "elements" || QUANTITIES[vector.quantityKey]?.components !== 3
       || !Number.isSafeInteger(vector.node) || displayed()?.request.task !== props.task) return;
-    if (streamlineSeeds().length >= STREAMLINE_LIMITS.lines) { setStreamlineNotice("Доступно 64 линии; удалите ненужную линию."); return; }
     const seed = { id: nextStreamlineId++, source: vector.source, instance: vector.instance,
       node: vector.node, quantityKey: vector.quantityKey };
     setStreamlineSeeds(previous => [...previous, seed]); setSelectedStreamline(seed.id); setStreamlineNotice("");

@@ -19,7 +19,7 @@ const pickSource=source.slice(source.indexOf("  const pickAtPointer ="),source.i
 const makePick=new Function("deps",`const {renderer,camera,controls,raycaster,pointerNdc,props,resultLayerStates,
   resultHitScalar,resultHitVector,formatResultScalarTooltip,formatResultVectorTooltip,intersectResultLayers,
   setHoverTooltip,showTooltip,streamlineRoot}=deps;
-  const AXES_GIZMO_MARGIN=8,axesGizmoSize=()=>0,worldUnitsPerPixel=()=>.01;
+  const VIEW_CUBE_MARGIN=8,viewCubeSize=()=>0,worldUnitsPerPixel=()=>.01;
   const activeRenderMode="solid",geometryOpacity=.5,geometryPickTargets=[],resultVectorColorMap=true;
   ${pickSource} return pickAtPointer;`);
 

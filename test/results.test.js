@@ -67,7 +67,8 @@ test("Unsafe Int64 indices rejected; sparse large-file selection uses output mem
   assert.throws(() => decodeHeader({ columns: 3, arrCount: 2, hasCoo: 1,
     inds1: new BigInt64Array([9007199254740993n]), numbs: [1] }), /целое/);
   assert.doesNotThrow(() => checkReadRange(0, 2_000_000, 2_000_000, 9, 2000));
-  assert.throws(() => checkReadRange(0, 2_000_000, 2_000_000, 9), /64 МБ/);
+  assert.doesNotThrow(() => checkReadRange(0, 2_000_000, 2_000_000, 9));
+  assert.throws(() => checkReadRange(0, 10, 10, 9, 0), /недопустимое целое/);
 });
 
 const base = { name: "Элемент", targ: 0, rv: 0, xapName: "", dp: [[1], [1], [1]], symLs: 1, symAs: 1, symPs: 1, symKya: 0, symKyp: 0 };

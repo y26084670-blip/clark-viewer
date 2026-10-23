@@ -2,7 +2,7 @@ import { prepareStreamlineReconstruction, sampleReconstructedVector } from "./re
 
 // Streamlines of the saved vector field, parameterized by arc length in mm.
 // The hexahedron map uses solver vertex order (D1=12, D2=13, D3=15).
-export const STREAMLINE_LIMITS = Object.freeze({ lines: 64, domains: 128, nodes: 200_000, steps: 8192 });
+export const STREAMLINE_LIMITS = Object.freeze({ steps: 8192 });
 export const STREAMLINE_METHODS = Object.freeze({
   trilinear: "Трилинейный (контроль)",
   "trilinear-boundary": "Трилинейный · границы",
@@ -55,7 +55,7 @@ export function prepareStreamlineDomain(input) {
   if (!vertices || vertices.length !== 8 || !vertices.every(p => p.length === 3 && p.every(Number.isFinite))
     || !dims || dims.length !== 3 || !dims.every(n => Number.isSafeInteger(n)&&n>0)) throw new Error("Некорректная геометрия линии поля");
   const count = dims.reduce((a,b)=>a*b,1);
-  if (count>STREAMLINE_LIMITS.nodes || positions.length!==count*3 || vectors.length!==count*3
+  if (!Number.isSafeInteger(count*3) || positions.length!==count*3 || vectors.length!==count*3
     || !positions.every(Number.isFinite) || !vectors.every(Number.isFinite)) throw new Error("Неполная или нечисловая сетка векторного поля");
   const origin = [...vertices[0]], localVertices = vertices.map(p=>sub(p,origin));
   const min = [0,1,2].map(k=>Math.min(...vertices.map(p=>p[k]))), max = [0,1,2].map(k=>Math.max(...vertices.map(p=>p[k])));
@@ -234,7 +234,7 @@ function traceDirection(domains,first,seed,sign,tolerance,maxSteps) {
   let domain=first,p=[...seed],h=first.cellSize*.25,length=0,attempts=0,firstReturn=null;
   const points=[p], pieces=[{key:first.key,source:first.source,instance:first.instance,start:0}], startDirection=direction(first,p,sign);
   if(!startDirection)return {points,pieces,reason:"zero",length};
-  const closeDistance=first.cellSize*tolerance*2, maxLength=Math.max(...domains.map(d=>d.extent))*1000;
+  const closeDistance=first.cellSize*tolerance*2, maxLength=domains.reduce((maximum,d)=>Math.max(maximum,d.extent),0)*1000;
   const finish=(reason)=>({points,pieces,reason,length});
   while(points.length<maxSteps && attempts++<maxSteps*16 && length<maxLength) {
     const minimumStep=domain.cellSize*1e-3;
@@ -308,8 +308,6 @@ export function calculateStreamlines({domains:inputs,seeds,tolerance=STREAMLINE_
   if(!Object.hasOwn(STREAMLINE_METHODS,method))throw new Error("Неизвестный метод линии поля");
   if(!Number.isFinite(tolerance)||tolerance<1e-7||tolerance>1e-2)throw new Error("Допуск линии вне диапазона");
   if(!Number.isSafeInteger(maxSteps)||maxSteps<32||maxSteps>STREAMLINE_LIMITS.steps)throw new Error("Некорректный предел шагов линии");
-  if(seeds.length>STREAMLINE_LIMITS.lines||inputs.length>STREAMLINE_LIMITS.domains
-    ||inputs.reduce((s,d)=>s+d.dimensions.reduce((a,b)=>a*b,1),0)>STREAMLINE_LIMITS.nodes)throw new Error("Превышен предел расчёта линий поля");
   const domains=[],invalid=new Map();
   for(const input of inputs)try{domains.push(prepareStreamlineDomain({...input,method}));}catch(e){invalid.set(input.key,e.message);}
   return seeds.map(seed=>{

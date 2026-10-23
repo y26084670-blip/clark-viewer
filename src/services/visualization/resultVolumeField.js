@@ -2,16 +2,10 @@ import { extendResultVolumeSupport } from "../results/resultVolumeSupport.js";
 
 // Resample the structured cells and validated physical boundary layers. Each source/symmetry
 // image has a separate texture: no interpolation between unrelated objects.
-export const VOLUME_MAX_VOXELS = 262_144;
-export const VOLUME_MAX_AXIS = 64;
-export const VOLUME_MAX_DOMAINS = 128;
-const MAX_SAMPLE_TESTS = 32_000_000;
 const CORNERS = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0],
   [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]];
 const TETRAHEDRA = [[0, 1, 3, 7], [0, 3, 2, 7], [0, 2, 6, 7],
   [0, 6, 4, 7], [0, 4, 5, 7], [0, 5, 1, 7]];
-
-export class ResultVolumeLimitError extends Error {}
 
 function checkedDimensions(domain) {
   const dims = domain.dimensions;
@@ -37,18 +31,33 @@ function boundsOf(positions) {
   return { min, max };
 }
 
-function resolution(bounds, budget, maxAxis) {
+// Derive texture spacing from the saved cell geometry, without a scene-wide
+// voxel quota or axis ceiling. Inverse cell edges express logical-grid change
+// per world-axis distance, including rotated and skew grids.
+function resolution(domain, bounds, requestedAxis) {
   const spans = bounds.max.map((v, i) => v - bounds.min[i]);
   const largest = Math.max(...spans);
   if (!Number.isFinite(largest) || largest <= 0 || spans.some(span => span <= largest * 1e-6)) return null;
-  const dims = spans.map(span => Math.max(2, Math.min(maxAxis, Math.round((maxAxis - 1) * span / largest) + 1)));
-  while (dims.reduce((a, b) => a * b, 1) > budget) {
-    let axis = -1;
-    for (let i = 0; i < 3; i++) if (dims[i] > 2 && (axis < 0 || dims[i] > dims[axis])) axis = i;
-    if (axis < 0) return null;
-    dims[axis]--;
+  if (requestedAxis != null) return spans.map(span => Math.max(2, Math.round((requestedAxis - 1) * span / largest) + 1));
+  const density = [0, 0, 0], dims = domain.dimensions;
+  const count = dims.reduce((a, b) => a * (b - 1), 1);
+  for (let cell = 0; cell < count; cell++) {
+    const corners = cornerIndices(cell, dims);
+    const points = [0, 1, 2, 4].map(c => {
+      const offset = corners[c] * 3;
+      return Array.from(domain.positions.subarray(offset, offset + 3));
+    });
+    const basis = tetraTransform(points);
+    if (!basis) continue;
+    for (let axis = 0; axis < 3; axis++) density[axis] = Math.max(density[axis],
+      Math.abs(basis.inverse[axis]) + Math.abs(basis.inverse[axis + 3]) + Math.abs(basis.inverse[axis + 6]));
   }
-  return dims;
+  if (density.some(value => !(value > 0))) return null;
+  const dimensions = spans.map((span, axis) => Math.max(2, Math.ceil(span * density[axis] - 1e-9) + 1));
+  if (!dimensions.every(Number.isSafeInteger) || !Number.isSafeInteger(dimensions.reduce((a, b) => a * b, 1) * 4)) {
+    throw new Error("Размер объёмной текстуры не представим точно");
+  }
+  return dimensions;
 }
 
 function sameGeometry(plan, domain, dimensions) {
@@ -76,7 +85,7 @@ function tetraTransform(p) {
   return { p, determinant, inverse: [...bc, ...ca, ...ab].map(v => v / determinant) };
 }
 
-function createSamplingPlan(domain, bounds, dimensions, work) {
+function createSamplingPlan(domain, bounds, dimensions) {
   const count = dimensions.reduce((a, b) => a * b, 1);
   // 0 = outside; otherwise six tetrahedra per logical cell. Three weights and
   // the implied fourth weight are sufficient; no N×M node-distance matrix.
@@ -99,8 +108,6 @@ function createSamplingPlan(domain, bounds, dimensions, work) {
       const { p, inverse } = tetrahedra[ti];
       const low = [0, 1, 2].map(axis => Math.max(0, Math.ceil((Math.min(...p.map(v => v[axis])) - bounds.min[axis]) / steps[axis] - 1e-7)));
       const high = [0, 1, 2].map(axis => Math.min(dimensions[axis] - 1, Math.floor((Math.max(...p.map(v => v[axis])) - bounds.min[axis]) / steps[axis] + 1e-7)));
-      work.count += high.reduce((n, v, axis) => n * Math.max(0, v - low[axis] + 1), 1);
-      if (work.count > MAX_SAMPLE_TESTS) throw new ResultVolumeLimitError("Объёмная интерполяция превышает допустимое число операций");
       for (let z = low[2]; z <= high[2]; z++) for (let y = low[1]; y <= high[1]; y++) for (let x = low[0]; x <= high[0]; x++) {
         const index = (z * dimensions[1] + y) * dimensions[0] + x;
         if (cells[index]) continue;
@@ -154,11 +161,10 @@ function evaluate(domain, plan) {
  * Positions are preserved in Float64. Only the display voxel values/weights use
  * Float32. The preceding field may reuse its spatial plan across time frames.
  */
-export function buildResultVolumeField({ domains, previous = null, maxVoxels = VOLUME_MAX_VOXELS, maxAxis = VOLUME_MAX_AXIS }) {
-  if (!Number.isSafeInteger(maxVoxels) || maxVoxels < 8 || maxVoxels > VOLUME_MAX_VOXELS || !Number.isSafeInteger(maxAxis) || maxAxis < 2 || maxAxis > VOLUME_MAX_AXIS) {
-    throw new Error("Недопустимый лимит объёмной карты");
+export function buildResultVolumeField({ domains, previous = null, maxAxis = null }) {
+  if (maxAxis != null && (!Number.isSafeInteger(maxAxis) || maxAxis < 2)) {
+    throw new Error("Недопустимое разрешение объёмной карты");
   }
-  if (domains.length > VOLUME_MAX_DOMAINS) throw new ResultVolumeLimitError(`Для объёмной карты допускается не более ${VOLUME_MAX_DOMAINS} отдельных образов`);
   const supportNotices = new Set();
   const candidates = domains.map(original => {
     checkedDimensions(original);
@@ -166,21 +172,18 @@ export function buildResultVolumeField({ domains, previous = null, maxVoxels = V
     if (reason) supportNotices.add(`${original.supportLabel ?? "Элемент"}: ${reason}`);
     return { domain, dims: checkedDimensions(domain), bounds: boundsOf(domain.positions) };
   });
-  const volumetricCount = candidates.filter(({ dims }) => dims.every(n => n >= 2)).length;
-  const budget = Math.floor(maxVoxels / Math.max(1, volumetricCount));
   const output = [], fallbackPoints = [], fallbackDomainKeys = [];
   let minimum = Infinity, maximum = -Infinity;
-  const work = { count: 0 };
   for (const { domain, dims, bounds } of candidates) {
     for (const value of domain.values) if (Number.isFinite(value)) { minimum = Math.min(minimum, value); maximum = Math.max(maximum, value); }
-    const dimensions = dims.every(n => n >= 2) && budget >= 8 ? resolution(bounds, budget, maxAxis) : null;
+    const dimensions = dims.every(n => n >= 2) ? resolution(domain, bounds, maxAxis) : null;
     if (!dimensions) {
       fallbackDomainKeys.push(domain.key);
       for (const point of domain.points ?? []) fallbackPoints.push(point);
       continue;
     }
     const old = previous?.domains?.find(item => item.key === domain.key)?.samplingPlan;
-    const samplingPlan = sameGeometry(old, domain, dimensions) ? old : createSamplingPlan(domain, bounds, dimensions, work);
+    const samplingPlan = sameGeometry(old, domain, dimensions) ? old : createSamplingPlan(domain, bounds, dimensions);
     const { values, mask, covered } = evaluate(domain, samplingPlan);
     if (!covered) {
       fallbackDomainKeys.push(domain.key);

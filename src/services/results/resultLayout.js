@@ -50,7 +50,9 @@ export function checkReadRange(start, count, pointCount, stride, every = 1) {
   safeInteger(start, "Начало диапазона");
   safeInteger(count, "Размер диапазона");
   if (start + count > pointCount) throw new Error("Диапазон выходит за границы данных");
-  if (Math.ceil(count / every) * stride * 8 > 64 * 1024 * 1024) {
-    throw new Error("Выборка превышает 64 МБ. Выберите меньше объектов или более узкий диапазон.");
-  }
+  safeInteger(pointCount, "Число строк");
+  safeInteger(stride, "Ширина строки", 1);
+  safeInteger(every, "Шаг чтения", 1);
+  safeInteger(start + count, "Конец диапазона");
+  safeInteger(Math.ceil(count / every) * stride, "Размер массива результатов");
 }

@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Worker as NodeWorker } from "node:worker_threads";
 import { createResultVolumeProcessor } from "../src/services/results/resultVolumeProcessor.js";
-import { ResultVolumeLimitError } from "../src/services/visualization/resultVolumeField.js";
 
 function domain(key = "test", planar = false, offset = 0) {
   const dimensions = [2, 2, planar ? 1 : 2], positions = [], values = [], points = [];
@@ -50,12 +49,12 @@ test("volume processor cancels pending work and rejects late use after close", a
   await assert.rejects(processor.process([domain()]), /закрыт/);
 });
 
-test("worker limit errors remain identifiable and runtime errors release resources", async () => {
+test("worker errors remain explicit and runtime errors release resources", async () => {
   const worker = new ManualWorker();
   const processor = createResultVolumeProcessor({ workerFactory: () => worker });
   const first = processor.process([domain()]);
-  worker.onmessage({ data: { id: 1, error: "limit", limit: true } });
-  await assert.rejects(first, ResultVolumeLimitError);
+  worker.onmessage({ data: { id: 1, error: "too much work" } });
+  await assert.rejects(first, /too much work/);
   const second = processor.process([domain()]);
   worker.onerror({ message: "worker failed" });
   await assert.rejects(second, /worker failed/);

@@ -41,10 +41,6 @@ export function attachResultVolumeSupport(domains, { task, quantity, time }) {
   });
 }
 
-// At most (n1+2)(n2+2)(n3+2) <= 9*N+18 support nodes for N>=1;
-// the reader bounds N at 100000. Expansion and validation run in the worker.
-export const VOLUME_MAX_SUPPORT_NODES = 900_018;
-
 /** Preserve the exact saved centres. Add physical boundary layers and extend
  * their nearest centre value constantly to the boundary. A singleton axis has
  * no measured derivative, so it must not acquire an invented gradient.
@@ -58,7 +54,7 @@ export function extendResultVolumeSupport(domain) {
   const [n1, n2, n3] = domain.dimensions;
   const dimensions = domain.dimensions.map(n => n + 2);
   const count = dimensions.reduce((a, b) => a * b, 1);
-  if (!Number.isSafeInteger(count) || count > VOLUME_MAX_SUPPORT_NODES) return { domain, reason: "превышен предел граничной сетки" };
+  if (!Number.isSafeInteger(count * 3)) return { domain, reason: "размер граничной сетки не представим точно" };
   const spans = [0, 1, 2].map(axis => Math.max(...vertices.map(point => point[axis])) - Math.min(...vertices.map(point => point[axis])));
   const extent = Math.hypot(...spans);
   const eps = domain.coordinateBytes === 4 ? 2 ** -23 : Number.EPSILON;

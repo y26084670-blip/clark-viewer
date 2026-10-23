@@ -32,10 +32,13 @@
 }
 
 .about-dialog {
+    --about-close-height: 0px;
     box-sizing: border-box;
     width: max-content;
     max-width: calc(100vw - 48px);
     margin: auto;
+    /* Offset automatic centering so the extra height extends only downward. */
+    transform: translateY(calc(var(--about-close-height) / 2));
     padding: 18px 20px;
     border: 1px solid #596773;
     border-radius: 8px;
@@ -105,7 +108,8 @@
 .about-close-button {
     box-sizing: border-box;
     width: 100%;
-    margin-top: 8px;
+    margin-top: calc(8px + var(--about-close-height) / 2);
+    margin-bottom: calc(var(--about-close-height) / 2);
     padding: 4px 16px;
     border: 1px solid #7f8d99;
     border-radius: 3px;

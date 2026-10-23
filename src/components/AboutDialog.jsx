@@ -13,6 +13,7 @@ export function AboutDialog() {
     if (aboutOpen()) {
       if (!aboutDialog.open) {
         aboutDialog.showModal();
+        aboutDialog.style.setProperty("--about-close-height", `${aboutCloseButton.getBoundingClientRect().height}px`);
         aboutCloseButton?.focus();
       }
     } else if (aboutDialog.open) {
@@ -62,7 +63,7 @@ export function AboutDialog() {
       <div class="about-version">Версия: {packageMetadata.version}</div>
       <div class="about-credits">
         <div>МЭИ, Центр К-Электро</div>
-        <div>Разработчик: ChatGPT 5.6 Sol</div>
+        <div>Разработчик: ChatGPT 5.6 Sol +</div>
         <div class="about-curator-stack">
           <div>Куратор: Кулаев Ю.</div>
           <div>2026 г.</div>

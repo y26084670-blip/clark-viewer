@@ -36,7 +36,7 @@ test("both applications address one registry and permit only web links", () => {
 
 test("invalid registries never replace usable data", () => {
   const one = entry("one");
-  for (const bad of [{}, feed([one, one]), feed([entry("wrong", "unknown")]), feed([entry("wrong", "interface", { revision: 0 })]),
+  for (const bad of [{}, feed([one, one]), feed([entry("wrong", "unknown")]), feed([entry("wrong", "interface", { revision: 0 })]), feed([entry("wrong", "interface", { status: {} })]),
     { ...feed([]), recommendedClark: { version: "0.10", installerUrl: "https://example.test/installer" } }]) {
     assert.throws(() => validateUpdatesFeed(bad));
   }

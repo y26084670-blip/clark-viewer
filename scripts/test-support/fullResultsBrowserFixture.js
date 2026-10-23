@@ -8,7 +8,7 @@ import { createMovieGifEncoder } from "/src/services/movie/movieGifEncoder.js";
 import "/src/components/geometry/ResultsGeometryViewport.css";
 import { buildResultVolumeField } from "/src/services/visualization/resultVolumeField.js";
 import { updateResultVolumeMeshes, disposeResultVolumeMesh } from "/src/services/visualization/resultVolumeRenderer.js";
-import { createViewCube, installViewCubeControls, syncViewCubeCamera } from "/src/services/visualization/geometryViewCube.js";
+import { createViewCube, installViewCubeControls, syncViewCubeCamera, VIEW_CUBE_EDGE } from "/src/services/visualization/geometryViewCube.js";
 
 window.runFullResultsCheck = async () => {
   const counts = [25_001, 6001], reads = [];
@@ -91,7 +91,7 @@ window.runFullResultsCheck = async () => {
     renderCube();
     window.fullResultsCube = {
       project(direction) {
-        const point = new THREE.Vector3(...direction).multiplyScalar(.65).project(cubeCamera);
+        const point = new THREE.Vector3(...direction).multiplyScalar(VIEW_CUBE_EDGE * .4).project(cubeCamera);
         const bounds = renderer.domElement.getBoundingClientRect();
         return [bounds.left + 8 + (point.x + 1) * 60, bounds.top + 600 - 8 - (point.y + 1) * 60];
       },
@@ -137,7 +137,7 @@ window.mountFullViewportCheck = () => {
       const camera = new THREE.PerspectiveCamera(); camera.quaternion.fromArray(state.quaternion);
       const cubeCamera = new THREE.OrthographicCamera(-1.35, 1.35, 1.35, -1.35, .1, 20);
       syncViewCubeCamera(cubeCamera, camera);
-      const point = new THREE.Vector3(...direction).multiplyScalar(.65).project(cubeCamera);
+      const point = new THREE.Vector3(...direction).multiplyScalar(VIEW_CUBE_EDGE * .4).project(cubeCamera);
       const bounds = host.querySelector("canvas").getBoundingClientRect();
       return [bounds.left + 8 + (point.x + 1) * 60, bounds.bottom - 8 - (point.y + 1) * 60];
     },
@@ -149,7 +149,8 @@ window.mountFullViewportCheck = () => {
         let cubePixels = 0;
         for (let y = first.height - 128; y < first.height - 8; y++) for (let x = 8; x < 128; x++) {
           const offset = (y * first.width + x) * 4;
-          if (first.data[offset] > 100 && first.data[offset + 1] > 100 && first.data[offset + 2] > 100) cubePixels++;
+          const rgb = first.data.subarray(offset, offset + 3);
+          if (Math.max(...rgb) > 100 && Math.max(...rgb) - Math.min(...rgb) > 50) cubePixels++;
         }
         await encoder.addFrame(first, { delayMs: 100 }); await encoder.addFrame(second, { delayMs: 100 });
         const blob = await encoder.finish();

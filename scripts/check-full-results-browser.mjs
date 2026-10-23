@@ -78,7 +78,7 @@ try {
     await page.waitForFunction(before => JSON.stringify(window.fullViewport.state().quaternion) !== JSON.stringify(before), after.quaternion);
   }
   const movie = await page.evaluate(() => window.fullViewport.movie());
-  assert.ok(movie.cubePixels > 1000, "ViewCube must be present in the captured canvas");
+  assert.ok(movie.cubePixels > 400, "coloured ViewCube must be present in the captured canvas");
   assert.equal(decompressFrames(parseGIF(Uint8Array.from(movie.bytes).buffer), true).length, 2);
   assert.deepEqual(await page.evaluate(() => window.fullViewport.errors), []);
   if (process.env.CHECK_SCREENSHOT) await page.screenshot({ path: process.env.CHECK_SCREENSHOT });

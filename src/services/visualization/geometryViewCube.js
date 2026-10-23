@@ -1,29 +1,24 @@
 export const VIEW_CUBE_SIZE = 120;
 export const VIEW_CUBE_MARGIN = 8;
-const HALF = .8;
+// The former white face centre occupied half the original cube edge.
+export const VIEW_CUBE_EDGE = .8;
+const HALF = VIEW_CUBE_EDGE / 2;
 const FACE_LABELS = [
-  ["СПРАВА", "+X", "#c13a3a"], ["СЛЕВА", "−X", "#c13a3a"],
-  ["СЗАДИ", "+Y", "#247c45"], ["СПЕРЕДИ", "−Y", "#247c45"],
-  ["СВЕРХУ", "+Z", "#286ab5"], ["СНИЗУ", "−Z", "#286ab5"],
+  ["X", "#f05252"], ["−X", "#f05252"],
+  ["Y", "#4bc26b"], ["−Y", "#4bc26b"],
+  ["Z", "#4c8ff2"], ["−Z", "#4c8ff2"],
 ];
 
-function faceTexture(THREE, [label, axis, color]) {
+function faceTexture(THREE, [axis, color]) {
   const canvas = document.createElement("canvas"); canvas.width = canvas.height = 256;
   const context = canvas.getContext("2d");
-  context.fillStyle = "#e3e9ef"; context.fillRect(0, 0, 256, 256);
-  context.fillStyle = "#f8fafc"; context.fillRect(64, 64, 128, 128);
-  context.strokeStyle = "#8293a5"; context.lineWidth = 3;
-  context.strokeRect(2, 2, 252, 252);
-  context.strokeStyle = "#bdc9d5"; context.lineWidth = 2;
-  for (const at of [64, 192]) {
-    context.beginPath(); context.moveTo(at, 0); context.lineTo(at, 256); context.stroke();
-    context.beginPath(); context.moveTo(0, at); context.lineTo(256, at); context.stroke();
-  }
+  context.fillStyle = color; context.fillRect(0, 0, 256, 256);
   context.textAlign = "center"; context.textBaseline = "middle";
-  context.fillStyle = "#253747"; context.font = "bold 21px sans-serif";
-  context.fillText(label, 128, 109);
-  context.fillStyle = color; context.font = "bold 35px sans-serif";
-  context.fillText(axis, 128, 149);
+  context.fillStyle = context.strokeStyle = "#ffff00";
+  context.font = "900 144px Arial, sans-serif";
+  context.lineWidth = 4; context.lineJoin = "round";
+  context.strokeText(axis, 128, 136, 224);
+  context.fillText(axis, 128, 136, 224);
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }

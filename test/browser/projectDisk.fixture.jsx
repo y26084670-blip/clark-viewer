@@ -6,7 +6,8 @@ import "../../src/App.css";
 const params = new URL(location.href).searchParams;
 let permission = params.get("permission") || "granted", requestResult = "granted", release;
 let pickerMode = "disk";
-const calls = [], queries = [], requests = [];
+const calls = [], queries = [], requests = [], browseCalls = [];
+window.showOpenFilePicker = async options => { browseCalls.push(options); throw new DOMException("Cancelled", "AbortError"); };
 const nativeQuery = FileSystemDirectoryHandle.prototype.queryPermission;
 FileSystemDirectoryHandle.prototype.queryPermission = function(options) {
   if (this.name !== "Диск Д") return nativeQuery.call(this, options);
@@ -31,7 +32,7 @@ window.showDirectoryPicker = async options => {
 };
 const [loaded, setLoaded] = createSignal(null);
 let path = "";
-window.diskFixture = { calls, queries, requests, path: () => path,
+window.diskFixture = { calls, queries, requests, browseCalls, path: () => path,
   mode(value) { pickerMode = value; },
   requestResult(value) { requestResult = value; },
   release() { release?.("granted"); },

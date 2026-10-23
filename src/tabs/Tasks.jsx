@@ -8,6 +8,7 @@ import { buildGeometryScene } from "../services/visualization/geometrySceneModel
 import { ThreeGeometryViewport } from "../components/geometry/ThreeGeometryViewport.jsx";
 import { TaskMediaPanel } from "../components/tasks/TaskMediaPanel.jsx";
 import { TaskStatusCells } from "../components/tasks/TaskStatusCells.jsx";
+import { ProjectDiskDialog } from "../components/tasks/ProjectDiskDialog.jsx";
 import { LastOpenedTaskMarker, ProjectSelectValue } from "../components/tasks/LastOpenedTaskMarker.jsx";
 import { useTaskStatuses } from "../services/taskStatusMonitor.js";
 import { createTaskTestProtocolWindow } from "../services/taskTestProtocolWindow.js";
@@ -17,6 +18,10 @@ export function Tasks(props) {
   const [disk, setDisk] = createSignal(null), [catalogs, setCatalogs] = createSignal([]);
   const [pendingDisk, setPendingDisk] = createSignal(null), [accessBusy, setAccessBusy] = createSignal(false);
   const [accessNotice, setAccessNotice] = createSignal("");
+  const [accessOpen, setAccessOpen] = createSignal(true);
+  const [projectListBusy, setProjectListBusy] = createSignal(false);
+  const [projectBrowseNotice, setProjectBrowseNotice] = createSignal("");
+  let catalogSelect;
   const [root, setRoot] = createSignal(null), [projects, setProjects] = createSignal([]);
   const [project, setProject] = createSignal(""), [tasks, setTasks] = createSignal([]);
   const taskStatus = useTaskStatuses(
@@ -29,7 +34,7 @@ export function Tasks(props) {
   const [selectionSending, setSelectionSending] = createSignal(false);
   const [selectionNotice, setSelectionNotice] = createSignal("");
   const [selectionError, setSelectionError] = createSignal("");
-  const browserBusy = () => accessBusy() || galleryBusy() || selectionReceiving() || protocolBusy();
+  const browserBusy = () => accessBusy() || projectListBusy() || galleryBusy() || selectionReceiving() || protocolBusy();
   let taskListElement, selectionErrorDialog, selectionErrorReturnFocus;
   const [lastTask, setLastTask] = createSignal(null), [lastTaskNotice, setLastTaskNotice] = createSignal("");
   const lastTaskHistory = createLastOpenedTaskHistory({ app: "viewer", onChange: setLastTask, onNotice: setLastTaskNotice });
@@ -147,7 +152,7 @@ export function Tasks(props) {
       setAccessBusy(true);
       await openDisk(handle, request);
     } catch {
-      if (accessIsCurrent(request)) setAccessNotice("Сохранённый диск недоступен. Выберите диск с проектами кнопкой справа от списка.");
+      if (accessIsCurrent(request)) setAccessNotice("Сохранённый диск недоступен. Выберите диск в окне «Доступ к проектам» после F5.");
     } finally { if (accessIsCurrent(request)) setAccessBusy(false); }
   }
   async function allowDisk() {
@@ -158,11 +163,11 @@ export function Tasks(props) {
       const permission = await projectDiskPermission(handle, { request: true });
       if (!accessIsCurrent(request)) return;
       if (permission !== "granted") {
-        setAccessNotice("Доступ к диску не разрешён. Повторите разрешение или выберите диск кнопкой справа от списка."); return;
+        setAccessNotice("Доступ к диску не разрешён. Повторите разрешение или выберите диск в окне «Доступ к проектам» после F5."); return;
       }
       await openDisk(handle, request);
     } catch {
-      if (accessIsCurrent(request)) setAccessNotice("Не удалось открыть сохранённый диск. Выберите диск с проектами кнопкой справа от списка.");
+      if (accessIsCurrent(request)) setAccessNotice("Не удалось открыть сохранённый диск. Выберите диск в окне «Доступ к проектам» после F5.");
     } finally { if (accessIsCurrent(request)) setAccessBusy(false); }
   }
   async function pickRoot() {
@@ -199,6 +204,47 @@ export function Tasks(props) {
       if (current === revision) setTasks(rows);
     } catch (error) { if (current === revision) setError(error.message); }
   }
+  function closeAccess() {
+    if (accessBusy()) return;
+    setAccessOpen(false);
+    queueMicrotask(() => catalogSelect?.focus());
+  }
+  async function browseProjects() {
+    const handle = root();
+    if (!handle || props.busy || browserBusy()) return;
+    setProjectBrowseNotice("");
+    if (!window.isSecureContext || typeof window.showOpenFilePicker !== "function") {
+      setProjectBrowseNotice("Просмотр каталога недоступен. Откройте приложение по HTTPS или localhost в Chrome либо Edge."); return;
+    }
+    try {
+      const picked = await window.showOpenFilePicker({ id: "project-catalog-browse", startIn: handle,
+        multiple: false, excludeAcceptAllOption: false });
+      if (picked?.length && !disposed && handle === root()) setProjectBrowseNotice(
+        "Работа с файлами в Проводнике выполняется через контекстное меню при нажатии правой кнопки мыши.");
+    } catch (error) {
+      if (error.name !== "AbortError" && !disposed && handle === root()) {
+        setProjectBrowseNotice("Не удалось просмотреть каталог с проектами: " + error.message);
+      }
+    }
+  }
+  async function refreshProjects() {
+    const handle = root();
+    if (!handle || props.busy || browserBusy()) return;
+    const current = ++revision;
+    setProjectListBusy(true);
+    try {
+      const entries = await subdirectories(handle);
+      if (disposed || current !== revision || handle !== root()) return;
+      batch(() => {
+        setProjects(entries);
+        if (!entries.some(item => item.name === project())) {
+          setProject(""); setTasks([]); setCandidate(null);
+        }
+      });
+    } catch (error) {
+      if (!disposed && current === revision) setError("Не удалось обновить список проектов: " + error.message);
+    } finally { if (!disposed) setProjectListBusy(false); }
+  }
   const info = useAsyncResult(() => candidate(), async item => {
     const [summary, model] = await Promise.allSettled([readTaskSummaries(item.handle), loadTaskInput(item.handle)]);
     return { summary: summary.status === "fulfilled" ? summary.value : { input: summary.reason.message, output: summary.reason.message },
@@ -220,35 +266,46 @@ export function Tasks(props) {
     }
   }
   return <div class="tasks-layout">
+    <ProjectDiskDialog open={accessOpen() && props.active !== false} busy={props.busy || accessBusy()}
+      disk={disk()} count={catalogs().length} pending={pendingDisk()} notice={accessNotice() || error()}
+      onPick={pickRoot} onAllow={allowDisk} onClose={closeAccess} />
     <section class="task-browser-panel">
       <div class="task-browser-content">
         <label class="field-label" for="projectCatalog">Каталоги с проектами</label>
         <div class="task-catalog-row">
-          <select id="projectCatalog" class="project-select" aria-label="Каталоги с проектами"
+          <select id="projectCatalog" ref={catalogSelect} class="project-select" aria-label="Каталоги с проектами"
             value={root()?.name ?? ""} disabled={props.busy || browserBusy() || !catalogs().length}
             onChange={event => changeCatalog(event.currentTarget.value)}>
             <Show when={!catalogs().length}><option value="">{disk() ? "Нет каталогов clark.*" : "Выберите диск с проектами"}</option></Show>
             <For each={catalogs()}>{item => <option value={item.name}>{item.name}</option>}</For>
           </select>
-          <button type="button" class="folder-button task-disk-button" disabled={props.busy || browserBusy()}
-            aria-label="Выбрать диск с проектами" title="Выбрать другой диск с проектами" onClick={pickRoot}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v12H3z" fill="none" stroke="currentColor" stroke-width="2" /></svg>
-          </button>
         </div>
-        <Show when={pendingDisk()}><button type="button" class="folder-button" disabled={props.busy || browserBusy()}
+        <Show when={pendingDisk() && !accessOpen()}><button type="button" class="folder-button" disabled={props.busy || browserBusy()}
           onClick={allowDisk}>Разрешить доступ к диску «{pendingDisk().name}»</button></Show>
-        <Show when={accessNotice()}><div class="task-access-notice" role="status">{accessNotice()}</div></Show>
+        <Show when={accessNotice() && !accessOpen()}><div class="task-access-notice" role="status">{accessNotice()}</div></Show>
         <div class="root-name">{root() ? `Корневой каталог: ${root().name}` : "Каталог не выбран"}</div>
-        <label class="field-label">Список проектов</label>
-        <select class="project-select task-project-select" value={project()} disabled={browserBusy()} onChange={event => pickProject(event.currentTarget.value)} aria-label="Список проектов">
+        <div class="task-list-heading task-project-heading">
+          <label class="field-label" for="listProject">Список проектов</label>
+          <div class="task-project-actions">
+            <button type="button" class="task-project-browse" disabled={!root() || props.busy || browserBusy()}
+              aria-label="Просмотр каталога с проектами" title="Просмотр каталога с проектами (выбор не изменяется)" onClick={browseProjects}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v12H3z" fill="none" stroke="currentColor" stroke-width="2" /></svg>
+            </button>
+            <button type="button" class="task-status-refresh" disabled={!root() || props.busy || browserBusy()}
+              aria-label="Обновить список проектов" title="Обновить список проектов" aria-busy={projectListBusy()}
+              onClick={refreshProjects}>↻</button>
+          </div>
+        </div>
+        <select id="listProject" class="project-select task-project-select" value={project()} disabled={browserBusy()} onChange={event => pickProject(event.currentTarget.value)} aria-label="Список проектов">
           <ProjectSelectValue value={project()} placeholder="Выберите проект" marked={project() === lastProjectName()} />
-          <option value="">Выберите проект</option><For each={projects()}>{item => <option value={item.name}><Show when={item.name === lastProjectName()}><LastOpenedTaskMarker label="Последний открытый проект" /></Show>{item.name}</option>}</For>
+          <option value="" selected={!project()}>Выберите проект</option><For each={projects()}>{item => <option value={item.name} selected={item.name === project()}><Show when={item.name === lastProjectName()}><LastOpenedTaskMarker label="Последний открытый проект" /></Show>{item.name}</option>}</For>
         </select>
+        <Show when={projectBrowseNotice()}><div class="task-access-notice" role="status">{projectBrowseNotice()}</div></Show>
         <div class="task-list-heading">
           <div class="field-label">Список заданий</div>
           <button type="button" class="task-status-refresh" disabled={!tasks().length || taskStatus.busy() || galleryBusy()}
-            aria-label="Обновить признаки состояния заданий" aria-busy={taskStatus.busy()}
-            title="Обновить признаки состояния заданий" onClick={() => { void taskStatus.refresh(); }}>↻</button>
+            aria-label="Обновить список заданий" aria-busy={taskStatus.busy()}
+            title="Обновить список заданий" onClick={() => { void taskStatus.refresh(); }}>↻</button>
         </div>
         <div class="task-list" ref={taskListElement} role="listbox" aria-label="Список заданий" onClick={event => {
           if (browserBusy()) return;

@@ -39,7 +39,7 @@ import { createGeometryFlightController } from "../../services/visualization/geo
 import { pickGeometryFlightPivot } from "../../services/visualization/geometryFlightPivot.js";
 import { installGeometryOverlayDrag } from "../../services/visualization/geometryOverlayDrag.js";
 import { createGeometryViewSetting } from "../../services/visualization/geometryViewSettings.js";
-import { resultVectorLength } from "../../services/visualization/resultVectorScale.js";
+import { resultVectorLength, normalizedResultVectorLength } from "../../services/visualization/resultVectorScale.js";
 import { updateResultCones } from "../../services/visualization/resultConeVectors.js";
 import {
   findPointMetadataRange,
@@ -189,11 +189,12 @@ function createPrescribedSourceVectors(
   palette = "Viridis",
   lengthReference = null,
   displayRange = null,
+  normalizedLength = null,
 ) {
   const root = sourceVectorRoot(THREE, previousRoot, style);
   if (style === "cones") return updateResultCones(THREE, root, acceptedInstances
     ? vectors.filter(item => acceptedInstances.has(sourceInstanceKey(item.source, item.instance))) : vectors,
-  { scales, maximumMagnitude, sceneDiagonal, lengthReference, displayRange, palette });
+  { scales, maximumMagnitude, sceneDiagonal, lengthReference, normalizedLength, displayRange, palette });
   if (style === "points") {
     const points = acceptedInstances
       ? vectors.filter(item => acceptedInstances.has(sourceInstanceKey(item.source, item.instance)))
@@ -216,6 +217,18 @@ function createPrescribedSourceVectors(
     } : null;
     return root;
   }
+  const colored = normalizedLength !== null;
+  let colorMinimum = Infinity, colorMaximum = -Infinity;
+  if (colored) for (const item of vectors) {
+    if (acceptedInstances && !acceptedInstances.has(sourceInstanceKey(item.source, item.instance))) continue;
+    colorMinimum = Math.min(colorMinimum, item.magnitude); colorMaximum = Math.max(colorMaximum, item.magnitude);
+  }
+  if (displayRange) { colorMinimum = displayRange.minimum; colorMaximum = displayRange.maximum; }
+  root.userData.colorLegend = colored && Number.isFinite(colorMinimum) && vectors.length ? {
+    minimum: colorMinimum, maximum: colorMaximum, quantity: `Модуль · ${vectors[0].quantity}`, unit: vectors[0].unit, palette,
+  } : null;
+  const mappedColor = new THREE.Color();
+  const vectorColor = item => mappedColor.setRGB(...resultScalarColor(item.magnitude, colorMinimum, colorMaximum, palette), THREE.SRGBColorSpace);
   const maximum = maximumMagnitude ?? { current: 0, magnetization: 0 };
   const positions = { current: [], magnetization: [] };
   const thinVectors = { current: [], magnetization: [] };
@@ -236,7 +249,7 @@ function createPrescribedSourceVectors(
       continue;
     }
     // Apply the user scale after the base limit so it can enlarge the arrows.
-    const length = resultVectorLength(item, scales[item.kind], maximum, sceneDiagonal, lengthReference);
+    const length = resultVectorLength(item, scales[item.kind], maximum, sceneDiagonal, lengthReference, normalizedLength);
     if (!(length > 0) || !Number.isFinite(length)) continue;
 
     if (style === "solid") {
@@ -279,7 +292,7 @@ function createPrescribedSourceVectors(
           mesh.renderOrder = 14;
           root.add(mesh);
         }
-        mesh.material.color.setHex(color);
+        mesh.material.color.setHex(colored ? 0xffffff : color);
         mesh.userData.resultVectors = arrows.map(({ item }) => item);
         mesh.count = arrows.length;
         mesh.visible = arrows.length > 0;
@@ -294,6 +307,14 @@ function createPrescribedSourceVectors(
       const matrix = new THREE.Matrix4();
       for (let index = 0; index < arrows.length; index += 1) {
         const { item, length } = arrows[index];
+        if (colored || shafts.instanceColor || heads.instanceColor) {
+          const color = colored ? vectorColor(item) : mappedColor.setHex(0xffffff);
+          for (const mesh of meshes) {
+            const hadColors = Boolean(mesh.instanceColor);
+            mesh.setColorAt(index, color);
+            if (!hadColors) mesh.material.needsUpdate = true;
+          }
+        }
         origin.fromArray(item.origin);
         direction.set(...item.vector).divideScalar(item.magnitude).normalize();
         rotation.setFromUnitVectors(up, direction);
@@ -308,6 +329,7 @@ function createPrescribedSourceVectors(
       }
       for (const mesh of meshes) {
         mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
         mesh.computeBoundingSphere();
       }
       continue;
@@ -335,7 +357,22 @@ function createPrescribedSourceVectors(
       attribute.setUsage(THREE.DynamicDrawUsage);
       lines.geometry.setAttribute("position", attribute);
     }
-    lines.material.color.setHex(color);
+    if (lines.material.vertexColors !== colored) {
+      lines.material.vertexColors = colored; lines.material.needsUpdate = true;
+    }
+    lines.material.color.setHex(colored ? 0xffffff : color);
+    if (colored) {
+      let colors = lines.geometry.getAttribute("color");
+      if (!colors || colors.count < attribute.count) {
+        colors = new THREE.BufferAttribute(new Float32Array(attribute.array.length), 3).setUsage(THREE.DynamicDrawUsage);
+        lines.geometry.setAttribute("color", colors);
+      }
+      thinVectors[kind].forEach((item, index) => {
+        const c = vectorColor(item);
+        colors.setXYZ(index * 2, c.r, c.g, c.b); colors.setXYZ(index * 2 + 1, c.r, c.g, c.b);
+      });
+      colors.needsUpdate = true;
+    }
     lines.userData.resultVectors = thinVectors[kind];
     attribute.array.set(values);
     attribute.needsUpdate = true;
@@ -497,9 +534,10 @@ function releaseResultRoot(root) {
 
 export function updateResultLayers(THREE, previous, definitions, {
   filters = {}, colorMap = false, style = "thin", scale = 1,
-  palette = "Viridis", opacity = 1,
+  palette = "Viridis", opacity = 1, normalizeVectors = false,
 } = {}) {
   const next = new Map();
+  const normalizedLength = normalizeVectors ? normalizedResultVectorLength(definitions) : null;
   const visible = item => primitiveVisible(item, filters.objectModes, filters.selections)
     && instanceVisible(item.instance, filters.symmetry);
   for (const layer of definitions ?? []) {
@@ -512,9 +550,9 @@ export function updateResultLayers(THREE, previous, definitions, {
     const old = previous.get(key);
     const volumeFields = layer.volumeFields ?? null;
     const displayRange = layer.displayRange?.available ? layer.displayRange : null;
-    const vectorStyle = colorMap ? (volumeFields ? "volume" : "points") : style;
+    const vectorStyle = colorMap && !normalizeVectors ? (volumeFields ? "volume" : "points") : style;
     const signature = [scene, scalarScene, volumeFields, layer.color, layer.quantityKey,
-      layer.groupLabel, filters, colorMap, vectorStyle, scale, palette, opacity, layer.vectorLengthReference, displayRange];
+      layer.groupLabel, filters, colorMap, vectorStyle, scale, palette, opacity, layer.vectorLengthReference, displayRange, normalizedLength];
     if (old && signature.every((value, index) => Object.is(value, old.signature[index]))) {
       next.set(key, old);
       continue;
@@ -559,11 +597,12 @@ export function updateResultLayers(THREE, previous, definitions, {
         state.vectorRoot = createPrescribedSourceVectors(THREE, vectors, null,
           scene.sceneDiagonal, vectorStyle,
           { current: scale, magnetization: scale },
-          scene.maximumMagnitude, color, state.vectorRoot, palette, layer.vectorLengthReference, displayRange);
-        if (vectorStyle === "points" || vectorStyle === "cones") legend = state.vectorRoot.userData.colorLegend;
-        else {
+          scene.maximumMagnitude, color, state.vectorRoot, palette, layer.vectorLengthReference, displayRange, normalizedLength);
+        if (normalizeVectors || vectorStyle === "points" || vectorStyle === "cones") legend = state.vectorRoot.userData.colorLegend;
+        if (vectorStyle !== "points" && vectorStyle !== "cones") {
           const nodes = updateResultPoints(THREE,
-            state.vectorRoot.getObjectByName("result-vector-nodes"), vectors, { color });
+            state.vectorRoot.getObjectByName("result-vector-nodes"), vectors,
+            { color, colorMap: normalizeVectors, minimum: legend?.minimum, maximum: legend?.maximum, palette });
           if (nodes.parent !== state.vectorRoot) state.vectorRoot.add(nodes);
         }
       }
@@ -1467,6 +1506,7 @@ export function ThreeGeometryViewport(props) {
   let resultLayerStates = new Map();
   let resultVectorScale = 1;
   let resultVectorColorMap = false;
+  let resultNormalizeVectors = false;
   let activeResultFilters = {};
   let prescribedSourceRoot;
   let prescribedSourceScene = null;
@@ -1995,7 +2035,7 @@ export function ThreeGeometryViewport(props) {
           true, node.characteristicSize);
       } else {
         if (scalar) showTooltip(formatResultScalarTooltip(scalar), x, y);
-        else if (vector) showTooltip(formatResultVectorTooltip(vector, { showMagnitude: resultVectorColorMap }), x, y);
+        else if (vector) showTooltip(formatResultVectorTooltip(vector, { showMagnitude: resultVectorColorMap || resultNormalizeVectors }), x, y);
         else setHoverTooltip(null);
         return;
       }
@@ -2413,7 +2453,7 @@ export function ThreeGeometryViewport(props) {
     if (!THREE || !helperRoot) return;
     clearHoverTooltip();
     resultLayerStates = updateResultLayers(THREE, resultLayerStates, resultLayers, {
-      filters: activeResultFilters, colorMap: resultVectorColorMap, style: resultVectorStyle,
+      filters: activeResultFilters, colorMap: resultVectorColorMap, normalizeVectors: resultNormalizeVectors, style: resultVectorStyle,
       scale: resultVectorScale, palette: resultPalette, opacity: geometryOpacity ?? 1,
     });
     for (const root of resultLayerRoots(resultLayerStates)) {
@@ -2833,6 +2873,7 @@ export function ThreeGeometryViewport(props) {
       color: props.resultVectorColor }];
     resultPalette = normalizeResultPalette(props.resultPalette);
     resultVectorColorMap = props.resultVectorColorMap === true;
+    resultNormalizeVectors = props.resultNormalizeVectors === true;
     resultVectorStyle = ["solid", "cones"].includes(props.resultVectorStyle) ? props.resultVectorStyle : "thin";
     resultVectorScale = props.resultVectorScale ?? 1;
     streamlines = props.resultStreamlines ?? [];

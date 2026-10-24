@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { QUANTITIES } from "../../src/services/results/resultMappings.js";
+import { QUANTITIES, assignedHtsElements } from "../../src/services/results/resultMappings.js";
 import { resultDisplaySelection } from "../../src/services/results/resultRequests.js";
 import { RESULT_LAYER_GROUPS } from "../../src/services/results/resultLayerDefinitions.js";
 import { createResultLayerReader } from "../../src/services/results/resultLayerRequests.js";
@@ -26,7 +26,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     onInput: event => setScale(10 ** event.currentTarget.valueAsNumber),
     checked: effectiveColorMap(),
     disabled: hasScalars(),
-    onChange: event => !hasScalars() && setColorMap(event.currentTarget.checked),
+    onChange: event => changeColorMap(event.currentTarget.checked),
     viewportColorMap: effectiveColorMap(),
   })`;
   const streamlineBindings = `() => ({
@@ -46,10 +46,10 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
   let state = { frame: null, requested: null, error: "", loading: false };
   const run = new Function("props", "createGeometryViewSetting", "createMemo", "onCleanup", "createSignal", "createEffect",
     "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_METHODS", "streamlineSessions", "cameraSessions",
-    "QUANTITIES", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
+    "QUANTITIES", "assignedHtsElements", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
     "createMovieTabAdapter", "completedMovieFrame", "onMount", "applyResultGlobalRange", "resultGlobalScale",
     `${setup} return { cameraState, rememberCamera, quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
-      colorMap, effectiveColorMap, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
+      colorMap, effectiveColorMap, normalizeVectors, changeNormalizeVectors, changeColorMap, conductivityAvailable, unavailableConductivity, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
       addStreamline, deleteStreamline, streamlineMethod, changeStreamlineMethod, streamlines,
       controls: ${controlBindings},
       streamlineControls: ${streamlineBindings},
@@ -58,7 +58,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     options.createMemo ?? (compute => compute), callback => cleanup.push(callback),
     options.createSignal ?? (initial => { let value = initial; return [() => value, next => { value = typeof next === "function" ? next(value) : next; }]; }),
     options.createEffect ?? (callback => { effects.push(callback); callback(); }),
-    STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS, streamlineSessions, cameraSessions, QUANTITIES, resultDisplaySelection,
+    STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS, streamlineSessions, cameraSessions, QUANTITIES, assignedHtsElements, resultDisplaySelection,
     RESULT_LAYER_GROUPS, options.readerFactory ?? createResultLayerReader,
     (source, reader) => { requestSource = source; load = reader; options.observeRequest?.(source); return () => state; },
     options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame, () => {}, applyResultGlobalRange, resultGlobalScale);

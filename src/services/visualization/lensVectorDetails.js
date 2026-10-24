@@ -153,6 +153,10 @@ export function createLensVectorDetails(THREE) {
           rotation.setFromUnitVectors(up, direction); scale.setScalar(record.length);
           mesh.setMatrixAt(index, matrix.compose(record.origin, rotation, scale));
           if (record.object.instanceColor) record.object.getColorAt(record.index, color);
+          else if (record.object.material.vertexColors && record.object.geometry.getAttribute("color")) {
+            color.fromBufferAttribute(record.object.geometry.getAttribute("color"), record.index * (record.object.userData.segmentsPerVector ?? 1) * 2);
+            color.multiply(record.object.material.color);
+          }
           else color.copy(record.object.material.color);
           mesh.setColorAt(index, color);
           opacity.setX(index, record.object.material.opacity * lensDepthOpacity(record.depth, near, far));

@@ -112,3 +112,17 @@ test("palette cones retain their endpoints and individual colours in the detaile
   });
   assert.equal(cone.visible,true); f.detail.dispose(); cone.dispose(); cone.geometry.dispose(); cone.material.dispose();
 });
+
+test("lens arrows retain per-vector palette colors from normalized thin vectors", () => {
+  const f = fixture(), object = lines([[[0, 0, 0], [1, 0, 0]], [[0, 2, 0], [1, 2, 0]]]);
+  object.material.vertexColors = true; object.material.color.setHex(0xffffff);
+  object.geometry.setAttribute("color", new THREE.Float32BufferAttribute([.1,.2,.3, .1,.2,.3, .7,.8,.9, .7,.8,.9], 3));
+  f.scene.add(object);
+  capture(f, mesh => {
+    assert.equal(mesh.count, 2); const c = new THREE.Color();
+    for (let i = 0; i < 2; i++) {
+      mesh.getColorAt(i, c); c.toArray().forEach((v, k) => close(v, [[.1,.2,.3], [.7,.8,.9]][i][k]));
+    }
+  });
+  f.detail.dispose(); object.geometry.dispose(); object.material.dispose();
+});

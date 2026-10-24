@@ -9,20 +9,9 @@ const xyzText = (frame, row) => `XYZ = (${pointAt(frame, row).map(number).join("
 export function scalarAt(frame, row, quantity, component = "norm") {
   const offset = row * frame.stride + quantity.offset;
   const factor = quantity.factor ?? 1;
-  if (quantity.modulusRatioOffsets) {
-    const norms = quantity.modulusRatioOffsets.map(column => {
-      const start = row * frame.stride + column;
-      const vector = frame.values.subarray(start, start + 3);
-      if (vector.length !== 3 || !vector.every(Number.isFinite)) {
-        throw new Error("Удельное сопротивление: J или E содержит нечисловые значения");
-      }
-      return Math.hypot(...vector);
-    });
-    if (!norms.every(Number.isFinite)) throw new Error("Удельное сопротивление: модуль J или E вне числового диапазона");
-    // JE stores J in A/mm² and E in V/m. Convert E/J to Ohm·m once.
-    // Zero J has no defined ratio, including 0/0; retain NaN in the full grid
-    // so volume interpolation masks these cells instead of bridging a hole.
-    return norms[1] === 0 ? NaN : norms[0] / norms[1] * factor;
+  if (quantity.relativeConductivity) {
+    if (frame.relativeConductivityValues?.length !== frame.count) throw new Error("Не подготовлены значения σ/j_gmin");
+    return frame.relativeConductivityValues[row];
   }
   if (quantity.productOffsets) {
     const [left, right] = quantity.productOffsets.map(column => row * frame.stride + column);
@@ -49,7 +38,7 @@ export function scalarScene(frames, quantity, task = null) {
     const layout = elementLayout(record);
     for (let row = 0; row < frame.count; row++) {
       const origin = pointAt(frame, row), value = scalarAt(frame, row, quantity);
-      if (origin.every(Number.isFinite) && quantity.modulusRatioOffsets && Number.isNaN(value)) {
+      if (origin.every(Number.isFinite) && quantity.relativeConductivity && Number.isNaN(value)) {
         undefinedCount++; continue;
       }
       if (![...origin, value].every(Number.isFinite)) throw new Error("Цветовая карта содержит нечисловые координаты или значения");
@@ -66,7 +55,7 @@ export function scalarScene(frames, quantity, task = null) {
   }
   return { points, minimum: points.length ? minimum : 0, maximum: points.length ? maximum : 0,
     quantity: label, unit: quantity.unit, undefinedCount,
-    notice: undefinedCount ? `Удельное сопротивление не определено при J = 0. Пропущено расчётных узлов: ${undefinedCount}.` : "" };
+    notice: undefinedCount ? `При |E| = 0 значение σ/j_gmin для ВТСП не отображается. Пропущено расчётных узлов: ${undefinedCount}.` : "" };
 }
 
 export function vectorScene(frames, quantity, task = null) {

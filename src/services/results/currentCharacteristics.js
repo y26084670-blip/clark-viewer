@@ -25,7 +25,7 @@ export function parseCurrentCharacteristic(text) {
   return p;
 }
 
-async function loadMaterial(task, name) {
+export async function loadCurrentMaterial(task, name) {
   if (typeof name !== "string" || !name.trim() || /[\\/:\0]/.test(name) || [".", ".."].includes(name)) {
     throw new Error("Некорректное имя характеристики ВТСП");
   }
@@ -128,7 +128,7 @@ export async function readCurrentCharacteristics(task, entries, time) {
       if ((record.model ?? 0) === 0) return { series: currentCharacteristicSeries(record, series, { conductivity: record.rv }) };
       if (record.model !== 2) throw new Error(`Модель материала ${record.model} не поддерживает заданную J(E)`);
       if ((task.general.htsRo ?? task.general.htcRo ?? true) === false) throw new Error("Токовая подсистема ВТСП отключена");
-      const property = await loadMaterial(task, record.xapName);
+      const property = await loadCurrentMaterial(task, record.xapName);
       magneticObjects ??= resultObjects(task, "M");
       const object = magneticObjects.find(item => item.record.id === record.id);
       if (!object) throw new Error("Нет сохранённого MH для локальной зависимости Jc(B)");

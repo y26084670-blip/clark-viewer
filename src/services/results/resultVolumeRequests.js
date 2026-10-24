@@ -1,3 +1,4 @@
+import { readRelativeConductivityFrames } from "./relativeConductivity.js";
 import { QUANTITIES } from "./resultMappings.js";
 import { readObjectFrames } from "./resultRequests.js";
 import { resultVolumeDomains, scalarScene, vectorScene } from "./resultPlots.js";
@@ -8,7 +9,7 @@ import { attachResultVolumeSupport } from "./resultVolumeSupport.js";
 /** Both interpolation and node fallback retain the complete saved grid. */
 export async function readResultVolumeFrame(request, previousVolumeFields = null, processor = null) {
   const quantity = QUANTITIES[request.quantityKey];
-  const frames = await readObjectFrames(request);
+  const frames = await (quantity.relativeConductivity ? readRelativeConductivityFrames : readObjectFrames)(request);
   const result = { scene: quantity.components === 1 ? null : vectorScene(frames, quantity, request.task),
     scalarScene: quantity.components === 1 ? scalarScene(frames, quantity, request.task) : null, sampled: false };
   const savedDomains = resultVolumeDomains(frames, quantity, result.scene ?? result.scalarScene, request.task);

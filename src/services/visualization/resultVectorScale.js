@@ -41,11 +41,34 @@ export function referenceResultVectorLayers(task, layers = []) {
 /** Shared by thin and solid arrows. The reference affects display length only;
  * coordinates, components, signed direction and colour magnitudes stay intact.
  */
-export function resultVectorLength(item, scale, maximumMagnitude, sceneDiagonal, reference = null) {
+export function resultVectorLength(item, scale, maximumMagnitude, sceneDiagonal, reference = null, normalizedLength = null) {
+  if (!(Number.isFinite(item.magnitude) && item.magnitude > 0)) return 0;
+  if (normalizedLength !== null) {
+    const length = normalizedLength * scale;
+    return Number.isFinite(length) && length > 0 ? length : 0;
+  }
   const size = reference?.characteristicSize ?? item.characteristicSize;
   const diagonal = reference?.sceneDiagonal ?? sceneDiagonal;
   const maximum = reference?.maximumMagnitude?.[item.kind] ?? maximumMagnitude?.[item.kind];
   const sceneLimit = diagonal > 0 ? 0.06 * diagonal : Infinity;
   const length = Math.min(0.7 * size, sceneLimit) * (item.magnitude / maximum) * scale;
   return Number.isFinite(length) && length > 0 ? length : 0;
+}
+
+/** One world-space length across all vector groups, independent of magnitudes
+ * and physical units. The ordinary size control still multiplies this length.
+ */
+export function normalizedResultVectorLength(layers = []) {
+  let size = 0, diagonal = 0;
+  for (const layer of layers) {
+    if (!layer?.scene || (layer.state && layer.state !== "ready")) continue;
+    const reference = layer.vectorLengthReference;
+    const extent = reference?.sceneDiagonal ?? layer.scene.sceneDiagonal;
+    if (Number.isFinite(extent)) diagonal = Math.max(diagonal, extent);
+    if (Number.isFinite(reference?.characteristicSize)) size = Math.max(size, reference.characteristicSize);
+    else for (const item of layer.scene.vectors ?? []) {
+      if (Number.isFinite(item.characteristicSize)) size = Math.max(size, item.characteristicSize);
+    }
+  }
+  return Math.min(.7 * size, diagonal > 0 ? .06 * diagonal : Infinity);
 }

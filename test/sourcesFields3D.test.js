@@ -30,7 +30,7 @@ const selections = layers => Object.fromEntries(layers.map(layer => [layer.key, 
 // The UI labels/options are owned by the same descriptor rendered by its <For>.
 test("3D quantity groups expose exact independent choices and M/none/none defaults", () => {
   assert.deepEqual(RESULT_LAYER_GROUPS.map(group => [group.key, group.defaultQuantity, [...group.quantities]]), [
-    ["elements", "M", ["none", "M", "H", "MHdot", "J", "E", "JEdot", "rho"]],
+    ["elements", "M", ["none", "M", "H", "MHdot", "J", "E", "JEdot", "sigmaRelative"]],
     ["regions", "none", ["none", "Bs", "As"]],
     ["virtual", "none", ["none", "Bv", "Av"]],
   ]);
@@ -287,4 +287,32 @@ test("compact 3D toolbar buttons expose concise explanatory tooltips",()=>{
 test("selected streamline does not add a status row that changes 3D height",()=>{
   const source=readFileSync(new URL("../src/tabs/SourcesFields3D.jsx",import.meta.url),"utf8");
   assert.doesNotMatch(source,/source-streamline-status|selectedLineStatus/);
+});
+
+test("relative conductivity is unavailable without HTS without blocking other maps", () => {
+  const props = fixture(), settings = { resultElementsQuantity: "sigmaRelative", resultRegionsQuantity: "Bs" };
+  const ui = sourcesFields3DSetup(props, settings);
+  assert.equal(ui.conductivityAvailable(), false); assert.equal(ui.unavailableConductivity(), true);
+  assert.equal(ui.requestedLayers()[0].quantityKey, "none"); assert.equal(ui.requestedLayers()[1].quantityKey, "Bs");
+  assert.equal(ui.hasScalars(), false);
+  props.task.elements[0].model = 2; props.task.elements[0].xapName = "HTS";
+  assert.equal(ui.conductivityAvailable(), true); assert.equal(ui.requestedLayers()[0].quantityKey, "sigmaRelative");
+  ui.close();
+});
+
+test("normalized vectors retain scalar maps, select arrows over vector maps and freeze during capture", () => {
+  const props = fixture(), settings = { resultElementsQuantity: "J", resultRegionsQuantity: "Bs", resultVectorScale: 10, resultVectorColorMap: true };
+  const ui = sourcesFields3DSetup(props, settings);
+  ui.changeNormalizeVectors(true);
+  assert.equal(ui.normalizeVectors(), true); assert.equal(ui.colorMap(), false);
+  assert.ok(ui.requestedLayers().every(layer => !layer.volumeMode));
+  ui.changeColorMap(true);
+  assert.equal(ui.normalizeVectors(), false); assert.equal(ui.colorMap(), true);
+  settings.resultElementsQuantity = "JEdot";
+  ui.changeNormalizeVectors(true);
+  assert.equal(ui.effectiveColorMap(), true); assert.equal(ui.normalizeVectors(), true);
+  assert.equal(ui.requestedLayers()[0].volumeMode, true); assert.equal(ui.requestedLayers()[1].volumeMode, false);
+  ui.changeColorMap(false); assert.equal(ui.effectiveColorMap(), true);
+  props.movieBusy = true; ui.changeNormalizeVectors(false); assert.equal(ui.normalizeVectors(), true);
+  ui.close();
 });

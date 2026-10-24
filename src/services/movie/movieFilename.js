@@ -1,6 +1,6 @@
 const QUANTITY_FILENAME_SYMBOLS = Object.freeze({
   M: "M", H: "H", J: "J", E: "E", Bs: "B", Bv: "B", As: "A", Av: "A",
-  MHdot: "MH", JEdot: "JE", rho: "rho",
+  MHdot: "MH", JEdot: "JE", sigmaRelative: "sigma_rel",
 });
 
 /** Capture the actual configured 3D quantities, in group/line order, once.

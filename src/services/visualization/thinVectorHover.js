@@ -41,6 +41,10 @@ export function createThinVectorHover({ scene, requestRender }) {
       overlay.geometry.instanceCount = next.vertices / 2;
       overlay.geometry.computeBoundingBox(); overlay.geometry.computeBoundingSphere();
       overlay.material.color.copy(next.object.material.color);
+      if (next.object.material.vertexColors && next.object.geometry.getAttribute("color")) {
+        overlay.material.color.fromBufferAttribute(next.object.geometry.getAttribute("color"), next.start)
+          .multiply(next.object.material.color);
+      }
       overlay.material.opacity = next.object.material.opacity;
       next.object.updateWorldMatrix(true, false); overlay.matrix.copy(next.object.matrixWorld);
       overlay.visible = true; current = { ...next, version: attribute.version }; requestRender();

@@ -31,12 +31,12 @@ function coneMaterial(THREE, background) {
 }
 
 export function updateResultCones(THREE, root, vectors, { scales, maximumMagnitude, sceneDiagonal,
-  lengthReference, displayRange, palette, background = 0x141a20 }) {
+  lengthReference, normalizedLength = null, displayRange, palette, background = 0x141a20 }) {
   let minimum = Infinity, maximum = -Infinity;
   const cones = [];
   for (const item of vectors) {
     minimum = Math.min(minimum, item.magnitude); maximum = Math.max(maximum, item.magnitude);
-    const length = resultVectorLength(item, scales[item.kind], maximumMagnitude, sceneDiagonal, lengthReference);
+    const length = resultVectorLength(item, scales[item.kind], maximumMagnitude, sceneDiagonal, lengthReference, normalizedLength);
     const radius = (item.meanCellSize ?? item.characteristicSize) / 3;
     if (length > 0 && Number.isFinite(radius) && radius > 0) cones.push({ item, length, radius });
   }

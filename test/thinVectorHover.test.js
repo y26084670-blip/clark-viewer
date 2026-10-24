@@ -40,3 +40,15 @@ test("hovering any shaft/head segment highlights the whole vector at DPR 2", () 
   }
   hover.dispose(); geometry.dispose(); vector.material.dispose();
 });
+
+test("hover keeps the palette color of the selected normalized vector", () => {
+  const scene = new THREE.Scene(), geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute([0,0,0, 1,0,0, 0,1,0, 1,1,0],3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute([.1,.2,.3, .1,.2,.3, .7,.8,.9, .7,.8,.9],3));
+  const object = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ vertexColors: true, color: 0xffffff }));
+  object.userData.resultVectors = [{}, {}]; scene.add(object);
+  const hover = createThinVectorHover({ scene, requestRender() {} }); hover.set({ object, index: 2 });
+  const color = scene.getObjectByName("hovered-thin-vector").material.color;
+  color.toArray().forEach((v, i) => assert.ok(Math.abs(v - [.7,.8,.9][i]) < 1e-6));
+  hover.dispose(); geometry.dispose(); object.material.dispose();
+});

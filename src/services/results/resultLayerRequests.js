@@ -1,3 +1,4 @@
+import { readRelativeConductivityFrames } from "./relativeConductivity.js";
 import { RESULT_LAYER_GROUPS } from "./resultLayerDefinitions.js";
 import { referenceResultVectorLayers } from "../visualization/resultVectorScale.js";
 import { QUANTITIES } from "./resultMappings.js";
@@ -81,7 +82,7 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
             });
             value = await readResultVolumeFrame(layer.request, null, processors.get(layer.key).processor);
           } else {
-            const frames = await readObjectFrames(layer.request);
+            const frames = await (layer.quantity.relativeConductivity ? readRelativeConductivityFrames : readObjectFrames)(layer.request);
             value = { scene: layer.quantity.components === 1 ? null : vectorScene(frames, layer.quantity, request.task),
               scalarScene: layer.quantity.components === 1 ? scalarScene(frames, layer.quantity, request.task) : null,
               sampled: frames.some(item => item.frame.count < item.originalCount) };

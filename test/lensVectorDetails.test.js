@@ -112,3 +112,33 @@ test("palette cones retain their endpoints and individual colours in the detaile
   });
   assert.equal(cone.visible,true); f.detail.dispose(); cone.dispose(); cone.geometry.dispose(); cone.material.dispose();
 });
+
+test("lens arrows retain per-vector palette colors from normalized thin vectors", () => {
+  const f = fixture(), object = lines([[[0, 0, 0], [1, 0, 0]], [[0, 2, 0], [1, 2, 0]]]);
+  object.material.vertexColors = true; object.material.color.setHex(0xffffff);
+  object.geometry.setAttribute("color", new THREE.Float32BufferAttribute([.1,.2,.3, .1,.2,.3, .7,.8,.9, .7,.8,.9], 3));
+  f.scene.add(object);
+  capture(f, mesh => {
+    assert.equal(mesh.count, 2); const c = new THREE.Color();
+    for (let i = 0; i < 2; i++) {
+      mesh.getColorAt(i, c); c.toArray().forEach((v, k) => close(v, [[.1,.2,.3], [.7,.8,.9]][i][k]));
+    }
+  });
+  f.detail.dispose(); object.geometry.dispose(); object.material.dispose();
+});
+
+test("retained instance colors combine with the source color after normalization is disabled", () => {
+  const f = fixture(), group = new THREE.Group(); f.scene.add(group);
+  const material = new THREE.MeshLambertMaterial({ color: 0x44bbff });
+  const shaft = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1), material, 1);
+  const head = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1), material, 1);
+  shaft.name = "vector-shaft"; head.name = "vector-head"; shaft.userData.lensVectorPart = "shaft";
+  shaft.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, .5, 0));
+  head.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, 1.5, 0));
+  shaft.setColorAt(0, new THREE.Color(0xffffff)); group.add(shaft, head);
+  capture(f, mesh => {
+    const actual = new THREE.Color(); mesh.getColorAt(0, actual);
+    actual.toArray().forEach((v, i) => close(v, material.color.toArray()[i]));
+  });
+  f.detail.dispose(); shaft.dispose(); head.dispose(); shaft.geometry.dispose(); head.geometry.dispose(); material.dispose();
+});

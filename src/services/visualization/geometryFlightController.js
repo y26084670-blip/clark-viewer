@@ -1,6 +1,6 @@
 const FLIGHT_KEYS = new Set([
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ControlRight",
-  "Enter", "NumpadEnter", "ShiftRight", "Equal", "Minus", "NumpadAdd", "NumpadSubtract",
+  "Enter", "NumpadEnter", "ShiftLeft", "ShiftRight", "Equal", "Minus", "NumpadAdd", "NumpadSubtract",
   "Digit0", "Numpad0",
 ]);
 const ARROW_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]);
@@ -8,11 +8,12 @@ const MIN_SPEED = 1 / 64, MAX_SPEED = 64, SPEED_RATE = Math.log(2), SPEED_TAP = 
 const LOOK_TAU = 0.25, LOOK_EPSILON = 0.001, APPROACH_SECONDS = 0.5;
 const ORBIT_RATE = Math.PI / 6, ORBIT_EPSILON = 1e-5;
 const ORBIT_PICK_SECONDS = 0.08;
-export const GEOMETRY_FLIGHT_HELP = "Перспективный полёт; ←/→ — линейное перемещение вида влево/вправо; ↑/↓ — приближение/удаление вида; Enter — линейное перемещение вида вверх; правый Ctrl — линейное перемещение вида вниз; правый Shift+←/→ — вращение влево/вправо вокруг центра; правый Shift+↑/↓ — вращение вверх/вниз вокруг центра; направления относительно экрана, объекты перемещаются противоположно взгляду; центр — ближайшая поверхность под прицелом; при промахе — последний найденный центр; до первого попадания вращения нет; скорость вращения 30°/с; мышь — направление и уточнение центра без отмены вращения; +/− — линейная скорость: шаг ×1,25 / ÷1,25, удержание — плавная регулировка, диапазон ×1/64…×64; 0 — штатная скорость ×1; Enter+←/→ — крен против/по часовой стрелке; ЛКМ — подлёт к цели в прицеле; новый ручной ввод — отмена подлёта; A — начальный вид полёта без выхода; Esc — прежний вид и выход";
+export const GEOMETRY_FLIGHT_HELP = "Перспективный полёт; ←/→ — линейное перемещение вида влево/вправо; ↑/↓ — приближение/удаление вида; Enter — линейное перемещение вида вверх; правый Ctrl — линейное перемещение вида вниз; Shift (левый или правый)+←/→ — вращение влево/вправо вокруг центра; Shift (левый или правый)+↑/↓ — вращение вверх/вниз вокруг центра; направления относительно экрана, объекты перемещаются противоположно взгляду; центр — ближайшая поверхность под прицелом; при промахе — последний найденный центр; до первого попадания — центр текущего вида; скорость вращения 30°/с; мышь — направление и уточнение центра без отмены вращения; +/− — линейная скорость: шаг ×1,25 / ÷1,25, удержание — плавная регулировка, диапазон ×1/64…×64; 0 — штатная скорость ×1; Enter+←/→ — крен против/по часовой стрелке; ЛКМ — подлёт к цели в прицеле; новый ручной ввод — отмена подлёта; A — начальный вид полёта без выхода; Esc — прежний вид и выход";
 const speedKey = code => code === "Equal" || code === "NumpadAdd" ? 1
   : code === "Minus" || code === "NumpadSubtract" ? -1 : 0;
 const resetSpeedKey = code => code === "Digit0" || code === "Numpad0";
 const rollKey = code => code === "Enter" || code === "NumpadEnter";
+const shiftKey = code => code === "ShiftLeft" || code === "ShiftRight";
 const horizontalKey = code => code === "ArrowLeft" || code === "ArrowRight";
 export const formatGeometryFlightSpeed = multiplier => `Скорость ×${multiplier.toLocaleString("ru-RU", { maximumFractionDigits: 3, useGrouping: false })}`;
 
@@ -21,6 +22,7 @@ export function createGeometryFlightMotion(THREE, {
   camera, target, speed = 1, sensitivity = 0.000625, getOrbitTarget = () => null,
 }) {
   const keys = new Set(), blockedOrbitKeys = new Set();
+  const shiftHeld = () => keys.has("ShiftLeft") || keys.has("ShiftRight");
   const velocity = new THREE.Vector3(), desired = new THREE.Vector3(), difference = new THREE.Vector3();
   const forward = new THREE.Vector3(), up = new THREE.Vector3(), right = new THREE.Vector3(), axis = new THREE.Vector3();
   const rotation = new THREE.Quaternion();
@@ -33,7 +35,7 @@ export function createGeometryFlightMotion(THREE, {
   let lastOrbitTarget = null, orbitPickDelay = 0;
   const cancelApproach = () => { if (approach) { approach = null; velocity.set(0, 0, 0); } };
   const cancelOrbit = (blockHeld = false) => {
-    if (blockHeld && keys.has("ShiftRight")) {
+    if (blockHeld && shiftHeld()) {
       for (const code of ARROW_KEYS) if (keys.has(code)) blockedOrbitKeys.add(code);
     }
     orbit = null; angularVelocity.set(0, 0);
@@ -53,7 +55,15 @@ export function createGeometryFlightMotion(THREE, {
     return lastOrbitTarget;
   };
   const beginOrbit = (selected = observeOrbitTarget()) => {
-    if (!selected) return false;
+    if (!selected) {
+      const point = target.clone();
+      if (!point.toArray().every(Number.isFinite) || camera.position.distanceTo(point) <= epsilon) {
+        point.copy(camera.position).addScaledVector(camera.getWorldDirection(forward), distance);
+      }
+      // Start immediately even when the reticle is between objects or all
+      // geometry is hidden. A real surface hit still replaces this fallback.
+      selected = { point: point.toArray(), label: "центр текущего вида", fallback: true };
+    }
     const point = new THREE.Vector3().fromArray(selected.point);
     if (!(camera.position.distanceTo(point) > epsilon)) return false;
     orbit = { point, target: selected };
@@ -69,10 +79,10 @@ export function createGeometryFlightMotion(THREE, {
   const horizontalPressed = code => rolling() ? 0 : pressed(code);
   const orbitPressed = code => blockedOrbitKeys.has(code) ? 0 : pressed(code);
   const horizontalOrbitPressed = code => rolling() ? 0 : orbitPressed(code);
-  const hasOrbitInput = () => keys.has("ShiftRight") &&
+  const hasOrbitInput = () => shiftHeld() &&
     (horizontalOrbitPressed("ArrowRight") !== horizontalOrbitPressed("ArrowLeft") || orbitPressed("ArrowUp") !== orbitPressed("ArrowDown"));
   const orbitInput = () => orbit && hasOrbitInput();
-  const hasLinearInput = () => !keys.has("ShiftRight") &&
+  const hasLinearInput = () => !shiftHeld() &&
     (horizontalPressed("ArrowRight") !== horizontalPressed("ArrowLeft") || pressed("ArrowUp") !== pressed("ArrowDown") || verticalInput() !== 0);
   const changeRollMode = previous => {
     if (previous !== rolling() && (keys.has("ArrowLeft") || keys.has("ArrowRight"))) {
@@ -96,8 +106,8 @@ export function createGeometryFlightMotion(THREE, {
       const previousRollMode = rolling();
       if (down) {
         const fresh = !keys.has(code);
-        if (code !== "ShiftRight") cancelApproach();
-        if (fresh && (code === "ShiftRight" || code === "ControlRight" || rollKey(code))) {
+        if (!shiftKey(code)) cancelApproach();
+        if (fresh && (shiftKey(code) || code === "ControlRight" || rollKey(code))) {
           // A change of keyboard mode must not carry thrust from the old axis.
           velocity.set(0, 0, 0);
         }
@@ -105,20 +115,20 @@ export function createGeometryFlightMotion(THREE, {
         changeRollMode(previousRollMode);
         if (fresh && rolling() && horizontalKey(code)) {
           velocity.set(0, 0, 0);
-          if (!keys.has("ShiftRight") || pressed("ArrowUp") === pressed("ArrowDown")) cancelOrbit();
+          if (!shiftHeld() || pressed("ArrowUp") === pressed("ArrowDown")) cancelOrbit();
         }
         if (resetSpeedKey(code)) speedMultiplier = 1;
         else if (fresh && !resettingSpeed()) speedMultiplier = clampSpeed(speedMultiplier * SPEED_TAP ** speedKey(code));
-        if (ARROW_KEYS.has(code) && !keys.has("ShiftRight")) cancelOrbit();
+        if (ARROW_KEYS.has(code) && !shiftHeld()) cancelOrbit();
         if (!orbit && hasOrbitInput()) beginOrbit();
       } else {
         keys.delete(code); blockedOrbitKeys.delete(code);
         changeRollMode(previousRollMode);
-        if (code === "ShiftRight") {
+        if (shiftKey(code) && !shiftHeld()) {
           blockedOrbitKeys.clear();
           if (hasLinearInput()) cancelOrbit();
         }
-        if (code === "ControlRight" && !keys.has("ShiftRight")) velocity.set(0, 0, 0);
+        if (code === "ControlRight" && !shiftHeld()) velocity.set(0, 0, 0);
         if (orbit && angularVelocity.lengthSq() === 0 && !hasOrbitInput()) cancelOrbit();
       }
       return true;
@@ -179,11 +189,11 @@ export function createGeometryFlightMotion(THREE, {
           orbit.point.fromArray(selected.point); orbit.target = selected;
         }
       }
-      if (!orbit && hasOrbitInput() && lastOrbitTarget) beginOrbit(lastOrbitTarget);
+      if (!orbit && hasOrbitInput()) beginOrbit(lastOrbitTarget);
       let orbitMoved = false;
       if (orbit && dt > 0) {
-        angularDesired.set(keys.has("ShiftRight") ? horizontalOrbitPressed("ArrowRight") - horizontalOrbitPressed("ArrowLeft") : 0,
-          keys.has("ShiftRight") ? orbitPressed("ArrowUp") - orbitPressed("ArrowDown") : 0);
+        angularDesired.set(shiftHeld() ? horizontalOrbitPressed("ArrowRight") - horizontalOrbitPressed("ArrowLeft") : 0,
+          shiftHeld() ? orbitPressed("ArrowUp") - orbitPressed("ArrowDown") : 0);
         const thrust = angularDesired.lengthSq() > 0, tau = thrust ? 0.25 : 0.4, decay = Math.exp(-dt / tau);
         if (thrust) angularDesired.normalize().multiplyScalar(ORBIT_RATE);
         angles.copy(angularVelocity).sub(angularDesired).multiplyScalar(tau * (1 - decay)).addScaledVector(angularDesired, dt);
@@ -201,7 +211,7 @@ export function createGeometryFlightMotion(THREE, {
         }
         if (!thrust && angularVelocity.lengthSq() === 0 && !hasOrbitInput()) cancelOrbit();
       }
-      if (keys.has("ShiftRight")) desired.set(0, 0, 0);
+      if (shiftHeld()) desired.set(0, 0, 0);
       else desired.set(horizontalPressed("ArrowRight") - horizontalPressed("ArrowLeft"),
         verticalInput(), pressed("ArrowDown") - pressed("ArrowUp"));
       const thrust = desired.lengthSq() > 0;
@@ -295,7 +305,7 @@ export function createGeometryFlightController({
       for (const code of heldKeys) {
         // Modifiers alone are passive, so a fresh arrow may use the held chord
         // even while repeats of the previous movement key remain suppressed.
-        if (code === "ShiftRight") motion.key(code, true);
+        if (shiftKey(code)) motion.key(code, true);
         else suppressedKeys.add(code);
       }
       lastTime = null; requestRender(); return true;
@@ -369,7 +379,7 @@ export function createGeometryFlightController({
       motion.releaseKeys(); activeSpeedKeys.clear(); return;
     }
     if (event.code === "KeyA") {
-      if (event.ctrlKey || event.shiftKey || rightControl || heldKeys.has("ShiftRight")) return;
+      if (event.ctrlKey || event.shiftKey || rightControl || heldKeys.has("ShiftLeft") || heldKeys.has("ShiftRight")) return;
       event.preventDefault(); event.stopPropagation();
       if (event.repeat) return;
       motion.clear(); activeSpeedKeys.clear(); lastTime = null;

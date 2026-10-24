@@ -428,3 +428,76 @@ test('global vector length reference survives tiny/large/zero frames without mut
   }
   clean(states);
 });
+
+function arrowLengths(root, style) {
+  if (style === "thin") {
+    const line = root.getObjectByName("prescribed-source-magnetization"), p = line.geometry.attributes.position;
+    return line.userData.resultVectors.map((_, i) => new THREE.Vector3().fromBufferAttribute(p, i * 2)
+      .distanceTo(new THREE.Vector3().fromBufferAttribute(p, i * 2 + 1)));
+  }
+  const mesh = root.getObjectByName(style === "cones" ? "result-cones" : "prescribed-source-magnetization-shaft");
+  const head = style === "solid" ? root.getObjectByName("prescribed-source-magnetization-head") : mesh;
+  const m = new THREE.Matrix4(), n = new THREE.Matrix4();
+  return Array.from({ length: mesh.count }, (_, i) => {
+    mesh.getMatrixAt(i, m); head.getMatrixAt(i, n);
+    return new THREE.Vector3(0, -.5, 0).applyMatrix4(m).distanceTo(new THREE.Vector3(0, .5, 0).applyMatrix4(n));
+  });
+}
+
+for (const style of ["thin", "solid", "cones"]) test(`normalized ${style} vectors share one length across groups, retain magnitudes/colors, and reset cleanly`, () => {
+  const definitions = [layer("elements", [item(1), item(-10), item(0)].map(v => ({ ...v, magnitude: Math.abs(v.magnitude) }))),
+    layer("regions", [item(.001, { schemaId: "regions", unit: "Тл" }), item(.01, { schemaId: "regions", unit: "Тл" })]
+      .map(v => ({ ...v, characteristicSize: 4, meanCellSize: 3 })))];
+  const saved = structuredClone(definitions);
+  let states = run(new Map(), definitions, { style, normalizeVectors: true, scale: 2, palette: "Viridis" });
+  const lengths = [...states.values()].flatMap(s => arrowLengths(s.vectorRoot, style));
+  assert.equal(lengths.length, 4); assert.ok(lengths.every(length => Math.abs(length - 5.6) < 1e-5));
+  assert.deepEqual([...states.values()].map(s => [s.legends[0].minimum, s.legends[0].maximum]), [[0, 10], [.001, .01]]);
+  for (const state of states.values()) {
+    const root = state.vectorRoot;
+    const object = root.getObjectByName(style === "thin" ? "prescribed-source-magnetization" : style === "cones" ? "result-cones" : "prescribed-source-magnetization-shaft");
+    const colors = style === "thin" ? object.geometry.attributes.color.array : object.instanceColor.array;
+    const offset = style === "thin" ? 6 : 3;
+    assert.notDeepEqual(Array.from(colors.slice(0, 3)), Array.from(colors.slice(offset, offset + 3)));
+  }
+  const roots = [...states.values()].map(s => s.vectorRoot);
+  states = run(states, definitions, { style, normalizeVectors: true, scale: 3, palette: "Rainbow" });
+  assert.deepEqual([...states.values()].map(s => s.vectorRoot), roots);
+  assert.ok([...states.values()].flatMap(s => arrowLengths(s.vectorRoot, style)).every(l => Math.abs(l - 8.4) < 1e-5));
+  // A global colour range changes colour limits, never the normalized length.
+  definitions[0] = { ...definitions[0], displayRange: { available: true, minimum: 0, maximum: 100 } };
+  states = run(states, definitions, { style, normalizeVectors: true, scale: 3 });
+  assert.equal(states.get("elements").legends[0].maximum, 100);
+  assert.ok(arrowLengths(states.get("elements").vectorRoot, style).every(l => Math.abs(l - 8.4) < 1e-5));
+  states = run(states, definitions, { style, normalizeVectors: false, scale: 2 });
+  const ordinary = arrowLengths(states.get("elements").vectorRoot, style);
+  assert.ok(Math.abs(ordinary[1] / ordinary[0] - 10) < 1e-5);
+  if (style === "thin") assert.equal(states.get("elements").vectorRoot.getObjectByName("prescribed-source-magnetization").material.vertexColors, false);
+  if (style === "solid") {
+    const mesh = states.get("elements").vectorRoot.getObjectByName("prescribed-source-magnetization-shaft"), c = new THREE.Color();
+    mesh.getColorAt(0, c); assert.equal(c.getHex(), 0xffffff);
+  }
+  for (const normalized of [true, false, true]) {
+    states = run(states, definitions, { style, normalizeVectors: normalized, scale: 2 });
+    if (normalized) assert.ok([...states.values()].flatMap(s => arrowLengths(s.vectorRoot, style)).every(l => Math.abs(l - 5.6) < 1e-5));
+    if (style !== "cones") for (const state of states.values()) {
+      const markers = state.vectorRoot.children.filter(child => child.isPoints);
+      assert.equal(markers.length, 1, "palette/toggle changes must not accumulate point markers");
+      assert.equal(markers[0].material.vertexColors, normalized);
+      assert.equal(Boolean(markers[0].geometry.getAttribute("color")), normalized);
+    }
+  }
+  assert.deepEqual(definitions[0].scene, saved[0].scene); assert.deepEqual(definitions[1].scene, saved[1].scene);
+  clean(states);
+});
+
+test("normalization preserves arrows beside scalar maps, and zero vectors do not acquire a direction", () => withCanvas(() => {
+  const scalar = { origin: [0, 0, 0], value: .5, source: { schemaId: "elements", recordIndex: 0 }, instance };
+  const definitions = [scalarLayer([scalar]), layer("regions", [item(0, { schemaId: "regions" }), item(2, { schemaId: "regions" })])];
+  const states = run(new Map(), definitions, { colorMap: true, normalizeVectors: true, style: "thin" });
+  assert.equal(states.get("elements").scalarRoot.isPoints, true);
+  assert.equal(states.get("regions").vectorStyle, "thin");
+  assert.equal(arrowLengths(states.get("regions").vectorRoot, "thin").length, 1);
+  assert.equal(states.get("regions").legends[0].minimum, 0);
+  clean(states);
+}));

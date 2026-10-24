@@ -813,6 +813,7 @@ export function ResultsGeometryViewport(props) {
             onResultNodeDoubleClick={props.onResultNodeDoubleClick}
             resultVectorScene={props.resultVectorScene}
             resultVectorColorMap={props.resultVectorColorMap}
+            resultNormalizeVectors={props.resultNormalizeVectors}
             resultPalette={resultPalette()}
             resultVolumeFields={props.resultVolumeFields}
             resultScalarScene={props.resultScalarScene}

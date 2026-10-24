@@ -49,8 +49,8 @@ test("linear diagonals normalize speed and vertical translation follows screen r
  assert.ok(f.camera.position.x<-.7);close(f.camera.position.y,0);close(f.camera.position.z,3);assert.deepEqual(f.camera.quaternion.toArray(),gaze.toArray());
 });
 
-test("left modifiers and Q/E remain unbound; vertical keys cancel approach",()=>{
- const f=flight();for(const code of ["KeyQ","KeyE","ShiftLeft","ControlLeft"])assert.equal(f.motion.key(code,true),false);
+test("left Ctrl and Q/E remain unbound; vertical keys cancel approach",()=>{
+ const f=flight();for(const code of ["KeyQ","KeyE","ControlLeft"])assert.equal(f.motion.key(code,true),false);
  f.motion.key("ShiftRight",true);run(f,60,60);assert.deepEqual(f.camera.position.toArray(),[0,0,3]);assert.equal(f.motion.needsFrame,false);
  for(const code of ["Enter","NumpadEnter","ControlRight"]){const g=flight();g.motion.approach([0,0,-10],1);g.motion.key(code,true);assert.equal(g.motion.approaching,false);run(g,60,60);assert.ok(Math.abs(g.camera.position.y)>.7);}
 });
@@ -140,7 +140,7 @@ test("opposite arrows and opposed vertical keys stop idle frames",()=>{
 });
 
 test("flight help describes Enter roll chords and speed controls without former Q/E or boost assignments", () => {
-  for (const text of ["←/→ — линейное", "↑/↓ — приближение/удаление", "Enter — линейное перемещение вида вверх", "правый Ctrl — линейное перемещение вида вниз", "правый Shift+←/→", "правый Shift+↑/↓", "последний найденный центр", "противоположно взгляду", "+/− — линейная скорость", "0 — штатная скорость ×1", "×1/64…×64", "Enter+←/→ — крен против/по часовой стрелке", "A — начальный вид полёта без выхода"])
+  for (const text of ["←/→ — линейное", "↑/↓ — приближение/удаление", "Enter — линейное перемещение вида вверх", "правый Ctrl — линейное перемещение вида вниз", "Shift (левый или правый)+←/→", "Shift (левый или правый)+↑/↓", "до первого попадания — центр текущего вида", "последний найденный центр", "противоположно взгляду", "+/− — линейная скорость", "0 — штатная скорость ×1", "×1/64…×64", "Enter+←/→ — крен против/по часовой стрелке", "A — начальный вид полёта без выхода"])
     assert.ok(GEOMETRY_FLIGHT_HELP.includes(text), text);
   assert.ok(!GEOMETRY_FLIGHT_HELP.includes("Q/E")); assert.ok(!GEOMETRY_FLIGHT_HELP.includes("×4")); assert.ok(!GEOMETRY_FLIGHT_HELP.includes("+/− — масштаб"));
 });
@@ -655,14 +655,15 @@ test("a gesture retains its pivot through repeats/coasting and mouse aiming refi
   points[1][0]=99;assert.equal(motion.orbitTarget.point[0],2,"retain a numeric copy of the selected pivot");
 });
 
-test("an empty reticle never invents a centre or keeps RAF running; held input starts after its first hit", () => {
+test("an empty reticle rotates around the current view centre until mouse aiming finds a surface", () => {
   for(const code of ["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"]) {
     const f=flight();let calls=0,available=false;
     const motion=createGeometryFlightMotion(THREE,{camera:f.camera,target:f.target,getOrbitTarget:()=>{calls++;return available?{point:[0,0,0]}:null;}});
-    const before=f.camera.position.clone();assert.equal(orbitKey(motion,code),true);motion.step(.1);assert.deepEqual(f.camera.position,before);
-    assert.equal(motion.needsFrame,false);assert.equal(motion.orbiting,false);assert.equal(motion.lastOrbitTarget,null);
+    const before=f.camera.position.clone();assert.equal(orbitKey(motion,code),true);motion.step(.1);assert.ok(f.camera.position.distanceTo(before)>0);
+    assert.equal(motion.needsFrame,true);assert.equal(motion.orbiting,true);assert.equal(motion.lastOrbitTarget,null);
+    assert.deepEqual(motion.orbitTarget.point,[0,0,0]);assert.equal(motion.orbitTarget.fallback,true);close(f.camera.position.length(),3);
     available=true;motion.look(1,0);motion.step(.1);assert.equal(motion.orbiting,true);
-    assert.ok(calls>=2);assert.deepEqual(motion.orbitTarget.point,[0,0,0]);
+    assert.ok(calls>=2);assert.deepEqual(motion.orbitTarget.point,[0,0,0]);assert.equal(motion.orbitTarget.fallback,undefined);
   }
 });
 
@@ -680,7 +681,7 @@ test("mouse misses retain the last centre, held rotation and angular inertia at 
     const quaternion=f.camera.quaternion.clone();orbitKey(motion,"ArrowUp");
     assert.equal(motion.orbiting,true);assert.deepEqual(f.camera.quaternion.toArray(),quaternion.toArray(),"fallback must not turn the gaze back to the old centre");
     motion.clear();assert.equal(motion.lastOrbitTarget,null);orbitKey(motion,"ArrowUp");motion.step(.1);
-    assert.equal(motion.orbiting,false);assert.equal(motion.needsFrame,false);
+    assert.equal(motion.orbiting,true);assert.equal(motion.needsFrame,true);assert.equal(motion.orbitTarget.fallback,true);
   }
 });
 
@@ -714,7 +715,8 @@ test("leaving flight discards its remembered centre before a new session starts"
   f.control.start();f.control.update(0);assert.deepEqual(f.control.lastOrbitTarget.point,[0,0,0]);
   f.control.stop();assert.equal(f.control.lastOrbitTarget,null);selected.point.fill(NaN);
   f.control.start();f.control.update(0);f.event("keydown",{code:"ShiftRight"});f.event("keydown",{code:"ArrowRight",shiftKey:true});f.control.update(16);
-  assert.equal(f.control.orbiting,false);assert.equal(f.control.lastOrbitTarget,null);assert.equal(f.control.needsFrame,false);
+  assert.equal(f.control.orbiting,true);assert.equal(f.control.lastOrbitTarget,null);assert.equal(f.control.needsFrame,true);
+  assert.equal(f.control.orbitTarget.fallback,true);
   f.control.dispose();
 });
 
@@ -723,4 +725,34 @@ test("vertical orbit crosses both poles and its complete chord release keeps ang
   const before=f.camera.position.clone();f.motion.key("ArrowUp",false);f.motion.key("ShiftRight",false);run(f,12,60);
   assert.equal(f.motion.orbiting,true);assert.ok(f.camera.position.distanceTo(before)>0);close(f.camera.position.length(),3);
   run(f,360,60);assert.equal(f.motion.orbiting,false);assert.equal(f.motion.needsFrame,false);
+});
+
+
+test("either Shift rotates on empty space; releasing one of two held Shifts preserves orbit", () => {
+  for (const modifier of ["ShiftLeft", "ShiftRight"]) for (const code of ["ArrowLeft", "ArrowRight"]) {
+    const f = flight({ orbitTarget: null });
+    f.motion.key(modifier, true); f.motion.key(code, true); run(f, 60, 60);
+    assert.equal(f.motion.orbiting, true); close(f.camera.position.length(), 3);
+    assert.ok(code === "ArrowLeft" ? f.camera.position.x < 0 : f.camera.position.x > 0);
+    const pivot = f.motion.orbitTarget.point;
+    const other = modifier === "ShiftLeft" ? "ShiftRight" : "ShiftLeft";
+    f.motion.key(other, true); f.motion.key(modifier, false); run(f, 60, 60);
+    assert.equal(f.motion.orbiting, true); assert.deepEqual(f.motion.orbitTarget.point, pivot); close(f.camera.position.length(), 3);
+    f.motion.key(other, false); assert.equal(f.motion.orbiting, false);
+    const gaze = f.camera.quaternion.toArray(); run(f, 60, 60);
+    assert.deepEqual(f.camera.quaternion.toArray(), gaze);
+  }
+});
+
+test("flight controller consumes either Shift chord and restores the initial view with A", () => {
+  for (const modifier of ["ShiftLeft", "ShiftRight"]) {
+    const f = lifecycle({ orbitTarget: null }); f.control.start(); f.control.update(0);
+    const before = f.camera.position.clone();
+    f.event("keydown", { code: modifier, shiftKey: true }); f.event("keydown", { code: "ArrowLeft", shiftKey: true });
+    for (let t = 16; t <= 1000; t += 16) f.control.update(t);
+    assert.equal(f.control.orbiting, true); assert.ok(f.camera.position.distanceTo(before) > .5);
+    f.event("keyup", { code: "ArrowLeft", shiftKey: true }); f.event("keyup", { code: modifier });
+    f.event("keydown", { code: "KeyA" }); assert.deepEqual(f.camera.position, before);
+    assert.equal(f.control.active, true); assert.equal(f.control.needsFrame, false); f.control.dispose();
+  }
 });

@@ -16,7 +16,7 @@ after(()=>server.close());
 const {intersectResultLayers}=await server.ssrLoadModule("/src/components/geometry/ThreeGeometryViewport.jsx");
 const source=readFileSync(new URL("../src/components/geometry/ThreeGeometryViewport.jsx",import.meta.url),"utf8");
 const pickSource=source.slice(source.indexOf("  const pickAtPointer ="),source.indexOf("  const queuePointerPick ="));
-const makePick=new Function("deps",`const {renderer,camera,controls,raycaster,pointerNdc,props,resultLayerStates,
+const makePick=new Function("deps",`const {renderer,camera,controls,raycaster,pointerNdc,props,resultLayerStates,vectorHover,viewportLens,
   resultHitScalar,resultHitVector,formatResultScalarTooltip,formatResultVectorTooltip,intersectResultLayers,
   setHoverTooltip,showTooltip,streamlineRoot}=deps;
   const VIEW_CUBE_MARGIN=8,viewCubeSize=()=>0,worldUnitsPerPixel=()=>.01;

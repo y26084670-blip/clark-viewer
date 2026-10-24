@@ -1,3 +1,4 @@
+import { readTaskDirectoryLists } from "../services/taskDirectoryRefresh.js";
 import { batch, createSignal, For, Show, onCleanup, onMount } from "solid-js";
 import { createLastOpenedTaskHistory, sortTaskDirectories } from "../services/taskLastOpenedService.js";
 import { listProjectCatalogs, readProjectDisk, saveProjectDisk, watchProjectDisk, projectDiskPermission } from "../services/projectDiskAccessService.js";
@@ -21,6 +22,7 @@ export function Tasks(props) {
   const [accessOpen, setAccessOpen] = createSignal(true);
   const [diskPicked, setDiskPicked] = createSignal(false);
   const [projectListBusy, setProjectListBusy] = createSignal(false);
+  const [taskListBusy, setTaskListBusy] = createSignal(false);
   const [projectBrowseNotice, setProjectBrowseNotice] = createSignal("");
   let catalogSelect;
   const [root, setRoot] = createSignal(null), [projects, setProjects] = createSignal([]);
@@ -35,7 +37,7 @@ export function Tasks(props) {
   const [selectionSending, setSelectionSending] = createSignal(false);
   const [selectionNotice, setSelectionNotice] = createSignal("");
   const [selectionError, setSelectionError] = createSignal("");
-  const browserBusy = () => accessBusy() || projectListBusy() || galleryBusy() || selectionReceiving() || protocolBusy();
+  const browserBusy = () => accessBusy() || projectListBusy() || taskListBusy() || galleryBusy() || selectionReceiving() || protocolBusy();
   let taskListElement, selectionErrorDialog, selectionErrorReturnFocus;
   const [lastTask, setLastTask] = createSignal(null), [lastTaskNotice, setLastTaskNotice] = createSignal("");
   const lastTaskHistory = createLastOpenedTaskHistory({ app: "viewer", onChange: setLastTask, onNotice: setLastTaskNotice });
@@ -229,24 +231,28 @@ export function Tasks(props) {
       }
     }
   }
-  async function refreshProjects() {
-    const handle = root();
-    if (!handle || props.busy || browserBusy()) return;
+  async function refreshDirectoryLists(refreshProjects) {
+    const handle = root(), name = project();
+    if (!handle || props.busy || browserBusy() || (!refreshProjects && !name)) return;
     const current = ++revision;
-    setProjectListBusy(true);
+    loadRequest++;
+    const setBusy = refreshProjects ? setProjectListBusy : setTaskListBusy;
+    setBusy(true); setError("");
     try {
-      const entries = await subdirectories(handle);
+      const snapshot = await readTaskDirectoryLists({ root: handle, projectName: name, projects: projects(), refreshProjects });
       if (disposed || current !== revision || handle !== root()) return;
+      const selected = snapshot.tasks.find(item => item.name === candidate()?.name) ?? null;
       batch(() => {
-        setProjects(entries);
-        if (!entries.some(item => item.name === project())) {
-          setProject(""); setTasks([]); setCandidate(null);
-        }
+        setProjects(snapshot.projects); setProject(snapshot.projectName);
+        setTasks(snapshot.tasks); setCandidate(selected);
       });
+      await taskStatus.refresh();
     } catch (error) {
-      if (!disposed && current === revision) setError("Не удалось обновить список проектов: " + error.message);
-    } finally { if (!disposed) setProjectListBusy(false); }
+      if (!disposed && current === revision) setError(`Не удалось обновить список ${refreshProjects ? "проектов" : "заданий"}: ${error.message}`);
+    } finally { if (!disposed) setBusy(false); }
   }
+  const refreshProjects = () => refreshDirectoryLists(true);
+  const refreshTasks = () => refreshDirectoryLists(false);
   const info = useAsyncResult(() => candidate(), async item => {
     const [summary, model] = await Promise.allSettled([readTaskSummaries(item.handle), loadTaskInput(item.handle)]);
     return { summary: summary.status === "fulfilled" ? summary.value : { input: summary.reason.message, output: summary.reason.message },
@@ -305,9 +311,9 @@ export function Tasks(props) {
         <Show when={projectBrowseNotice()}><div class="task-access-notice" role="status">{projectBrowseNotice()}</div></Show>
         <div class="task-list-heading">
           <div class="field-label">Список заданий</div>
-          <button type="button" class="task-status-refresh" disabled={!tasks().length || taskStatus.busy() || galleryBusy()}
-            aria-label="Обновить список заданий" aria-busy={taskStatus.busy()}
-            title="Обновить список заданий" onClick={() => { void taskStatus.refresh(); }}>↻</button>
+          <button type="button" class="task-status-refresh" disabled={!project() || props.busy || browserBusy() || taskStatus.busy()}
+            aria-label="Обновить список заданий" aria-busy={taskListBusy() || taskStatus.busy()}
+            title="Обновить список заданий" onClick={refreshTasks}>↻</button>
         </div>
         <div class="task-list" ref={taskListElement} role="listbox" aria-label="Список заданий" onClick={event => {
           if (browserBusy()) return;

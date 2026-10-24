@@ -66,7 +66,8 @@ export function FieldAreas(props) {
           <input type="checkbox" aria-label="Общий минимакс" checked={globalMinMax()} disabled={props.movieBusy}
             onChange={event => !props.movieBusy && setGlobalMinMax(event.currentTarget.checked)} /> Общий минимакс
         </label>
-        <div class="surface-view-buttons" role="group" aria-label="Ракурс всех компонент">
+        <div class="surface-view-buttons" role="group" aria-label="Ракурс всех компонент"
+          title="Управление как в 3D: ЛКМ — поворот, ПКМ — перенос, колесо — масштаб. Ракурс синхронен у трёх компонент">
           <button disabled={props.movieBusy || !viewControls()} title="Вернуть начальный наклонный ракурс всех трёх компонент"
             onClick={() => viewControls()?.view("iso")}>Вписать</button>
           <For each={["x", "y", "z"]}>{direction => <button disabled={props.movieBusy || !viewControls()}

@@ -1,5 +1,37 @@
 import * as THREE from "three";
 
+export function surfaceFootprint({ width, height, coordinates }) {
+  const origin = new THREE.Vector3(), u = new THREE.Vector3(), v = new THREE.Vector3(), point = new THREE.Vector3();
+  let physical = coordinates?.length === width * height * 3;
+  let length1 = width - 1, length2 = height - 1;
+  if (physical) {
+    origin.fromArray(coordinates);
+    u.fromArray(coordinates, (width - 1) * height * 3).sub(origin);
+    v.fromArray(coordinates, (height - 1) * 3).sub(origin);
+    length1 = u.length(); length2 = v.length();
+    u.normalize(); v.addScaledVector(u, -v.dot(u));
+    physical = Number.isFinite(length1 + length2 + v.length()) && length1 > 0 && v.length() > length2 * 1e-12;
+    v.normalize();
+  }
+  const xy = new Float64Array(width * height * 2);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < width; i++) for (let j = 0; j < height; j++) {
+    const k = i * height + j;
+    if (physical) point.fromArray(coordinates, k * 3).sub(origin);
+    const x = physical ? point.dot(u) : i, y = physical ? point.dot(v) : j;
+    if (!Number.isFinite(x + y)) throw new Error("Площадка содержит нечисловые координаты");
+    xy[k * 2] = x; xy[k * 2 + 1] = y;
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+  }
+  // One scale for both axes preserves lengths, angles and nonuniform spacing.
+  const scale = 2 / Math.max(maxX - minX, maxY - minY, Number.MIN_VALUE);
+  for (let k = 0; k < xy.length; k += 2) {
+    xy[k] = (xy[k] - (minX + maxX) / 2) * scale;
+    xy[k + 1] = (xy[k + 1] - (minY + maxY) / 2) * scale;
+  }
+  return { xy, physical, length1, length2, halfWidth: (maxX - minX) * scale / 2, halfHeight: (maxY - minY) * scale / 2 };
+}
+
 // Time steps share one topology. Keep the mesh, material and GPU buffers while
 // replacing only the saved values; picking needs refreshed bounds as well.
 export function updateSurfaceMesh(surface, grid) {
@@ -16,6 +48,7 @@ export function updateSurfaceMesh(surface, grid) {
   if (range && Number.isFinite(range.minimum) && Number.isFinite(range.maximum) && range.minimum <= range.maximum) {
     min = range.minimum; max = range.maximum;
   }
+  const footprint = surfaceFootprint(grid);
   if (!surface) surface = new THREE.Mesh(new THREE.BufferGeometry(),
     new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
   if (surface.userData.width !== width || surface.userData.height !== height) {
@@ -39,12 +72,13 @@ export function updateSurfaceMesh(surface, grid) {
   const span = max - min || Math.max(Math.abs(min), 1), color = new THREE.Color();
   for (let i = 0; i < width; i++) for (let j = 0; j < height; j++) {
     const k = i * height + j, fraction = (values[k] - min) / span;
-    positions.setXYZ(k, 2 * i / (width - 1) - 1, 2 * j / (height - 1) - 1, fraction * 1.5);
+    positions.setXYZ(k, footprint.xy[k * 2], footprint.xy[k * 2 + 1], fraction * 1.5);
     color.setHSL(.66 * (1 - Math.max(0, Math.min(1, fraction))), .9, .48); color.toArray(colors.array, k * 3);
   }
   positions.needsUpdate = true; colors.needsUpdate = true;
   surface.geometry.computeBoundingBox(); surface.geometry.computeBoundingSphere();
   surface.userData.limits = { min, max }; surface.visible = true;
+  surface.userData.footprint = footprint;
   return surface;
 }
 

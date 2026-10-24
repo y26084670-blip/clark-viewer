@@ -28,17 +28,6 @@ import {
 import { RESULT_SCALAR_PALETTES } from "../../services/visualization/resultScalarColors.js";
 import "./ResultsGeometryViewport.css";
 
-const EMPTY_COUNTS = Object.freeze({
-  elements: 0,
-  regions: 0,
-  primitives: 0,
-  instances: 0,
-  vertices: 0,
-  triangles: 0,
-  lines: 0,
-  skipped: 0,
-});
-
 const EMPTY_RENDER_STATS = Object.freeze({
   discretizationLineSegments: 0,
   discretizationPoints: 0,
@@ -106,7 +95,6 @@ export function ResultsGeometryViewport(props) {
 
   const [sceneModel, setSceneModel] = createSignal(null);
   const [sceneError, setSceneError] = createSignal("");
-  const [viewportError, setViewportError] = createSignal("");
   const [viewRequest, setViewRequest] = createSignal(null);
   const [flightState, setFlightState] = createSignal("idle");
   const [flightReady, setFlightReady] = createSignal(false);
@@ -210,7 +198,6 @@ export function ResultsGeometryViewport(props) {
     },
   }));
 
-  const counts = () => displayScene()?.counts ?? EMPTY_COUNTS;
   const diagnostics = () => [
     ...(timeFrame()?.diagnostics ?? []),
     ...(displayScene()?.diagnostics ?? []),
@@ -335,13 +322,11 @@ export function ResultsGeometryViewport(props) {
       setViewRequest(null);
       setSceneModel(null);
       setSceneError("");
-      setViewportError("");
       setRenderStats(EMPTY_RENDER_STATS);
       return;
     }
 
     const model = props.model;
-    setViewportError("");
     setRenderStats(EMPTY_RENDER_STATS);
 
     try {
@@ -835,35 +820,18 @@ export function ResultsGeometryViewport(props) {
             onRenderStats={setRenderStats}
             performanceEnabled={performanceEnabled()}
             onPerformance={setRenderPerformance}
-            onError={setViewportError}
           />
+          <Show when={sceneError() || displaySceneResult().error || props.resultError}>
+            <div class="geometry-viewer-error" role="alert">
+              {sceneError() || displaySceneResult().error || props.resultError}
+            </div>
+          </Show>
           <Show when={budgetWarning()} keyed>
             {(warning) => (
               <div class="geometry-viewer-budget-warning" role="status">
                 {warning}
               </div>
             )}
-          </Show>
-        </div>
-
-        <Show when={sceneError() || displaySceneResult().error || viewportError()}>
-          <div class="geometry-viewer-error" role="alert">
-            {sceneError() || displaySceneResult().error || viewportError()}
-          </div>
-        </Show>
-
-        <div class="geometry-viewer-summary" aria-live="polite">
-          <span>Элементы: {counts().elements}</span>
-          <span>Области: {counts().regions}</span>
-          <span>Примитивы: {counts().primitives}</span>
-          <span>
-            Показано экземпляров: {renderStats().renderedInstances}
-            {" / "}{counts().instances}
-          </span>
-          <Show when={counts().skipped > 0}>
-            <span class="geometry-viewer-skipped">
-              Пропущено: {counts().skipped}
-            </span>
           </Show>
         </div>
 

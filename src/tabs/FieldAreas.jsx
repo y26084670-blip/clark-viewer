@@ -14,7 +14,6 @@ import { combineMovieFrames } from "../services/movie/movieCanvas.js";
 export function FieldAreas(props) {
   const [quantityKey, setQuantity] = createSignal("Bs");
   const [copy, setCopy] = createSignal(0);
-  const [projections, setProjections] = createGeometryViewSetting("areaProjections", true);
   const [isolines, setIsolines] = createGeometryViewSetting("areaIsolines", 0);
   const [viewState, setViewState] = createSignal(null);
   const [viewControls, setViewControls] = createSignal(null);
@@ -65,10 +64,10 @@ export function FieldAreas(props) {
         <div class="surface-view-buttons" role="group" aria-label="Ракурс всех компонент"
           title="Управление как в 3D: ЛКМ — поворот, ПКМ — перенос, колесо — масштаб. Ракурс синхронен у трёх компонент">
           <button disabled={props.movieBusy || !viewControls()} title="Вернуть начальный наклонный ракурс всех трёх компонент"
-            onClick={() => viewControls()?.view("iso")}>Вписать</button>
+            onClick={() => viewControls()?.view("iso")}>Авто</button>
           <For each={["x", "y", "z"]}>{direction => <button disabled={props.movieBusy || !viewControls()}
             title={`Смотреть вдоль оси ${direction.toUpperCase()}; ракурс меняется у всех трёх компонент`}
-            onClick={() => viewControls()?.view(direction)}>Вид {direction.toUpperCase()}</button>}</For>
+            onClick={() => viewControls()?.view(direction)}>{direction.toUpperCase()}</button>}</For>
         </div>
         <label title="Номер локального образа выбранной площадки">Локальный образ <input aria-label="Локальный образ" disabled={props.movieBusy || !record()} type="number" min="1" max={layout()?.copies ?? 1} step="1" value={copy() + 1}
           onChange={event => {
@@ -76,8 +75,6 @@ export function FieldAreas(props) {
             const next = Number.isFinite(value) ? Math.max(1, Math.min(layout()?.copies ?? 1, Math.trunc(value))) : copy() + 1;
             event.currentTarget.value = String(next); setCopy(next - 1);
           }} /></label>
-        <label><input type="checkbox" aria-label="Проекции" checked={projections()} disabled={props.movieBusy}
-          onChange={event => !props.movieBusy && setProjections(event.currentTarget.checked)} /> Проекции</label>
         <label title="Число равномерных уровней по минимаксу каждой компоненты: 0 — нет, 1 — минимум, 2 — минимум и максимум; вырожденные изолинии показаны точками">Изолинии <input
           type="number" aria-label="Изолинии" min="0" step="1" value={isolines()} disabled={props.movieBusy}
           onChange={event => {
@@ -90,7 +87,7 @@ export function FieldAreas(props) {
       </div>
       <Show when={result().error}><div class="plot-error" role="alert">{result().error}</div></Show>
       <div class="field-area-plots"><For each={[0, 1, 2]}>{index => <section class="field-area-component" aria-label={`Компонента ${"XYZ"[index]}`}>
-        <SurfaceChart grid={grids()[index]} label={`${quantityKey()[0]}${"xyz"[index]}`} projections={projections()} isolines={isolines()} unit={QUANTITIES[quantityKey()].unit}
+        <SurfaceChart grid={grids()[index]} label={`${quantityKey()[0]}${"xyz"[index]}`} isolines={isolines()} unit={QUANTITIES[quantityKey()].unit}
           viewState={viewState()} onViewChange={setViewState} emptyText={result().error}
           onViewReady={index === 0 ? setViewControls : undefined}
           captureFrameKey={displayed()} onCaptureReady={renderer => { renderers[index] = renderer; }} />

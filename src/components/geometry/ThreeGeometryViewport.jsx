@@ -40,6 +40,7 @@ import { pickGeometryFlightPivot } from "../../services/visualization/geometryFl
 import { installGeometryOverlayDrag } from "../../services/visualization/geometryOverlayDrag.js";
 import { createGeometryViewSetting } from "../../services/visualization/geometryViewSettings.js";
 import { resultVectorLength } from "../../services/visualization/resultVectorScale.js";
+import { updateResultCones } from "../../services/visualization/resultConeVectors.js";
 import {
   findPointMetadataRange,
   findVertexMetadataRange,
@@ -190,6 +191,9 @@ function createPrescribedSourceVectors(
   displayRange = null,
 ) {
   const root = sourceVectorRoot(THREE, previousRoot, style);
+  if (style === "cones") return updateResultCones(THREE, root, acceptedInstances
+    ? vectors.filter(item => acceptedInstances.has(sourceInstanceKey(item.source, item.instance))) : vectors,
+  { scales, maximumMagnitude, sceneDiagonal, lengthReference, displayRange, palette });
   if (style === "points") {
     const points = acceptedInstances
       ? vectors.filter(item => acceptedInstances.has(sourceInstanceKey(item.source, item.instance)))
@@ -556,7 +560,7 @@ export function updateResultLayers(THREE, previous, definitions, {
           scene.sceneDiagonal, vectorStyle,
           { current: scale, magnetization: scale },
           scene.maximumMagnitude, color, state.vectorRoot, palette, layer.vectorLengthReference, displayRange);
-        if (vectorStyle === "points") legend = state.vectorRoot.userData.colorLegend;
+        if (vectorStyle === "points" || vectorStyle === "cones") legend = state.vectorRoot.userData.colorLegend;
         else {
           const nodes = updateResultPoints(THREE,
             state.vectorRoot.getObjectByName("result-vector-nodes"), vectors, { color });
@@ -2829,7 +2833,7 @@ export function ThreeGeometryViewport(props) {
       color: props.resultVectorColor }];
     resultPalette = normalizeResultPalette(props.resultPalette);
     resultVectorColorMap = props.resultVectorColorMap === true;
-    resultVectorStyle = props.resultVectorStyle === "solid" ? "solid" : "thin";
+    resultVectorStyle = ["solid", "cones"].includes(props.resultVectorStyle) ? props.resultVectorStyle : "thin";
     resultVectorScale = props.resultVectorScale ?? 1;
     streamlines = props.resultStreamlines ?? [];
     selectedStreamline = props.selectedStreamline ?? null;

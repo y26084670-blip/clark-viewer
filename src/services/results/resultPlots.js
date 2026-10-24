@@ -1,6 +1,7 @@
 import { elementLayout, regionLayout, virtualLayout, QUANTITIES } from "./resultMappings.js";
 import { fmmAxis, isAnisotropic } from "./fmmCharacteristics.js";
 import { expandResultDomain, expandResultScalar, expandResultVector, resultInstanceKey } from "./resultSymmetry.js";
+import { meanResultCellSize } from "../visualization/resultCellSize.js";
 
 const number = value => Number.isFinite(value) ? String(Number(value.toPrecision(8))) : "—";
 const xyzText = (frame, row) => `XYZ = (${pointAt(frame, row).map(number).join(", ")}) мм`;
@@ -55,6 +56,7 @@ export function vectorScene(frames, quantity, task = null) {
   let maximum = 0;
   let extent = 0;
   for (const { frame, record } of frames) {
+    const meanCellSize = meanResultCellSize(record, quantity.group);
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     const copyCount = quantity.group === "elements" ? elementLayout(record,
       quantity.file === "HV" || quantity.file === "AV").copies.reduce((a,b)=>a*b,1) : 1;
@@ -78,7 +80,7 @@ export function vectorScene(frames, quantity, task = null) {
         az = Math.floor(savedRow / nPS) % nAS;
         ls = Math.floor(savedRow / (nPS * nAS)) % record.symLs;
       }
-      const item = { origin, vector, magnitude, kind: "magnetization", characteristicSize: 1,
+      const item = { origin, vector, magnitude, kind: "magnetization", characteristicSize: 1, meanCellSize,
         source: { schemaId: quantity.group, recordIndex: record.recordIndex, name: record.name }, instance: { ls, as: az, ps },
         quantity: quantity.label, unit: quantity.unit, quantityKey, savedRow,
         volumeNumber: ["MH", "JE"].includes(quantity.file) && Number.isSafeInteger(frame.start) ? frame.start + savedRow + 1 : null,

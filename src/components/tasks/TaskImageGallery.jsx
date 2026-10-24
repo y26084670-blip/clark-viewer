@@ -73,7 +73,7 @@ export function TaskImageGallery(props) {
           <Show when={/\.webm$/i.test(cellProps.entry.name)} fallback={
             <img src={thumbnail().url} alt="" loading="lazy" decoding="async"
               onError={event => controller.thumbnailFailed(cellProps.entry, event.currentTarget.getAttribute("src"))} />}>
-            <video src={thumbnail().url} muted preload="metadata" playsinline aria-label={cellProps.entry.name}
+            <video src={thumbnail().url} autoplay loop muted playsinline aria-label={cellProps.entry.name}
               onError={event => controller.thumbnailFailed(cellProps.entry, event.currentTarget.getAttribute("src"))} />
           </Show>
         </Show>

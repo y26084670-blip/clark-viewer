@@ -10,19 +10,16 @@ const setup = source.slice(source.indexOf("export function ViewerToolsMenu"), so
 const createRuntime = new Function("props", "createSignal", "createMemo", "createUniqueId", "createEffect", "onCleanup", "queueMicrotask", "window", "document", "URL", "saveTaskGif", "listTaskTestProtocols", "readTaskTestProtocol", `
   ${setup}
     return { toggleMenu, closeMenu, openSetup, closeDialog, startCapture, cancelCapture,
-      openBackfill, closeBackfill, startBackfill, backfillProgressText,
       refreshProtocols, openProtocols, closeProtocols, openProtocol, protocolsDisabledReason,
       onTriggerKeyDown, onMenuKeyDown, progressText, setIntervalMs, validInterval, saveToTask, changeSaveLocation,
       state: () => ({ menuOpen: menuOpen(), menuPosition: menuPosition(), dialogOpen: dialogOpen(),
         phase: phase(), result: result(), progress: progress(), error: error(),
         saveInTask: saveInTask(), saving: saving(), savedNotice: savedNotice(),
-        backfillDialogOpen: backfillDialogOpen(), backfillRunning: backfillRunning(),
-        backfillProgress: backfillProgress(), backfillError: backfillError(), backfillSummary: backfillSummary(),
         protocols: protocols(), protocolScanning: protocolScanning(), protocolScanError: protocolScanError(),
         protocolOpenError: protocolOpenError(), protocolsDialogOpen: protocolsDialogOpen(), protocolOpening: protocolOpening() }),
-      attach(refs) { trigger=refs.trigger; menu=refs.menu; menuItem=refs.menuItem; rangeMenuItem=refs.rangeMenuItem;
+      attach(refs) { trigger=refs.trigger; menu=refs.menu; menuItem=refs.menuItem; taskProtocolMenuItem=refs.taskProtocolMenuItem; conditionsMenuItem=refs.conditionsMenuItem;
         protocolsMenuItem=refs.protocolsMenuItem; protocolsDialog=refs.protocolsDialog; protocolsCloseButton=refs.protocolsCloseButton;
-        dialog=refs.dialog; backfillDialog=refs.backfillDialog;
+        dialog=refs.dialog;
         intervalInput=refs.intervalInput; cancelButton=refs.cancelButton; saveButton=refs.saveButton; } };
   }
   return ViewerToolsMenu(props);
@@ -46,13 +43,12 @@ function runtime(overrides = {}) {
   const focusable = () => ({ focused: 0, focus() { this.focused++; } });
   const refs = { trigger: { ...focusable(), ownerDocument: document,
     getBoundingClientRect: () => ({ right: 890, bottom: 590 }) },
-    menu: { offsetWidth: 260, offsetHeight: 120 }, menuItem: focusable(), rangeMenuItem: focusable(),
+    menu: { offsetWidth: 260, offsetHeight: 120 }, menuItem: focusable(), taskProtocolMenuItem: focusable(), conditionsMenuItem: focusable(),
     dialog: { open: false, showModal() { this.open = true; }, close() { this.open = false; } },
-    backfillDialog: { open: false, showModal() { this.open = true; }, close() { this.open = false; } },
     protocolsMenuItem: { ...focusable(), disabled: true }, protocolsCloseButton: focusable(),
     protocolsDialog: { open: false, showModal() { this.open = true; }, close() { this.open = false; } },
     intervalInput: focusable(), cancelButton: focusable(), saveButton: focusable() };
-  const props = { eligible: true, backfillEligible: true, task: {}, tabIndex: 1, frameCount: 3,
+  const props = { eligible: true, taskActionsEligible: true, task: {}, tabIndex: 1, frameCount: 3,
     onBusyChange(value) { busy.push(value); }, ...overrides };
   let nextId = 0;
   const api = createRuntime(props, initial => {
@@ -282,25 +278,6 @@ test("stale result cannot write another loaded task and unmount aborts a save wi
   assert.deepEqual(ui.busy, [true, false, true, false]);
 });
 
-test("range backfill tool locks Viewer, reports progress and keeps a per-file summary", async () => {
-  let options;
-  const job = deferred();
-  const ui = runtime({ onBackfill: value => { options = value; return job.promise; } });
-  ui.openBackfill(); ui.flushEffects();
-  assert.equal(ui.state().backfillDialogOpen, true);
-  const run = ui.startBackfill();
-  assert.equal(ui.state().backfillRunning, true); assert.deepEqual(ui.busy, [true]);
-  options.onProgress({ phase: "scan", name: "MH", file: 1, files: 2, step: 2, total: 3 });
-  assert.match(ui.backfillProgressText(), /MH\.h5.*шаг 2 из 3/);
-  job.resolve([{ name: "MH", state: "created", message: "подготовлено" },
-    { name: "HV", state: "problem", message: "неполные данные" }]);
-  await run;
-  assert.equal(ui.state().backfillRunning, false); assert.deepEqual(ui.busy, [true, false]);
-  assert.equal(ui.state().backfillSummary.length, 2);
-  ui.closeBackfill(); ui.flushEffects(); assert.equal(ui.state().backfillDialogOpen, false);
-  ui.dispose();
-});
-
 const protocolEntry = (path = "mufem/report.html") => ({ path, name: path.split("/").at(-1), handle: { kind: "file", name: path.split("/").at(-1) } });
 
 test("test protocol menu is disabled without loaded task, during discovery and when no HTML exists", async () => {
@@ -318,8 +295,8 @@ test("test protocol menu is disabled without loaded task, during discovery and w
   assert.equal(ui.refs.protocolsDialog.open, true);
   ui.closeProtocols(); ui.flushEffects();
   assert.equal(ui.refs.protocolsDialog.open, false);
-  ui.props.backfillEligible = false; ui.props.backfillDisabledReason = "Загрузка задания";
-  assert.equal(ui.protocolsDisabledReason(), "Загрузка задания");
+  ui.props.taskActionsEligible = false;
+  assert.match(ui.protocolsDisabledReason(), /завершения текущей операции/);
   ui.dispose();
   const empty = runtime({ task: { handle: {} } });
   await empty.refreshProtocols(); assert.equal(empty.protocolsDisabledReason(), "В comparison нет HTML-протоколов.");
@@ -352,10 +329,11 @@ test("protocol menu and focus refresh discovery, handle access errors, and inclu
   } });
   ui.flushEffects(); await Promise.resolve(); const initial = scans;
   ui.toggleMenu(); await Promise.resolve(); assert.equal(scans, initial + 1);
+  ui.refs.conditionsMenuItem.disabled = true;
   ui.refs.protocolsMenuItem.disabled = false;
   ui.onMenuKeyDown(key("End")); assert.equal(ui.refs.protocolsMenuItem.focused, 1);
   ui.refs.protocolsMenuItem.disabled = true;
-  ui.onMenuKeyDown(key("End")); assert.equal(ui.refs.rangeMenuItem.focused, 1);
+  ui.onMenuKeyDown(key("End")); assert.equal(ui.refs.taskProtocolMenuItem.focused, 1);
   ui.window.emit("focus"); await Promise.resolve(); assert.equal(scans, initial + 2);
   denied = true; await ui.refreshProtocols();
   assert.match(ui.protocolsDisabledReason(), /доступ запрещён/);

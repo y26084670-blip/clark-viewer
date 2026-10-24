@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import LibAV from "@libav.js/variant-webm-vp9";
 import { createMovieWebmCore } from "../src/services/movie/movieWebmCore.js";
-import { convertTaskGifs } from "../src/services/movie/convertTaskGifs.js";
 
 test("real VP9 encoder uses CRF 30 without bitrate cap, preserves odd dimensions and variable timestamps", async () => {
   const lib = await LibAV.LibAV({ noworker: true, nothreads: true });
@@ -33,38 +32,4 @@ test("real VP9 encoder uses CRF 30 without bitrate cap, preserves odd dimensions
     const frames = await lib.ff_decode_multi(decoder, decodePacket, decodeFrame, packets[0], true);
     assert.equal(frames.length, 3); assert.ok(frames.every(frame => frame.width === 9 && frame.height === 7));
   } finally { lib.terminate(); }
-});
-
-function conversionFixture() {
-  const entries = ["one.gif", "existing.webm", "two.GIF"].map(name => ({ name, handle: { name } }));
-  const saved = [], reads = [], progress = [], encoders = [];
-  const task = { requestPermission: () => Promise.resolve("granted") };
-  const options = { list: async () => entries, read: async handle => { reads.push(handle.name); return new Blob([handle.name]); },
-    save: async (_task, blob, name) => { saved.push(name); return { name }; }, onProgress: value => progress.push(value),
-    createEncoder: () => { const encoder = { closed: false, async convertGif(buffer, onProgress) {
-      onProgress({ completed: 1, total: 1 }); return { blob: new Blob([buffer], { type: "video/webm" }) };
-    }, close() { this.closed = true; } }; encoders.push(encoder); return encoder; } };
-  return { task, options, saved, reads, progress, encoders, entries };
-}
-
-test("batch conversion includes all task GIFs, skips WebM and never deletes sources", async () => {
-  const h = conversionFixture(), names = h.entries.map(entry => entry.name);
-  await convertTaskGifs(h.task, h.options);
-  assert.deepEqual(h.reads, ["one.gif", "two.GIF"]); assert.deepEqual(h.saved, ["one.webm", "two.webm"]);
-  assert.deepEqual(h.entries.map(entry => entry.name), names);
-  assert.ok(h.encoders.every(encoder => encoder.closed)); assert.equal(h.progress.at(-1).completed, 2);
-});
-
-test("conversion cancellation closes the active encoder and leaves completed files saved", async () => {
-  const h = conversionFixture(), abort = new AbortController();
-  h.options.onProgress = value => { if (value.phase === "saved") abort.abort(); };
-  await assert.rejects(convertTaskGifs(h.task, { ...h.options, signal: abort.signal }), { name: "AbortError" });
-  assert.deepEqual(h.saved, ["one.webm"]); assert.equal(h.encoders.length, 1); assert.ok(h.encoders[0].closed);
-  assert.equal(h.entries.length, 3);
-});
-
-test("denied conversion permission prevents file reads and encoding", async () => {
-  const h = conversionFixture(); h.task.requestPermission = async () => "denied";
-  await assert.rejects(convertTaskGifs(h.task, h.options), /разрешение/);
-  assert.equal(h.reads.length, 0); assert.equal(h.encoders.length, 0);
 });

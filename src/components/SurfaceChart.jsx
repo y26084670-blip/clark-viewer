@@ -1,3 +1,5 @@
+import { createViewportLensHintPreference } from "../services/visualization/viewportLensHint.js";
+import "../services/visualization/viewportLensHint.css";
 import { createViewportLens } from "../services/visualization/viewportLens.js";
 import { createGeometryAxisRotationController } from "../services/visualization/geometryCameraView.js";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
@@ -11,7 +13,8 @@ import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera,
 export function SurfaceChart(props) {
   let host, renderer, scene, camera, controls, surface, observer, axes, decorations;
   const labelObjects = [];
-  let viewportLens, axisRotation, controlsInteracting = false;
+  let viewportLens, lensHintPreference, axisRotation, controlsInteracting = false;
+  const [showLensHint, setShowLensHint] = createSignal(false);
   let movieSnapshot = null, appliedFrameKey, disposed = false, contextLost = false, resizePending = false;
   let applyingView = false, lastView = null;
   const captureGate = createRenderedFrameGate();
@@ -172,6 +175,7 @@ export function SurfaceChart(props) {
     applyGrid(props.grid, props.label, props.unit, props.captureFrameKey);
   }
   onMount(() => {
+    lensHintPreference = createViewportLensHintPreference({ window: host.ownerDocument?.defaultView, onChange: setShowLensHint });
     props.onCaptureReady?.(captureAdapter);
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -180,7 +184,7 @@ export function SurfaceChart(props) {
       // OrbitControls computes its up-axis transform at construction time.
       camera.up.set(0, 0, 1); rebuildControls();
       if (renderer.domElement.ownerDocument) {
-        viewportLens = createViewportLens({ THREE, renderer, enabled: () => !movieSnapshot && !contextLost, requestRender: draw });
+        viewportLens = createViewportLens({ THREE, renderer, onActivate: () => lensHintPreference.dismiss(), enabled: () => !movieSnapshot && !contextLost, requestRender: draw });
         axisRotation = createGeometryAxisRotationController({
           element: renderer.domElement, getCamera: () => camera, getControls: () => controls,
           canStart: () => !disposed && !movieSnapshot && !contextLost && !error(),
@@ -241,7 +245,7 @@ export function SurfaceChart(props) {
   }
   createEffect(() => applyGrid(props.grid, props.label, props.unit, props.captureFrameKey));
   onCleanup(() => {
-    disposed = true; viewportLens?.dispose(); axisRotation?.dispose(); captureGate.close(); props.onCaptureReady?.(null);
+    disposed = true; lensHintPreference?.dispose(); viewportLens?.dispose(); axisRotation?.dispose(); captureGate.close(); props.onCaptureReady?.(null);
     props.onViewReady?.(null);
     renderer?.domElement.removeEventListener("webglcontextlost", contextLostHandler);
     renderer?.domElement.removeEventListener("webglcontextrestored", contextRestoredHandler);
@@ -250,7 +254,8 @@ export function SurfaceChart(props) {
     renderer?.dispose(); renderer?.forceContextLoss(); renderer?.domElement.remove();
   });
   return <div class="surface-chart">
-    <div ref={host} class="surface-canvas" title="ЛКМ — поворот; ПКМ — перенос; колесо — масштаб; левый Ctrl — линза от ×5, колесо — её увеличение; Ctrl/Alt+X/Y/Z — вращение вокруг оси" />
+    <div ref={host} class="surface-canvas" title="ЛКМ — поворот; ПКМ — перенос; колесо — масштаб; Пробел — линза от ×5, колесо — её увеличение; Ctrl/Alt+X/Y/Z — вращение вокруг оси" />
+    <Show when={ready() && !error() && showLensHint()}><span class="viewport-lens-hint">Нажми Пробел !</span></Show>
     <Show when={!props.grid}><div class="plot-empty">{props.emptyText || "Выберите площадку"}</div></Show>
     <Show when={limits()}><div class="surface-legend"><span>{formatValue(limits().min)}</span><div /><span>{formatValue(limits().max)} {props.unit}</span></div></Show>
     <Show when={error()}><div class="plot-error">{error()}</div></Show>

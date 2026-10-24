@@ -1,3 +1,4 @@
+import { createViewportLensHintPreference } from "../src/services/visualization/viewportLensHint.js";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -16,7 +17,7 @@ const end = source.indexOf('  return <div class="surface-chart"', start);
 const component = new Function("props", "dependencies", `
   const {createEffect,createSignal,onCleanup,onMount,THREE,OrbitControls,ResizeObserver,
     disposeSurfaceObject,resizeSurfaceLabels,updateSurfaceLabel,updateSurfaceMesh,updateSurfaceDecorations,captureMovieCanvas,
-    captureRenderedMovieFrame,createRenderedFrameGate,restoreMovieCamera,snapshotMovieCamera,testHost}=dependencies;
+    captureRenderedMovieFrame,createRenderedFrameGate,restoreMovieCamera,snapshotMovieCamera,createViewportLensHintPreference,testHost}=dependencies;
   const devicePixelRatio=2;
   ${source.slice(start, end)}
   host=testHost;
@@ -59,7 +60,7 @@ function runtime({ initial = [0, 0, 0, 0], failInit = false, viewState, onViewCh
       createEffect, createSignal, onCleanup, onMount, THREE: { ...THREE, WebGLRenderer: Renderer }, OrbitControls: Controls,
       ResizeObserver: class { observe() {} disconnect() {} }, disposeSurfaceObject, resizeSurfaceLabels, updateSurfaceMesh, updateSurfaceDecorations,
       updateSurfaceLabel: (sprite, text, position) => updateSurfaceLabel(sprite, text, position, labelCanvas),
-      captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera, testHost: host,
+      captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera, createViewportLensHintPreference, testHost: host,
       captureMovieCanvas: (source, options) => {
         const texts = [], context = { fillRect() {}, fillText: text => texts.push(String(text)),
           createLinearGradient: () => ({ addColorStop() {} }) };

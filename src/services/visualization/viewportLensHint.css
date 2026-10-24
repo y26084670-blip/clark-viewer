@@ -1,0 +1,27 @@
+.viewport-lens-hint {
+  position: absolute;
+  left: var(--viewport-lens-hint-left, 12px);
+  bottom: 12px;
+  z-index: 2;
+  max-width: calc(100% - var(--viewport-lens-hint-left, 12px) - 8px);
+  padding: 3px 6px;
+  border-radius: 3px;
+  background: #141a20de;
+  color: #ffff00;
+  font: 700 14pt/1.2 Arial, sans-serif;
+  pointer-events: none;
+  user-select: none;
+  animation: viewport-lens-hint-blink 1.6s ease-in-out infinite;
+}
+
+@keyframes viewport-lens-hint-blink {
+  0%, 35%, 100% { opacity: 1; }
+  55%, 80% { opacity: 0; }
+}
+
+/* Surface charts keep their colour scale along the bottom edge. */
+.surface-chart > .viewport-lens-hint { bottom: 90px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .viewport-lens-hint { animation: none; }
+}

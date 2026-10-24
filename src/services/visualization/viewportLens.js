@@ -18,7 +18,7 @@ export function setLensProjection(THREE, detail, source, width, height, x, y, ma
   detail.projectionMatrixInverse.copy(detail.projectionMatrix).invert();
 }
 
-export function createViewportLens({ THREE, renderer, enabled = () => true, requestRender = () => {},
+export function createViewportLens({ THREE, renderer, enabled = () => true, requestRender = () => {}, onActivate = () => {},
   renderDetails = (scene, camera) => renderer.render(scene, camera) }) {
   const element = renderer.domElement, owner = element.ownerDocument, win = owner?.defaultView;
   let inside = false, spaceHeld = false, spaceCaptured = false, x = 0, y = 0, disposed = false;
@@ -40,7 +40,7 @@ export function createViewportLens({ THREE, renderer, enabled = () => true, requ
     x = event.clientX - rect.left; y = event.clientY - rect.top;
     inside = x >= 0 && y >= 0 && x < rect.width && y < rect.height;
     // Space has no pointer-event modifier; keyup/blur/visibility clear it.
-    if (!wasActive && active()) magnification = VIEWPORT_LENS_MAGNIFICATION;
+    if (!wasActive && active()) { magnification = VIEWPORT_LENS_MAGNIFICATION; onActivate(); }
     if (wasActive || active()) requestRender();
   }
   function key(event) {
@@ -54,7 +54,7 @@ export function createViewportLens({ THREE, renderer, enabled = () => true, requ
       spaceCaptured = down;
     }
     if (!down) spaceCaptured = false;
-    if (!wasActive && active()) magnification = VIEWPORT_LENS_MAGNIFICATION;
+    if (!wasActive && active()) { magnification = VIEWPORT_LENS_MAGNIFICATION; onActivate(); }
     if (wasActive !== active()) requestRender();
   }
   function leave() {

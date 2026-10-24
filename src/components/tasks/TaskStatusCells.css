@@ -25,13 +25,12 @@
     stroke-linecap: round;
     stroke-linejoin: round;
 }
-.task-status-gif {
-    border: 1px solid currentColor;
-    border-radius: 3px;
-    padding: 1px 2px;
+.task-status-movie {
+    display: inline-flex;
+    flex: 0 0 20px;
     color: #f4cf72;
-    font: 700 10px/1.2 Arial, sans-serif;
 }
+.task-status-movie svg { stroke-width: 1.8; }
 .task-status-comparison { color: #86d6ff; font: 800 16px/1 Arial, sans-serif; }
 .task-status-protocol-button {
     width: 100%;

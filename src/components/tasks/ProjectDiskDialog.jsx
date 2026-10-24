@@ -10,10 +10,11 @@ export function ProjectDiskDialog(props) {
   return <dialog ref={dialog} class="task-selection-error-dialog task-disk-dialog" aria-labelledby="project-disk-title"
     onCancel={event => { event.preventDefault(); if (!props.busy) props.onClose(); }}>
     <h2 id="project-disk-title">Доступ к проектам</h2>
-    <p>Выберите диск с проектами и разрешите чтение и запись. Каталоги clark.* появятся в верхнем списке; clark.app исключён.</p>
+    <p>Выберите диск с проектами и разрешите чтение и запись.</p>
+    <p>Каталоги clark.* с проектами появятся в верхнем списке.</p>
     <div class="task-disk-dialog-row">
-      <button ref={picker} type="button" onClick={props.onPick} disabled={props.busy}>Выбрать диск с проектами</button>
-      <p>{props.disk ? `Выбрано: ${props.disk.name || "корень диска"}. Каталогов: ${props.count}.` : "Диск ещё не выбран."}</p>
+      <button ref={picker} type="button" onClick={props.onPick} disabled={props.busy || props.picked}>Выбрать диск с проектами</button>
+      <p>Выбрано каталогов: {props.count}</p>
     </div>
     <Show when={props.pending}><button type="button" disabled={props.busy} onClick={props.onAllow}>
       Разрешить доступ к диску «{props.pending.name}»</button></Show>

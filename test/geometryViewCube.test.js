@@ -11,7 +11,8 @@ for (const x of [-1, 0, 1]) for (const y of [-1, 0, 1]) for (const z of [-1, 0, 
 function cube() {
   const previous = globalThis.document;
   globalThis.document = { createElement: () => ({ getContext: () => ({
-    fillRect() {}, strokeText() {}, fillText() {},
+    fillRect() {}, strokeText() {}, fillText() {}, beginPath() {}, arc() {}, fill() {},
+    measureText: () => ({ width: 144, actualBoundingBoxRight: 72, actualBoundingBoxDescent: 50 }),
   }) }) };
   try { return createViewCube(THREE); } finally { globalThis.document = previous; }
 }

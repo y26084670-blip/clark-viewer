@@ -1,3 +1,4 @@
+import { createLensVectorDetails } from "../../services/visualization/lensVectorDetails.js";
 import { createViewportLens } from "../../services/visualization/viewportLens.js";
 import { createThinVectorHover } from "../../services/visualization/thinVectorHover.js";
 import {
@@ -270,6 +271,7 @@ function createPrescribedSourceVectors(
           mesh = new THREE.InstancedMesh(geometry, material, capacityFor(arrows.length));
           mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
           mesh.name = name;
+          mesh.userData.lensVectorPart = part;
           mesh.renderOrder = 14;
           root.add(mesh);
         }
@@ -1426,7 +1428,7 @@ function resizeCameraProjection(camera, aspect) {
 }
 
 export function ThreeGeometryViewport(props) {
-  let viewportLens, vectorHover;
+  let viewportLens, vectorHover, lensVectorDetails;
   let host;
   let legendPanel;
   const [legendLeft, setLegendLeft] = createGeometryViewSetting("scalarLegendLeft", null);
@@ -2627,7 +2629,10 @@ export function ThreeGeometryViewport(props) {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       if (THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
       host.append(renderer.domElement);
-      viewportLens = createViewportLens({ THREE, renderer, enabled: () => props.enableLens === true && !contextLost && !movieSnapshot, requestRender });
+      lensVectorDetails = createLensVectorDetails(THREE);
+      viewportLens = createViewportLens({ THREE, renderer,
+        renderDetails: (scene, camera) => lensVectorDetails.render(scene, camera, () => renderer.render(scene, camera)),
+        enabled: () => props.enableLens === true && !contextLost && !movieSnapshot, requestRender });
       vectorHover = createThinVectorHover({ scene: threeScene, requestRender });
 
       OrbitControlsClass = controlsModule.OrbitControls;
@@ -2899,7 +2904,7 @@ export function ThreeGeometryViewport(props) {
   onCleanup(() => {
     rememberCamera();
     disposed = true;
-    viewportLens?.dispose(); vectorHover?.dispose();
+    viewportLens?.dispose(); vectorHover?.dispose(); lensVectorDetails?.dispose();
     viewCubeControls?.dispose();
     axisRotationController?.dispose();
     flightController?.dispose();

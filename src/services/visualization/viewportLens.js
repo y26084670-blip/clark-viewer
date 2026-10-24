@@ -18,7 +18,8 @@ export function setLensProjection(THREE, detail, source, width, height, x, y, ma
   detail.projectionMatrixInverse.copy(detail.projectionMatrix).invert();
 }
 
-export function createViewportLens({ THREE, renderer, enabled = () => true, requestRender = () => {} }) {
+export function createViewportLens({ THREE, renderer, enabled = () => true, requestRender = () => {},
+  renderDetails = (scene, camera) => renderer.render(scene, camera) }) {
   const element = renderer.domElement, owner = element.ownerDocument, win = owner?.defaultView;
   let inside = false, leftControl = false, x = 0, y = 0, disposed = false;
   let texture, scene, camera, material, quad, detailCamera;
@@ -136,7 +137,7 @@ export function createViewportLens({ THREE, renderer, enabled = () => true, requ
         const right = Math.min(rect.width, x + VIEWPORT_LENS_RADIUS), bottom = Math.min(rect.height, y + VIEWPORT_LENS_RADIUS);
         renderer.setScissor(left, rect.height - bottom, right - left, bottom - top);
         renderer.setScissorTest(true); renderer.autoClear = true;
-        renderer.render(sourceScene, detailCamera);
+        renderDetails(sourceScene, detailCamera);
         renderer.autoClear = false; renderer.render(scene, camera);
       } finally {
         renderer.setScissor(previousScissor); renderer.setScissorTest(previousScissorTest);

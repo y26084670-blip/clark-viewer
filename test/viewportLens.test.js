@@ -112,3 +112,30 @@ test("only left Ctrl activates the lens, including both keys and re-entry", () =
   assert.equal(lens.active, false, "a missed key release cannot leave a stuck lens");
   lens.dispose();
 });
+
+
+test("detail rendering runs only inside the lens and restores renderer state after failure", () => {
+  const element = events(), owner = events(); element.ownerDocument = owner;
+  element.getBoundingClientRect = () => ({left:0,top:0,width:800,height:600});
+  const scissor = new THREE.Vector4(3,4,100,200), calls = [];
+  const renderer = {domElement:element,autoClear:false,scissorTest:false,
+    render(scene,camera){calls.push([scene,camera]);}, copyFramebufferToTexture(){},
+    getDrawingBufferSize:out=>out.set(800,600),getScissor:out=>out.copy(scissor),
+    getScissorTest(){return this.scissorTest;},setScissorTest(value){this.scissorTest=value;},
+    setScissor(...values){values.length===1?scissor.copy(values[0]):scissor.set(...values);}};
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(40,4/3,.1,100);
+  let details = 0, fail = false;
+  const lens = createViewportLens({THREE,renderer,renderDetails(s,c){
+    details++; assert.equal(s,scene); assert.notEqual(c,camera);
+    assert.notDeepEqual(c.projectionMatrix.elements,camera.projectionMatrix.elements);
+    if(fail)throw Error("detail error");
+  }});
+  lens.render(scene,camera); assert.equal(details,0);
+  element.send("pointerenter",{clientX:400,clientY:300,ctrlKey:false});
+  owner.send("keydown",{code:"ControlLeft",ctrlKey:true});
+  lens.render(scene,camera); assert.equal(details,1);
+  assert.deepEqual(scissor.toArray(),[3,4,100,200]); assert.equal(renderer.autoClear,false); assert.equal(renderer.scissorTest,false);
+  fail=true; assert.throws(()=>lens.render(scene,camera),/detail error/);
+  assert.deepEqual(scissor.toArray(),[3,4,100,200]); assert.equal(renderer.autoClear,false); assert.equal(renderer.scissorTest,false);
+  owner.send("keyup",{code:"ControlLeft",ctrlKey:false}); lens.render(scene,camera); assert.equal(details,2); lens.dispose();
+});

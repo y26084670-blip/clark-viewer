@@ -8,8 +8,12 @@ export function ObjectList(props) {
   const [built, setBuilt] = createSignal(false);
   const [activePresets, setActivePresets] = createSignal(new Set());
   let presetButtons = new Map();
+  function selectableRecords() {
+    const allowed = props.selectableIds == null ? null : new Set(props.selectableIds);
+    return (props.records ?? []).filter(row => !allowed || allowed.has(row.id));
+  }
   function synchronizeSelection(selected = props.selected ?? []) {
-    const available = new Set((props.records ?? []).map(row => row.id));
+    const available = new Set(selectableRecords().map(row => row.id));
     const wanted = selected.filter(id => available.has(id));
     const wantedIds = new Set(wanted);
     const actual = table.getSelectedData().map(row => row.id);
@@ -93,12 +97,12 @@ export function ObjectList(props) {
   function handleKeyDown(event) {
     if (!built()) return;
     selectAllListItems(event, {
-      records: props.records ?? [], multiple: props.multiple !== false,
+      records: selectableRecords(), multiple: props.multiple !== false,
       onSelect: selected => {
         if (!applying) {
           applying = true;
           // Tabulator selects its complete row collection in one batch.
-          try { table.selectRow(); } finally { applying = false; }
+          try { table.selectRow(selected); } finally { applying = false; }
         }
         // Keep the desired selection even while replaceData is pending.
         props.onSelect?.(selected);
@@ -130,7 +134,13 @@ export function ObjectList(props) {
     table = new TabulatorFull(host, {
       height: "100%", layout: "fitColumns", index: "id",
       selectableRows: props.multiple === false ? 1 : true,
+      selectableRowsCheck: row => props.selectableIds == null || props.selectableIds.includes(row.getData().id),
       selectableRowsRangeMode: "click", placeholder: "Нет объектов",
+      rowFormatter: row => {
+        const unavailable = props.selectableIds != null && !props.selectableIds.includes(row.getData().id);
+        row.getElement().classList.toggle("object-row-unavailable", unavailable);
+        row.getElement().setAttribute("aria-disabled", String(unavailable));
+      },
       columnDefaults: { headerSort: false },
       columns: [{ title: "№", field: "id", width: 52, hozAlign: "right" },
         { title: "Название", titleFormatter: nameHeading, field: "name", minWidth: props.selectionPresets?.length ? 150 : 130, formatter: "plaintext" }],
@@ -144,6 +154,8 @@ export function ObjectList(props) {
   });
   createEffect(() => {
     const records = props.records ?? [];
+    // Changing the active quantity must also rebuild row eligibility.
+    props.selectableIds;
     if (!built()) return;
     const current = ++revision;
     applying = true;
@@ -158,7 +170,7 @@ export function ObjectList(props) {
   });
   createEffect(synchronizePresetButtons);
   onCleanup(() => { revision++; table?.destroy(); });
-  return <section class="object-list" tabIndex="0" aria-label={props.title}
+  return <section class="object-list" tabIndex="0" aria-label={props.title} inert={props.disabled}
     onPointerDown={focusList} onKeyDown={handleKeyDown}>
     <div class="list-heading">{props.title}</div>
     <div class="object-table" ref={host} onClick={clearSelectionOnEmptyClick} />

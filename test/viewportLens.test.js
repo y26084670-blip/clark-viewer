@@ -165,3 +165,26 @@ test("detail rendering runs only inside the lens and restores renderer state aft
   assert.deepEqual(scissor.toArray(),[3,4,100,200]); assert.equal(renderer.autoClear,false); assert.equal(renderer.scissorTest,false);
   owner.send("keyup",{code:"Space",ctrlKey:false}); lens.render(scene,camera); assert.equal(details,2); lens.dispose();
 });
+
+
+test("lens activation callback ignores typing, previews and repeated Space events", () => {
+  const element = events(), owner = events(); element.ownerDocument = owner;
+  element.getBoundingClientRect = () => ({ left: 0, top: 0, width: 500, height: 300 });
+  let enabled = false, activated = 0;
+  const lens = createViewportLens({ THREE: {}, renderer: { domElement: element },
+    enabled: () => enabled, onActivate: () => activated++ });
+  element.send("pointerenter", { clientX: 200, clientY: 150 });
+  owner.send("keydown", { code: "Space" }); owner.send("keyup", { code: "Space" });
+  assert.equal(activated, 0, "task-selection previews do not activate the lens");
+  enabled = true; owner.activeElement = { tagName: "TEXTAREA" };
+  owner.send("keydown", { code: "Space" }); owner.send("keyup", { code: "Space" });
+  assert.equal(activated, 0, "typing a space does not acknowledge the hint");
+  owner.activeElement = null;
+  owner.send("keydown", { code: "Space" }); owner.send("keydown", { code: "Space", repeat: true });
+  assert.equal(activated, 1);
+  owner.send("keyup", { code: "Space" }); element.send("pointerleave");
+  owner.send("keydown", { code: "Space" }); assert.equal(activated, 1);
+  element.send("pointerenter", { clientX: 200, clientY: 150 });
+  assert.equal(activated, 2, "holding Space before entering the viewport also activates the lens");
+  lens.dispose(); owner.send("keydown", { code: "Space" }); assert.equal(activated, 2);
+});

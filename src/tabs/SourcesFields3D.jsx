@@ -285,6 +285,9 @@ export function SourcesFields3D(props) {
         <GeometryMaterialLegend buttonClass="source-toolbar-menu-button"
           onOpen={() => setOpenSourceMenu(null)} />
       </div>
+      <For each={resultLayers().filter(layer => layer.scalarScene?.notice)}>{layer =>
+        <div class="plot-status" role="status">{layer.scalarScene.notice}</div>}
+      </For>
       <div class="embedded-geometry">
         <ResultsGeometryViewport cameraState={cameraState()} onCameraStateChange={rememberCamera} open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           allowFlight={true} flightBlocked={props.movieBusy} flightDisabledReason={flightDisabledReason()}

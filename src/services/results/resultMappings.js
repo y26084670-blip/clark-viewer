@@ -10,6 +10,8 @@ export const QUANTITIES = Object.freeze({
   E: { label: "Напряжённость E", unit: "В/м", file: "JE", offset: 6, components: 3, group: "elements", solvedOnly: true, mirrorParity: "opposite" },
   JEdot: { label: "Потери на токи проводимости", formula: "J·E", unit: "Вт/мм³", file: "JE", offset: 3,
     components: 1, productOffsets: [3, 6], factor: 1e-3, group: "elements", solvedOnly: true },
+  rho: { label: "Удельное сопротивление", formula: "ρ = |E|/|J|", unit: "Ом·м", file: "JE", offset: 3,
+    components: 1, modulusRatioOffsets: [6, 3], factor: 1e-6, group: "elements", solvedOnly: true },
   Bs: { label: "Индукция B — области", unit: "Тл", file: "HS", offset: 3, components: 3, group: "regions", mirrorParity: "magnetic" },
   As: { label: "Векторный потенциал A — области", unit: "Тл·м", file: "AS", offset: 3, components: 3, group: "regions", factor: MU0, mirrorParity: "opposite" },
   Bv: { label: "Индукция B — виртуальные элементы", unit: "Тл", file: "HV", offset: 3, components: 3, group: "elements", mirrorParity: "magnetic" },

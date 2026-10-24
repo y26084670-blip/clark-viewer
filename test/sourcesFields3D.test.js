@@ -30,7 +30,7 @@ const selections = layers => Object.fromEntries(layers.map(layer => [layer.key, 
 // The UI labels/options are owned by the same descriptor rendered by its <For>.
 test("3D quantity groups expose exact independent choices and M/none/none defaults", () => {
   assert.deepEqual(RESULT_LAYER_GROUPS.map(group => [group.key, group.defaultQuantity, [...group.quantities]]), [
-    ["elements", "M", ["none", "M", "H", "MHdot", "J", "E", "JEdot"]],
+    ["elements", "M", ["none", "M", "H", "MHdot", "J", "E", "JEdot", "rho"]],
     ["regions", "none", ["none", "Bs", "As"]],
     ["virtual", "none", ["none", "Bv", "Av"]],
   ]);

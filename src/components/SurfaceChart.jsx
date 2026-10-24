@@ -249,7 +249,7 @@ export function SurfaceChart(props) {
     renderer?.dispose(); renderer?.forceContextLoss(); renderer?.domElement.remove();
   });
   return <div class="surface-chart">
-    <div ref={host} class="surface-canvas" title="ЛКМ — поворот; ПКМ — перенос; колесо — масштаб; Ctrl — линза от ×5, колесо — её увеличение; Ctrl/Alt+X/Y/Z — вращение вокруг оси" />
+    <div ref={host} class="surface-canvas" title="ЛКМ — поворот; ПКМ — перенос; колесо — масштаб; левый Ctrl — линза от ×5, колесо — её увеличение; Ctrl/Alt+X/Y/Z — вращение вокруг оси" />
     <Show when={!props.grid}><div class="plot-empty">{props.emptyText || "Выберите площадку"}</div></Show>
     <Show when={limits()}><div class="surface-legend"><span>{formatValue(limits().min)}</span><div /><span>{formatValue(limits().max)} {props.unit}</span></div></Show>
     <Show when={error()}><div class="plot-error">{error()}</div></Show>

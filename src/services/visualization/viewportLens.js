@@ -20,34 +20,40 @@ export function setLensProjection(THREE, detail, source, width, height, x, y, ma
 
 export function createViewportLens({ THREE, renderer, enabled = () => true, requestRender = () => {} }) {
   const element = renderer.domElement, owner = element.ownerDocument, win = owner?.defaultView;
-  let inside = false, control = false, x = 0, y = 0, disposed = false;
+  let inside = false, leftControl = false, x = 0, y = 0, disposed = false;
   let texture, scene, camera, material, quad, detailCamera;
   let magnification = VIEWPORT_LENS_MAGNIFICATION;
   // A slider or checkbox may retain focus after the pointer returns to 3D.
   // Neither that focus nor the presence/magnitude of sources gates the lens.
-  const active = () => !disposed && inside && control && enabled() && !owner?.hidden;
+  const active = () => !disposed && inside && leftControl && enabled() && !owner?.hidden;
   function move(event) {
     const wasActive = active(), rect = element.getBoundingClientRect();
     x = event.clientX - rect.left; y = event.clientY - rect.top;
     inside = x >= 0 && y >= 0 && x < rect.width && y < rect.height;
-    control = event.ctrlKey === true;
+    // Pointer events cannot distinguish the two Ctrl keys. Only keyboard
+    // events may activate the lens; pointer events can clear a missed release.
+    if (!event.ctrlKey) leftControl = false;
     if (!wasActive && active()) magnification = VIEWPORT_LENS_MAGNIFICATION;
     if (wasActive || active()) requestRender();
   }
   function key(event) {
+    if (event.code !== "ControlLeft") return;
     const wasActive = active();
-    control = event.ctrlKey === true;
+    leftControl = event.type === "keydown";
     if (!wasActive && active()) magnification = VIEWPORT_LENS_MAGNIFICATION;
     if (wasActive !== active()) requestRender();
   }
-  function clear() {
-    const wasActive = inside && control; inside = false; control = false;
+  function leave() {
+    const wasActive = active(); inside = false;
     if (wasActive) requestRender();
+  }
+  function clear() {
+    leave(); leftControl = false;
   }
   function visibility() { if (owner.hidden) clear(); }
   function wheel(event) {
     if (!active()) return;
-    // Capture before OrbitControls: Ctrl+wheel must never zoom the main camera
+    // Capture before OrbitControls: left Ctrl+wheel never zooms the main camera
     // or the browser page. Trackpads and line/page wheel units work alike.
     event.preventDefault(); event.stopImmediatePropagation();
     const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 150 : 1);
@@ -58,7 +64,7 @@ export function createViewportLens({ THREE, renderer, enabled = () => true, requ
   element.addEventListener("wheel", wheel, { capture: true, passive: false });
   element.addEventListener("pointerenter", move);
   element.addEventListener("pointermove", move);
-  element.addEventListener("pointerleave", clear);
+  element.addEventListener("pointerleave", leave);
   owner?.addEventListener("keydown", key, true);
   owner?.addEventListener("keyup", key, true);
   owner?.addEventListener("visibilitychange", visibility);
@@ -142,7 +148,7 @@ export function createViewportLens({ THREE, renderer, enabled = () => true, requ
       element.removeEventListener("wheel", wheel, true);
       element.removeEventListener("pointerenter", move);
       element.removeEventListener("pointermove", move);
-      element.removeEventListener("pointerleave", clear);
+      element.removeEventListener("pointerleave", leave);
       owner?.removeEventListener("keydown", key, true);
       owner?.removeEventListener("keyup", key, true);
       owner?.removeEventListener("visibilitychange", visibility);

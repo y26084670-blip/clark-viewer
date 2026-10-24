@@ -113,7 +113,7 @@ test("palette cones retain their endpoints and individual colours in the detaile
   assert.equal(cone.visible,true); f.detail.dispose(); cone.dispose(); cone.geometry.dispose(); cone.material.dispose();
 });
 
-test("lens arrows retain per-vector palette colors from normalized thin vectors", () => {
+test("lens arrows retain per-vector palette colors from thin vectors", () => {
   const f = fixture(), object = lines([[[0, 0, 0], [1, 0, 0]], [[0, 2, 0], [1, 2, 0]]]);
   object.material.vertexColors = true; object.material.color.setHex(0xffffff);
   object.geometry.setAttribute("color", new THREE.Float32BufferAttribute([.1,.2,.3, .1,.2,.3, .7,.8,.9, .7,.8,.9], 3));
@@ -127,7 +127,7 @@ test("lens arrows retain per-vector palette colors from normalized thin vectors"
   f.detail.dispose(); object.geometry.dispose(); object.material.dispose();
 });
 
-test("retained instance colors combine with the source color after normalization is disabled", () => {
+test("instance colors combine with the source material color", () => {
   const f = fixture(), group = new THREE.Group(); f.scene.add(group);
   const material = new THREE.MeshLambertMaterial({ color: 0x44bbff });
   const shaft = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1), material, 1);

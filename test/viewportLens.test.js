@@ -2,25 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createViewportLens, lensSourcePoint, VIEWPORT_LENS_DIAMETER } from "../src/services/visualization/viewportLens.js";
 
-test("lens magnifies the centre x5 and joins its 150 px circular rim smoothly", () => {
-  assert.equal(VIEWPORT_LENS_DIAMETER, 150);
+test("lens uniformly magnifies a 300 CSS px radius by x5", () => {
+  assert.equal(VIEWPORT_LENS_DIAMETER, 600);
   assert.deepEqual(lensSourcePoint(10, 20, 10, 20), { x: 10, y: 20 });
-  assert.ok(Math.abs(lensSourcePoint(.001, 0, 0, 0).x / .001 - .2) < 1e-8);
-  assert.deepEqual(lensSourcePoint(75, 0, 0, 0), { x: 75, y: 0 });
-  assert.deepEqual(lensSourcePoint(76, 0, 0, 0), { x: 76, y: 0 });
-  assert.ok(Math.abs((75 - lensSourcePoint(74.999, 0, 0, 0).x) / .001 - 1) < .001);
-  let previous = 0;
-  for (let r = 1; r <= 75; r++) {
-    const x = lensSourcePoint(r, 0, 0, 0).x;
-    assert.ok(x > previous && x <= r); previous = x;
+  for (const radius of [.001, 1, 75, 150, 299]) {
+    assert.equal(lensSourcePoint(radius, 0, 0, 0).x, radius / 5);
   }
+  assert.deepEqual(lensSourcePoint(150, 150, 0, 0), { x: 30, y: 30 });
+  assert.deepEqual(lensSourcePoint(300, 0, 0, 0), { x: 300, y: 0 });
+  assert.deepEqual(lensSourcePoint(301, 0, 0, 0), { x: 301, y: 0 });
 });
 function events() {
   const target = new EventTarget();
   target.send = (type, properties = {}) => target.dispatchEvent(Object.assign(new Event(type), properties));
   return target;
 }
-test("lens is momentary, ignores editable fields and clears on leave, blur, hidden document and disposal", () => {
+test("lens works with retained input focus and no sources, and clears on leave, blur, hidden document and disposal", () => {
   const element = events(), owner = events(), win = events();
   element.ownerDocument = owner; owner.defaultView = win;
   element.getBoundingClientRect = () => ({ left: 0, top: 0, width: 500, height: 300 });
@@ -31,7 +28,7 @@ test("lens is momentary, ignores editable fields and clears on leave, blur, hidd
   owner.send("keyup", { ctrlKey: false }); assert.equal(lens.active, false);
   owner.send("keydown", { ctrlKey: true }); assert.equal(lens.active, true);
   enabled = false; assert.equal(lens.active, false); enabled = true;
-  owner.activeElement = { closest: () => ({}) }; assert.equal(lens.active, false); owner.activeElement = null;
+  owner.activeElement = { closest: () => ({}) }; assert.equal(lens.active, true); owner.activeElement = null;
   element.send("pointerleave"); assert.equal(lens.active, false);
   enter(); win.send("blur"); assert.equal(lens.active, false);
   enter(); owner.hidden = true; owner.send("visibilitychange"); owner.hidden = false; assert.equal(lens.active, false);

@@ -78,3 +78,20 @@ test("incomplete, subsampled and nonfinite J(E) frames fail explicitly", () => {
     assert.throws(() => currentWorkingPointSeries({ ...frame, values }, record), /нечисловые/);
   }
 });
+
+test("log(J) is independent of log(E); original values and zero handling remain exact", () => {
+  const raw = currentWorkingPointSeries({ stride: 9, count: 4, values: new Float64Array(rows) }, record);
+  const saved = structuredClone(raw.points);
+  const logJ = currentWorkingPointView([raw], false, true);
+  assert.deepEqual(logJ.series[0].points.map(p => p.x), [.005, 5, 1e-25]);
+  assert.deepEqual(logJ.series[0].points.map(p => p.y), [5, 7, 8].map(Math.log10));
+  assert.match(logJ.series[0].tooltip(logJ.series[0].points[0]).join(" "), /\|J\|=5 А\/мм²/);
+  const both = currentWorkingPointView([raw], true, true);
+  assert.deepEqual(both.series[0].points.map(p => [p.x, p.y]),
+    [[Math.log10(.005), Math.log10(5)], [Math.log10(5), Math.log10(7)], [-25, Math.log10(8)]]);
+  const zeros = { ...raw, points: [{ x: 0, e: 0, y: 2, j: 2 }, { x: 1, e: 1, y: 0, j: 0 }, { x: 0, e: 0, y: 0, j: 0 }] };
+  assert.equal(currentWorkingPointView([zeros], true, false).omittedZeros, 2);
+  assert.equal(currentWorkingPointView([zeros], false, true).omittedZeros, 2);
+  assert.equal(currentWorkingPointView([zeros], true, true).omittedZeros, 3);
+  assert.deepEqual(raw.points, saved);
+});

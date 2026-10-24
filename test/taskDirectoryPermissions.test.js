@@ -11,6 +11,7 @@ assert.ok(start >= 0 && end > start);
 
 // Run the actual picker and directory enumeration without mounting unrelated JSX.
 const createPicker = new Function("dependencies", `
+    const { diskPicked, setDiskPicked } = dependencies;
     const { batch, onMount, accessBusy, setAccessBusy, setAccessNotice, disk, setDisk, pendingDisk, setPendingDisk, catalogs, setCatalogs, setLastTask, setLastTaskNotice, listProjectCatalogs, saveProjectDisk, props, window, root, setError, setRoot, setProjects, setProject, setTasks, setCandidate, browserBusy, onCleanup, lastTaskHistory, sortTaskDirectories, createTaskSelectionChannel } = dependencies;
     ${source.slice(start, end)}
     return pickRoot;
@@ -23,7 +24,7 @@ function directory(name, items = []) {
 }
 
 function runtime(picker, windowOverrides = {}) {
-    const state = { root: null, projects: [], project: "Previous", tasks: [1], candidate: 1, error: "", permissions: [], galleryBusy: false, historyRoots: [] };
+    const state = { root: null, projects: [], project: "Previous", tasks: [1], candidate: 1, error: "", permissions: [], galleryBusy: false, historyRoots: [], diskPicked: false };
     const pick = createPicker({
         props: { onRootChange: value => { state.plotRoot = value; } },
         window: {
@@ -48,6 +49,7 @@ function runtime(picker, windowOverrides = {}) {
         accessBusy: () => state.accessBusy, setAccessBusy: value => { state.accessBusy = value; },
         setAccessNotice: value => { state.notice = value; },
         disk: () => state.disk, setDisk: value => { state.disk = value; },
+        diskPicked: () => state.diskPicked, setDiskPicked: value => { state.diskPicked = value; },
         pendingDisk: () => null, setPendingDisk() {},
         catalogs: () => state.catalogs, setCatalogs: value => { state.catalogs = value; },
         setLastTask() {}, setLastTaskNotice() {},
@@ -70,6 +72,27 @@ test("viewer selects clark catalogs, lists sorted projects and requests disk rea
         assert.equal(state.candidate, null);
         assert.equal(state.error, "");
         assert.deepEqual(state.historyRoots, [handle]);
+        await pick();
+        assert.equal(state.permissions.length, 1, "completed selection blocks another system picker");
+        assert.deepEqual(state.historyRoots, [handle]);
+    }
+});
+
+test("cancelled and denied picks allow a successful retry before locking selection", async () => {
+    for (const name of ["AbortError", "NotAllowedError"]) {
+        let first = true;
+        const handle = directory("clark.Retry");
+        const { state, pick } = runtime(() => {
+            if (first) { first = false; throw new DOMException("Picker interrupted", name); }
+            return handle;
+        });
+        await pick();
+        await pick();
+        assert.equal(state.root, handle);
+        assert.equal(state.error, "");
+        assert.equal(state.permissions.length, 2);
+        await pick();
+        assert.equal(state.permissions.length, 2);
     }
 });
 

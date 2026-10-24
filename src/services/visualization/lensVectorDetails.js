@@ -152,7 +152,16 @@ export function createLensVectorDetails(THREE) {
           direction.subVectors(record.tip, record.origin).normalize();
           rotation.setFromUnitVectors(up, direction); scale.setScalar(record.length);
           mesh.setMatrixAt(index, matrix.compose(record.origin, rotation, scale));
-          if (record.object.instanceColor) record.object.getColorAt(record.index, color);
+          if (record.object.instanceColor) {
+            record.object.getColorAt(record.index, color);
+            // Retained instance colours become white when normalization is off;
+            // ordinary mesh materials still multiply them by their source colour.
+            if (record.object.material.color) color.multiply(record.object.material.color);
+          }
+          else if (record.object.material.vertexColors && record.object.geometry.getAttribute("color")) {
+            color.fromBufferAttribute(record.object.geometry.getAttribute("color"), record.index * (record.object.userData.segmentsPerVector ?? 1) * 2);
+            color.multiply(record.object.material.color);
+          }
           else color.copy(record.object.material.color);
           mesh.setColorAt(index, color);
           opacity.setX(index, record.object.material.opacity * lensDepthOpacity(record.depth, near, far));

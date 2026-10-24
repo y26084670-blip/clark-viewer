@@ -9,6 +9,10 @@ const xyzText = (frame, row) => `XYZ = (${pointAt(frame, row).map(number).join("
 export function scalarAt(frame, row, quantity, component = "norm") {
   const offset = row * frame.stride + quantity.offset;
   const factor = quantity.factor ?? 1;
+  if (quantity.relativeConductivity) {
+    if (frame.relativeConductivityValues?.length !== frame.count) throw new Error("Не подготовлены значения σ/j_gmin");
+    return frame.relativeConductivityValues[row];
+  }
   if (quantity.productOffsets) {
     const [left, right] = quantity.productOffsets.map(column => row * frame.stride + column);
     // Apply the display conversion once to the signed product: M/H in kA/m
@@ -28,12 +32,15 @@ export function pointAt(frame, row) {
 
 export function scalarScene(frames, quantity, task = null) {
   const points = [];
-  let minimum = Infinity, maximum = -Infinity;
+  let minimum = Infinity, maximum = -Infinity, undefinedCount = 0;
   const label = quantity.formula ? `${quantity.label} (${quantity.formula})` : quantity.label;
   for (const { frame, record } of frames) {
     const layout = elementLayout(record);
     for (let row = 0; row < frame.count; row++) {
       const origin = pointAt(frame, row), value = scalarAt(frame, row, quantity);
+      if (origin.every(Number.isFinite) && quantity.relativeConductivity && Number.isNaN(value)) {
+        undefinedCount++; continue;
+      }
       if (![...origin, value].every(Number.isFinite)) throw new Error("Цветовая карта содержит нечисловые координаты или значения");
       const savedRow = frame.rowIndices?.[row] ?? row * (frame.every ?? 1);
       const { ls, as, ps } = layout.indices(savedRow);
@@ -47,7 +54,8 @@ export function scalarScene(frames, quantity, task = null) {
     }
   }
   return { points, minimum: points.length ? minimum : 0, maximum: points.length ? maximum : 0,
-    quantity: label, unit: quantity.unit };
+    quantity: label, unit: quantity.unit, undefinedCount,
+    notice: undefinedCount ? `При |E| = 0 значение σ/j_gmin для ВТСП не отображается. Пропущено расчётных узлов: ${undefinedCount}.` : "" };
 }
 
 export function vectorScene(frames, quantity, task = null) {

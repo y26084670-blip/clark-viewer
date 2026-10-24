@@ -7,7 +7,7 @@ import { ELEMENT_SELECTION_PRESETS, selectElementPreset } from "../services/elem
 import { ResultsGeometryViewport } from "../components/geometry/ResultsGeometryViewport.jsx";
 import { GeometryMaterialLegend } from "../components/geometry/GeometryMaterialLegend.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
-import { QUANTITIES } from "../services/results/resultMappings.js";
+import { QUANTITIES, assignedHtsElements } from "../services/results/resultMappings.js";
 import { resultDisplaySelection, useResultFrame } from "../services/results/resultRequests.js";
 import { RESULT_LAYER_GROUPS, RESULT_LAYER_QUANTITY_LABELS } from "../services/results/resultLayerDefinitions.js";
 import { createResultLayerReader } from "../services/results/resultLayerRequests.js";
@@ -81,6 +81,19 @@ export function SourcesFields3D(props) {
   const [virtualQuantity, setVirtualQuantity] = createGeometryViewSetting("resultVirtualQuantity", "none");
   const [scale, setScale] = createGeometryViewSetting("resultVectorScale", 1);
   const [colorMap, setColorMap] = createGeometryViewSetting("resultVectorColorMap", false);
+  const [normalizeVectors, setNormalizeVectors] = createGeometryViewSetting("resultNormalizeVectors", false);
+  const conductivityAvailable = createMemo(() => assignedHtsElements(props.task).length > 0);
+  const unavailableConductivity = () => elementsQuantity() === "sigmaRelative" && !conductivityAvailable();
+  function changeColorMap(checked) {
+    if (hasScalars() || props.movieBusy) return;
+    setColorMap(checked);
+    if (checked) setNormalizeVectors(false);
+  }
+  function changeNormalizeVectors(checked) {
+    if (!hasVectors() || props.movieBusy) return;
+    setNormalizeVectors(checked);
+    if (checked) setColorMap(false);
+  }
   const [globalMinMax, setGlobalMinMax] = createGeometryViewSetting("resultGlobalMinMax", true);
   const [streamlineWidth, setStreamlineWidth] = createGeometryViewSetting("resultStreamlineWidth", 2);
   const [performanceEnabled] = createGeometryViewSetting("resultPerformanceOverlay", false);
@@ -106,7 +119,8 @@ export function SourcesFields3D(props) {
   const hasVectors = createMemo(() => RESULT_LAYER_GROUPS.some(group =>
     QUANTITIES[quantities[group.key].read()]?.components === 3));
   const hasScalars = createMemo(() => RESULT_LAYER_GROUPS.some(group =>
-    QUANTITIES[quantities[group.key].read()]?.components === 1));
+    QUANTITIES[quantities[group.key].read()]?.components === 1
+      && !(quantities[group.key].read() === "sigmaRelative" && !conductivityAvailable())));
   // Scalars require a color map, but must not replace the user's vector-mode
   // preference when a later quantity selection contains only vectors again.
   const effectiveColorMap = createMemo(() => hasScalars() || colorMap());
@@ -117,9 +131,11 @@ export function SourcesFields3D(props) {
     const recordIds = new Set(records.map(record => record.id));
     const selected = resultDisplaySelection(records, group.key === "regions" ? props.regions : props.elements,
       group.key === "regions" ? regionsMode() : elementsMode()).filter(id => recordIds.has(id));
-    const quantityKey = quantities[group.key].read();
+    const chosen = quantities[group.key].read();
+    const quantityKey = chosen === "sigmaRelative" && !conductivityAvailable() ? "none" : chosen;
     return { key: group.key, quantityKey, selected,
-      volumeMode: quantityKey !== "none" && volumeMode() };
+      volumeMode: quantityKey !== "none" && volumeMode()
+        && (QUANTITIES[quantityKey]?.components === 1 || !normalizeVectors()) };
   }));
   const globalRanges = createMemo(() => resultGlobalScale(props.task, requestedLayers(), streamlineSeeds()));
   const effectiveGlobalMinMax = createMemo(() => globalMinMax() && globalRanges().available);
@@ -193,6 +209,8 @@ export function SourcesFields3D(props) {
                   <label class="source-toolbar-option">
                     <input type="radio" name={`source-quantity-${key}`}
                       checked={quantities[key].read() === quantityKey}
+                      disabled={quantityKey === "sigmaRelative" && !conductivityAvailable()}
+                      title={quantityKey === "sigmaRelative" && !conductivityAvailable() ? "В задании нет материалов ВТСП" : undefined}
                       onChange={() => quantities[key].write(quantityKey)} />
                     <span>{quantityText(quantityKey)}</span>
                   </label>}
@@ -215,7 +233,12 @@ export function SourcesFields3D(props) {
                   onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} />
               </label>
               <label><input type="checkbox" aria-label="Карта" checked={effectiveColorMap()} disabled={hasScalars()}
-                onChange={event => !hasScalars() && setColorMap(event.currentTarget.checked)} /> Карта</label>
+                onChange={event => changeColorMap(event.currentTarget.checked)} /> Карта</label>
+              <label title="Одинаковая длина векторов; цвет соответствует исходному модулю">
+                <input type="checkbox" aria-label="Нормализовать вектора" checked={normalizeVectors()}
+                  disabled={!hasVectors() || props.movieBusy}
+                  onChange={event => changeNormalizeVectors(event.currentTarget.checked)} /> Нормализовать вектора
+              </label>
               <label title={globalRanges().available ? "Общие пределы за весь расчёт из HDF5." : globalRanges().reason}>
                 <input type="checkbox" aria-label="Общий минимакс" checked={effectiveGlobalMinMax()}
                   disabled={props.movieBusy || !globalRanges().available}
@@ -285,6 +308,11 @@ export function SourcesFields3D(props) {
         <GeometryMaterialLegend buttonClass="source-toolbar-menu-button"
           onOpen={() => setOpenSourceMenu(null)} />
       </div>
+      <For each={resultLayers().filter(layer => layer.scalarScene?.notice)}>{layer =>
+        <div class="plot-status" role="status">{layer.scalarScene.notice}</div>}
+      </For>
+      <Show when={unavailableConductivity()}><div class="plot-status" role="status">Карта σ/j_gmin недоступна: в задании нет материалов ВТСП.</div></Show>
+      <For each={value()?.errors ?? []}>{error => <div class="plot-error" role="alert">{error.message}</div>}</For>
       <div class="embedded-geometry">
         <ResultsGeometryViewport cameraState={cameraState()} onCameraStateChange={rememberCamera} open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           allowFlight={true} flightBlocked={props.movieBusy} flightDisabledReason={flightDisabledReason()}
@@ -298,6 +326,7 @@ export function SourcesFields3D(props) {
           captureFrameKey={displayed()} onCaptureReady={movie.onCaptureReady}
           resultVectorScale={scale()} resultPickingOnly={true}
           resultVectorColorMap={effectiveColorMap()}
+          resultNormalizeVectors={normalizeVectors()}
           performanceProfile={performanceProfile()} />
       </div>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep}

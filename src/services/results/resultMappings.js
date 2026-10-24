@@ -10,12 +10,18 @@ export const QUANTITIES = Object.freeze({
   E: { label: "Напряжённость E", unit: "В/м", file: "JE", offset: 6, components: 3, group: "elements", solvedOnly: true, mirrorParity: "opposite" },
   JEdot: { label: "Потери на токи проводимости", formula: "J·E", unit: "Вт/мм³", file: "JE", offset: 3,
     components: 1, productOffsets: [3, 6], factor: 1e-3, group: "elements", solvedOnly: true },
+  sigmaRelative: { label: "Относительная электропроводность", formula: "σ/j_gmin", unit: "отн. ед.", file: "JE", offset: 3,
+    components: 1, relativeConductivity: true, group: "elements", solvedOnly: true },
   Bs: { label: "Индукция B — области", unit: "Тл", file: "HS", offset: 3, components: 3, group: "regions", mirrorParity: "magnetic" },
   As: { label: "Векторный потенциал A — области", unit: "Тл·м", file: "AS", offset: 3, components: 3, group: "regions", factor: MU0, mirrorParity: "opposite" },
   Bv: { label: "Индукция B — виртуальные элементы", unit: "Тл", file: "HV", offset: 3, components: 3, group: "elements", mirrorParity: "magnetic" },
   Av: { label: "Векторный потенциал A — виртуальные элементы", unit: "Тл·м", file: "AV", offset: 3, components: 3, group: "elements", factor: MU0, mirrorParity: "opposite" },
   Q: { label: "Плотность потерь J·E", unit: "МВт/м³", file: "Q", offset: 3, components: 1, group: "elements", solvedOnly: true },
 });
+
+export function assignedHtsElements(task) {
+  return (task?.elements ?? []).filter(record => record.targ === 0 && record.model === 2);
+}
 
 export function sourceRecords(task, file) {
   if (file === "HS" || file === "AS") return task.regions;

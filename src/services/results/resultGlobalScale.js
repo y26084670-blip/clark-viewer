@@ -17,6 +17,9 @@ export function globalResultRange(task, quantityKey, selected) {
       && (!quantity.solvedOnly || record.targ === 0)
       && (!quantity.fmmOnly || isFmm(record))).map(record => record.id);
     if (!ids.length) return unavailable("Для этих объектов нет величины", "empty");
+    // Independent J/E extrema do not determine extrema of the local ratio.
+    // HEADER/RANGES v1 has no relative conductivity channel; use actual frame values.
+    if (quantity.relativeConductivity) return unavailable("Для относительной электропроводности доступны пределы текущего кадра");
     const metadata = task.metadata?.[quantity.file];
     if (metadata?.error) return unavailable(metadata.error, "invalid");
     const ranges = metadata?.ranges;

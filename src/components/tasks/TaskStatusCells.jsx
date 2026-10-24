@@ -5,7 +5,7 @@ const labels = {
   hasSolution: "Решение получено",
   omState: "Состояние клиентской модели OM",
   missingInput: "Нет исходных данных: отсутствует каталог input3XX",
-  hasGifs: "Созданы GIF анимации",
+  hasGifs: "Есть видеозаписи WebM",
   hasComparison: "Есть каталог протокола сравнения: comparison",
 };
 const protocolAction = `${labels.hasComparison}\nЩелчок — открыть все HTML-протоколы тестов`;
@@ -34,7 +34,12 @@ export function TaskStatusCells(props) {
     </span>
     <span class="task-status-cell" title={failure(props.status, ["hasGifs"])}>
       <Show when={props.status?.hasGifs === true}>
-        <span class="task-status-gif" title={labels.hasGifs} role="img" aria-label={labels.hasGifs}>GIF</span>
+        <span class="task-status-movie" title={labels.hasGifs} role="img" aria-label={labels.hasGifs}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="2" y="2" width="20" height="20" rx="2.18" />
+            <path d="M7 2v20M17 2v20M2 7h5M2 12h20M2 17h5M17 7h5M17 17h5" />
+          </svg>
+        </span>
       </Show>
     </span>
     <span class="task-status-cell" title={failure(props.status, ["hasComparison"])}>

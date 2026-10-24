@@ -477,6 +477,16 @@ for (const style of ["thin", "solid", "cones"]) test(`normalized ${style} vector
     const mesh = states.get("elements").vectorRoot.getObjectByName("prescribed-source-magnetization-shaft"), c = new THREE.Color();
     mesh.getColorAt(0, c); assert.equal(c.getHex(), 0xffffff);
   }
+  for (const normalized of [true, false, true]) {
+    states = run(states, definitions, { style, normalizeVectors: normalized, scale: 2 });
+    if (normalized) assert.ok([...states.values()].flatMap(s => arrowLengths(s.vectorRoot, style)).every(l => Math.abs(l - 5.6) < 1e-5));
+    if (style !== "cones") for (const state of states.values()) {
+      const markers = state.vectorRoot.children.filter(child => child.isPoints);
+      assert.equal(markers.length, 1, "palette/toggle changes must not accumulate point markers");
+      assert.equal(markers[0].material.vertexColors, normalized);
+      assert.equal(Boolean(markers[0].geometry.getAttribute("color")), normalized);
+    }
+  }
   assert.deepEqual(definitions[0].scene, saved[0].scene); assert.deepEqual(definitions[1].scene, saved[1].scene);
   clean(states);
 });

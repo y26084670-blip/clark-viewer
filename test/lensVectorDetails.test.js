@@ -126,3 +126,19 @@ test("lens arrows retain per-vector palette colors from normalized thin vectors"
   });
   f.detail.dispose(); object.geometry.dispose(); object.material.dispose();
 });
+
+test("retained instance colors combine with the source color after normalization is disabled", () => {
+  const f = fixture(), group = new THREE.Group(); f.scene.add(group);
+  const material = new THREE.MeshLambertMaterial({ color: 0x44bbff });
+  const shaft = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1), material, 1);
+  const head = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1), material, 1);
+  shaft.name = "vector-shaft"; head.name = "vector-head"; shaft.userData.lensVectorPart = "shaft";
+  shaft.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, .5, 0));
+  head.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, 1.5, 0));
+  shaft.setColorAt(0, new THREE.Color(0xffffff)); group.add(shaft, head);
+  capture(f, mesh => {
+    const actual = new THREE.Color(); mesh.getColorAt(0, actual);
+    actual.toArray().forEach((v, i) => close(v, material.color.toArray()[i]));
+  });
+  f.detail.dispose(); shaft.dispose(); head.dispose(); shaft.geometry.dispose(); head.geometry.dispose(); material.dispose();
+});

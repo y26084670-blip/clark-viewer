@@ -455,7 +455,11 @@ function updateResultPoints(THREE, previous, points, {
   size = colorMap ? DISCRETIZATION_POINT_SIZE : scalar ? 9 : 4,
 } = {}) {
   const colored = scalar || colorMap;
+  const pointMode = scalar ? "scalar" : colorMap ? "map" : "plain";
   let nodes = previous;
+  if (nodes && nodes.userData.resultPointMode !== pointMode) {
+    releaseResultRoot(nodes); nodes = null;
+  }
   if (!nodes) {
     let pointMaterial;
     if (colored) {
@@ -486,6 +490,7 @@ function updateResultPoints(THREE, previous, points, {
       color, size, sizeAttenuation: false, depthTest: true, depthWrite: false,
     });
     nodes = new THREE.Points(new THREE.BufferGeometry(), pointMaterial);
+    nodes.userData.resultPointMode = pointMode;
     nodes.name = scalar ? "result-scalar-nodes" : colorMap ? "result-vector-color-nodes" : "result-vector-nodes";
     nodes.renderOrder = 14;
   }
@@ -603,6 +608,7 @@ export function updateResultLayers(THREE, previous, definitions, {
           const nodes = updateResultPoints(THREE,
             state.vectorRoot.getObjectByName("result-vector-nodes"), vectors,
             { color, colorMap: normalizeVectors, minimum: legend?.minimum, maximum: legend?.maximum, palette });
+          nodes.name = "result-vector-nodes";
           if (nodes.parent !== state.vectorRoot) state.vectorRoot.add(nodes);
         }
       }

@@ -83,7 +83,7 @@ export function SourcesFields3D(props) {
   const [colorMap, setColorMap] = createGeometryViewSetting("resultVectorColorMap", false);
   const [normalizeVectors, setNormalizeVectors] = createGeometryViewSetting("resultNormalizeVectors", false);
   const conductivityAvailable = createMemo(() => assignedHtsElements(props.task).length > 0);
-  const unavailableConductivity = () => elementsQuantity() === "sigmaRelative" && !conductivityAvailable();
+  const unavailableConductivity = (quantity = elementsQuantity()) => quantity === "sigmaRelative" && !conductivityAvailable();
   function changeColorMap(checked) {
     if (hasScalars() || props.movieBusy) return;
     setColorMap(checked);
@@ -209,8 +209,8 @@ export function SourcesFields3D(props) {
                   <label class="source-toolbar-option">
                     <input type="radio" name={`source-quantity-${key}`}
                       checked={quantities[key].read() === quantityKey}
-                      disabled={quantityKey === "sigmaRelative" && !conductivityAvailable()}
-                      title={quantityKey === "sigmaRelative" && !conductivityAvailable() ? "В задании нет материалов ВТСП" : undefined}
+                      disabled={unavailableConductivity(quantityKey)}
+                      title={unavailableConductivity(quantityKey) ? "В задании нет материалов ВТСП" : undefined}
                       onChange={() => quantities[key].write(quantityKey)} />
                     <span>{quantityText(quantityKey)}</span>
                   </label>}
@@ -308,11 +308,6 @@ export function SourcesFields3D(props) {
         <GeometryMaterialLegend buttonClass="source-toolbar-menu-button"
           onOpen={() => setOpenSourceMenu(null)} />
       </div>
-      <For each={resultLayers().filter(layer => layer.scalarScene?.notice)}>{layer =>
-        <div class="plot-status" role="status">{layer.scalarScene.notice}</div>}
-      </For>
-      <Show when={unavailableConductivity()}><div class="plot-status" role="status">Карта σ/j_gmin недоступна: в задании нет материалов ВТСП.</div></Show>
-      <For each={value()?.errors ?? []}>{error => <div class="plot-error" role="alert">{error.message}</div>}</For>
       <div class="embedded-geometry">
         <ResultsGeometryViewport cameraState={cameraState()} onCameraStateChange={rememberCamera} open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           allowFlight={true} flightBlocked={props.movieBusy} flightDisabledReason={flightDisabledReason()}
@@ -320,6 +315,7 @@ export function SourcesFields3D(props) {
           cameraRequest={cameraRequest()}
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={timeIndex()}
           selections={selections()} resultLayers={resultLayers()}
+          resultError={[result().error, ...(value()?.errors ?? []).map(error => error.message)].filter(Boolean).join(" · ")}
           resultStreamlines={streamlines()} selectedStreamline={selectedStreamline()}
           streamlineWidth={streamlineWidth()} streamlineColorMap={true}
           onSelectStreamline={setSelectedStreamline} onResultNodeDoubleClick={addStreamline}

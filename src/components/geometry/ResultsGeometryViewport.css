@@ -407,32 +407,17 @@
 }
 
 .geometry-viewer-error {
-  flex: 0 0 auto;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  max-width: calc(100% - 16px);
+  box-sizing: border-box;
   padding: 5px 8px;
-  border-top: 1px solid #8e4747;
+  border: 1px solid #8e4747;
   background: #492929;
   font-size: 12px;
-}
-
-.geometry-viewer-summary {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 12px;
-  min-height: 26px;
-  box-sizing: border-box;
-  padding: 4px 8px;
-  overflow-x: auto;
-  border-top: 1px solid #46515c;
-  background: #222a32;
-  color: #bbc5ce;
-  font-size: 11px;
-  white-space: nowrap;
-  scrollbar-width: thin;
-}
-
-.geometry-viewer-skipped {
-  color: #ffd08a;
+  overflow-wrap: anywhere;
 }
 
 .geometry-viewer-diagnostics {
@@ -462,12 +447,6 @@
 
 .geometry-viewer-diagnostics li.is-error {
   color: #ffaaaa;
-}
-
-@media (max-width: 700px) {
-  .geometry-viewer-summary {
-    gap: 8px;
-  }
 }
 
 

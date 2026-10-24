@@ -1,4 +1,4 @@
-// GIF files belong to the selected task, outside editable input3XX data.
+// GIF/WebM files belong to the selected task, outside editable input3XX data.
 // Keep this filesystem-only module identical in E3D Editor and E3D Viewer.
 export const TASK_GIF_MAX_BYTES = 128 * 1024 * 1024;
 const DIRECTORY_PARTS = ["output3XX", "demo"];
@@ -10,7 +10,7 @@ function assertCurrent(signal) {
 }
 
 function isGifLeaf(name) {
-  return typeof name === "string" && name.length > 4 && /\.gif$/i.test(name)
+  return typeof name === "string" && name.length > 4 && /\.(gif|webm)$/i.test(name)
     && !/[<>:"/\\|?*\u0000-\u001f]/u.test(name);
 }
 
@@ -93,21 +93,35 @@ async function validateGif(blob, signal) {
   return blob;
 }
 
+
+async function validateWebm(blob, signal) {
+  assertCurrent(signal);
+  if (!(blob instanceof Blob) || blob.size < 16 || blob.size > TASK_GIF_MAX_BYTES)
+    throw new Error("WebM должен быть непустым файлом размером не более 128 МиБ");
+  const bytes = new Uint8Array(await blob.slice(0, 1024).arrayBuffer());
+  assertCurrent(signal);
+  const ebml = bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3;
+  const type = bytes.some((value, i) => value === 0x42 && bytes[i + 1] === 0x82 && bytes[i + 2] === 0x84
+    && String.fromCharCode(...bytes.subarray(i + 3, i + 7)) === "webm");
+  if (!ebml || !type) throw new Error("Файл не содержит контейнер WebM");
+  return blob.type === "video/webm" ? blob : new Blob([blob], { type: "video/webm" });
+}
+
 export async function readTaskGif(fileHandle, { signal } = {}) {
   assertCurrent(signal);
   if (!fileHandle || fileHandle.kind !== "file" || !isGifLeaf(fileHandle.name)) throw new Error("Выберите GIF-файл задания");
   const file = await fileHandle.getFile();
   assertCurrent(signal);
-  return validateGif(file, signal);
+  return /\.webm$/i.test(fileHandle.name) ? validateWebm(file, signal) : validateGif(file, signal);
 }
 
-function suggestedLeaf(suggestedName) {
+function suggestedLeaf(suggestedName, extension = "gif") {
   let stem = String(suggestedName || "moview.gif").normalize("NFC").trim()
-    .replace(/\.gif$/i, "").replace(/[<>:"/\\|?*\u0000-\u001f]/gu, "_")
+    .replace(/\.(gif|webm)$/i, "").replace(/[<>:"/\\|?*\u0000-\u001f]/gu, "_")
     .replace(/[. ]+$/u, "").slice(0, 160).replace(/[\uD800-\uDBFF]$/u, "");
   if (!stem) stem = "moview";
   if (/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(stem)) stem = `_${stem}`;
-  return `${stem}.gif`;
+  return `${stem}.${extension}`;
 }
 
 const comparisonName = name => name.normalize("NFC").toLowerCase();
@@ -161,10 +175,11 @@ export async function saveTaskGif(taskHandle, blob, suggestedName, { signal } = 
   assertPermission(await permission, signal);
   return serializeMutation(async () => {
     assertCurrent(signal);
-    await validateGif(blob, signal);
+    const extension = blob.type === "video/webm" || /\.webm$/i.test(suggestedName) ? "webm" : "gif";
+    await (extension === "webm" ? validateWebm(blob, signal) : validateGif(blob, signal));
     const directory = await gifDirectory(taskHandle, true, signal);
     const occupied = await occupiedNames(directory, signal);
-    const base = suggestedLeaf(suggestedName), stem = base.slice(0, -4);
+    const base = suggestedLeaf(suggestedName, extension), stem = base.slice(0, -extension.length - 1);
     let name, handle, initialFile, writable, unverifiedName, owned = false, aborting = null;
     const abortWrite = () => {
       if (!writable || aborting) return;
@@ -173,7 +188,7 @@ export async function saveTaskGif(taskHandle, blob, suggestedName, { signal } = 
     signal?.addEventListener("abort", abortWrite, { once: true });
     try {
       for (let suffix = 1; suffix <= 100_000; suffix++) {
-        const candidate = suffix === 1 ? base : `${stem}_${suffix}.gif`;
+        const candidate = suffix === 1 ? base : `${stem}_${suffix}.${extension}`;
         if (occupied.has(comparisonName(candidate))) continue;
         if (await fileExists(directory, candidate, signal)) { occupied.add(comparisonName(candidate)); continue; }
         assertCurrent(signal);

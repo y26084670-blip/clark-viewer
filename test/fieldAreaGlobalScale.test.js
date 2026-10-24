@@ -18,7 +18,7 @@ function fixture(settings = {}) {
     const {createSignal,createMemo,createEffect,createGeometryViewSetting,QUANTITIES,regionLayout,
       surfaceComponentRange,useResultFrame,readSurfaceFrame,createMovieTabAdapter,completedMovieFrame,combineMovieFrames}=dependencies;
     ${setup.replace("export function", "function")}
-    return {quantityKey,setQuantity,globalMinMax,setGlobalMinMax,commonRange,grids,setCopy,copy,record,status};
+    return {quantityKey,setQuantity,globalMinMax,setGlobalMinMax,commonRange,grids,setCopy,copy,record};
     } return FieldAreas(props);`);
   const api = run(props, {
     createSignal: initial => { let value = initial; return [() => value, next => { value = next; }]; },

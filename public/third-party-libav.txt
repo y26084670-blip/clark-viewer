@@ -1,0 +1,13 @@
+libav.js 6.10.9.0 (variant webm-vp9), FFmpeg and libvpx
+
+libav.js and FFmpeg: LGPL-2.1-or-later. libvpx: BSD license.
+Wrapper code: 0BSD. No changes were made to the upstream compiled runtime.
+The runtime is loaded separately and can be replaced with a compatible build.
+
+Corresponding source code, dependency sources and their license notices:
+https://github.com/Yahweasel/libav.js/releases/download/v6.10.9.0/libav.js-6.10.9.0.zip
+(sources/ in the release archive)
+
+Build instructions and project:
+https://github.com/Yahweasel/libav.js/tree/v6.10.9.0
+https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html

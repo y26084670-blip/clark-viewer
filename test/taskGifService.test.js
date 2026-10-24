@@ -273,3 +273,19 @@ test("read permission and other filesystem errors stay visible; cancelled reads 
   read.environment.hook = call => { if (call.operation === "getFile") abort.abort(); };
   await assert.rejects(readTaskGif(handle, { signal: abort.signal }), { name: "AbortError" });
 });
+
+
+test("WebM files share the task gallery and safe collision handling with GIF", async () => {
+  const f = filesystem();
+  const header = Uint8Array.from([0x1a,0x45,0xdf,0xa3,0x8b,0x42,0x82,0x84,0x77,0x65,0x62,0x6d,0,0,0,0]);
+  const webm = new Blob([header], { type: "video/webm" });
+  const original = f.file("output3XX/demo/sample.gif", gif());
+  f.file("output3XX/demo/sample.webm", webm);
+  const saved = await saveTaskGif(f.root, webm, "sample.webm");
+  assert.equal(saved.name, "sample_2.webm");
+  const entries = await listTaskGifs(f.root);
+  assert.equal(entries.length, 3); assert.ok(entries.some(entry => entry.name === "sample.gif"));
+  assert.equal((await readTaskGif(saved.handle)).type, "video/webm");
+  assert.equal(f.directory("output3XX/demo").children.get("sample.gif"), original);
+  await assert.rejects(saveTaskGif(f.root, new Blob(["not webm"], { type: "video/webm" }), "bad.webm"), /WebM/);
+});

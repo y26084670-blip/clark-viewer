@@ -33,16 +33,10 @@ export function FieldLines(props) {
   const displayed = createMemo(() => result().frame);
   const emptySeries = [];
   const series = createMemo(() => displayed()?.value.series ?? emptySeries);
-  const status = () => {
-    if (!components().length) return "Выберите компоненты поля";
-    const frame = displayed();
-    const skipped = frame?.value.skipped ?? [];
-    const message = result().loading ? "Чтение поля…" : result().error
-      || (skipped.length ? `LS ${frame.request.copy + 1} отсутствует у площадок ${skipped.join(", ")}` : "Поле в сохранённых узлах");
-    const rangeMessage = globalYRange() ? "Пределы Y для «Авто»: весь расчёт (HDF5)"
-      : `Пределы Y для «Авто»: текущий кадр${globalScale() ? `; общий диапазон недоступен: ${cycleRange().reason || "некорректные пределы"}` : ""}`;
-    return `${frame ? `${message} · показан шаг ${frame.request.time}` : message} · ${rangeMessage}`;
-  };
+  const status = createMemo(() => {
+    const skipped = displayed()?.value.skipped ?? [];
+    return result().error || (skipped.length ? `LS ${localCopy() + 1} отсутствует у площадок ${skipped.join(", ")}` : "");
+  });
   const movie = createMovieTabAdapter(props, { title: "Поле на линиях", filenamePrefix: "lines", readFrame: index => {
     if (!components().length) return { error: "Выберите компоненты поля" };
     if (!selectedRecords().length) return { error: "Выберите площадки" };

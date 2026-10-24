@@ -4,6 +4,7 @@ import test from "node:test";
 import * as THREE from "three";
 import { batch, createEffect, createSignal, createRoot, onCleanup, onMount } from "solid-js/dist/solid.js";
 import { disposeSurfaceObject, updateSurfaceLabel, updateSurfaceMesh } from "../src/services/visualization/surfaceChartResources.js";
+import { updateSurfaceDecorations } from "../src/services/visualization/surfaceContours.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../src/services/movie/renderedFrameGate.js";
 
 const source = await readFile(new URL("../src/components/SurfaceChart.jsx", import.meta.url), "utf8");
@@ -14,7 +15,7 @@ const end = source.indexOf('  return <div class="surface-chart"', start);
 // mesh buffers, palettes, labels, camera and frame gates are production code.
 const component = new Function("props", "dependencies", `
   const {createEffect,createSignal,onCleanup,onMount,THREE,OrbitControls,ResizeObserver,
-    disposeSurfaceObject,updateSurfaceLabel,updateSurfaceMesh,captureMovieCanvas,
+    disposeSurfaceObject,updateSurfaceLabel,updateSurfaceMesh,updateSurfaceDecorations,captureMovieCanvas,
     captureRenderedMovieFrame,createRenderedFrameGate,restoreMovieCamera,snapshotMovieCamera,testHost}=dependencies;
   const devicePixelRatio=2;
   ${source.slice(start, end)}
@@ -56,7 +57,7 @@ function runtime({ initial = [0, 0, 0, 0], failInit = false, viewState, onViewCh
       onViewReady: value => { viewControls = value; },
       onCaptureReady: value => { registered = value; } }, {
       createEffect, createSignal, onCleanup, onMount, THREE: { ...THREE, WebGLRenderer: Renderer }, OrbitControls: Controls,
-      ResizeObserver: class { observe() {} disconnect() {} }, disposeSurfaceObject, updateSurfaceMesh,
+      ResizeObserver: class { observe() {} disconnect() {} }, disposeSurfaceObject, updateSurfaceMesh, updateSurfaceDecorations,
       updateSurfaceLabel: (sprite, text, position) => updateSurfaceLabel(sprite, text, position, labelCanvas),
       captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera, testHost: host,
       captureMovieCanvas: (source, options) => {
@@ -116,7 +117,7 @@ test("surface movie uses fixed full-cycle heights and legends, then restores the
     assert.deepEqual(h.limits(), { min: 0, max: 100 });
     assert.equal(h.surface().geometry, geometry); assert.equal(geometry.getAttribute("position").getZ(1), .375);
     h.captureAdapter.capture(nextKey); const text = h.captures.at(-1).texts;
-    assert.ok(text.includes((0).toPrecision(6))); assert.ok(text.includes((100).toPrecision(6)));
+    assert.ok(text.includes("0")); assert.ok(text.includes("100"));
     h.captureAdapter.restore(); assert.deepEqual(cameraState(h), camera);
     assert.deepEqual(h.limits(), { min: 0, max: 100 });
     h.publish([25, 25, 25, 25], { step: 2 }); assert.deepEqual(h.limits(), { min: 25, max: 25 });
@@ -128,8 +129,8 @@ function assertAutomaticSurface(h, values) {
   assert.deepEqual(actual.userData.limits, expected.userData.limits);
   assert.deepEqual(Array.from(actual.geometry.getAttribute("position").array), Array.from(expected.geometry.getAttribute("position").array));
   assert.deepEqual(Array.from(actual.geometry.getAttribute("color").array), Array.from(expected.geometry.getAttribute("color").array));
-  assert.equal(h.labels()[3].userData.text, expected.userData.limits.min.toPrecision(6));
-  assert.equal(h.labels()[4].userData.text, expected.userData.limits.max.toPrecision(6));
+  assert.equal(h.labels()[3].userData.text, String(Number(expected.userData.limits.min.toPrecision(5))));
+  assert.equal(h.labels()[4].userData.text, String(Number(expected.userData.limits.max.toPrecision(5))));
   disposeSurfaceObject(expected);
 }
 
@@ -153,8 +154,8 @@ test("Surface movie keeps per-frame automatic heights/colors and original camera
       const image = h.captureAdapter.capture(key, { caption: `step ${index + 1}` });
       assert.equal(h.drawCalls.length, count + 1, "capture forces a real component draw before copying");
       assert.equal(image, h.captures.at(-1).image);
-      assert.ok(h.captures.at(-1).texts.includes(Math.min(...values).toPrecision(6)));
-      assert.ok(h.captures.at(-1).texts.includes(Math.max(...values).toPrecision(6)));
+      assert.ok(h.captures.at(-1).texts.includes(String(Number(Math.min(...values).toPrecision(5)))));
+      assert.ok(h.captures.at(-1).texts.includes(String(Number(Math.max(...values).toPrecision(5)))));
     }
     h.publish([0, 0, 0, 0], originalKey); await h.captureAdapter.renderReady(originalKey);
     h.captureAdapter.restore(); assert.equal(h.controls().enabled, true);

@@ -9,7 +9,7 @@ import { WhatsNewDialog } from "./components/updates/WhatsNewDialog.jsx";
 import { ViewerToolsMenu } from "./components/movie/ViewerToolsMenu.jsx";
 import { TaskProtocolDialog } from "./components/protocol/TaskProtocolDialog.jsx";
 import { createMovieExportController } from "./services/movie/movieExportController.js";
-import { createMovieGifEncoder } from "./services/movie/movieGifEncoder.js";
+import { createMovieWebmEncoder } from "./services/movie/movieWebmEncoder.js";
 import { backfillTaskResultRanges } from "./services/results/resultRangeBackfill.js";
 import { installBrowserDefaults } from "./services/browserDefaults.js";
 import { createPlotTaskStore } from "./services/results/plotTaskSources.js";
@@ -60,7 +60,7 @@ export default function App() {
   createEffect(() => plotTaskStore.retain(plotRecipes().flatMap(plot => plot.curves.map(curve => curve.yTask))));
   const [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
   const [movieBusy, setMovieBusy] = createSignal(false), [movieAdapter, setMovieAdapter] = createSignal(null);
-  const movieController = createMovieExportController({ createEncoder: createMovieGifEncoder,
+  const movieController = createMovieExportController({ createEncoder: createMovieWebmEncoder,
     onAdapterChange: adapter => setMovieAdapter(() => adapter) });
   function createProtocol(opener) {
     if (!task() || busy() || movieBusy()) return;
@@ -159,7 +159,7 @@ export default function App() {
   }
   onCleanup(() => { loadRevision++; movieController.dispose(); activeReader?.close(); plotTaskStore.clear(); });
   const movieDisabledReason = () => {
-    if (movieBusy()) return "Создание GIF уже выполняется.";
+    if (movieBusy()) return "Создание WebM уже выполняется.";
     if (busy()) return "Дождитесь загрузки задания.";
     if (!task()) return "Загрузите задание.";
     if (!Number.isSafeInteger(task().general?.countTimeSteps) || task().general.countTimeSteps < 0

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createViewportLens, lensSourcePoint, VIEWPORT_LENS_DIAMETER } from "../src/services/visualization/viewportLens.js";
+import * as THREE from "three";
+import { createViewportLens, lensSourcePoint, setLensProjection, VIEWPORT_LENS_DIAMETER } from "../src/services/visualization/viewportLens.js";
 
 test("lens uniformly magnifies a 300 CSS px radius by x5", () => {
   assert.equal(VIEWPORT_LENS_DIAMETER, 600);
@@ -24,19 +25,20 @@ test("lens works with retained input focus and no sources, and clears on leave, 
   let enabled = true, frames = 0;
   const lens = createViewportLens({ THREE: {}, renderer: { domElement: element }, enabled: () => enabled, requestRender: () => frames++ });
   const enter = () => element.send("pointerenter", { clientX: 200, clientY: 150, ctrlKey: true });
+  owner.send("keydown", { code: "ControlLeft", ctrlKey: true });
   enter(); assert.equal(lens.active, true);
-  owner.send("keyup", { ctrlKey: false }); assert.equal(lens.active, false);
-  owner.send("keydown", { ctrlKey: true }); assert.equal(lens.active, true);
+  owner.send("keyup", { code: "ControlLeft", ctrlKey: false }); assert.equal(lens.active, false);
+  owner.send("keydown", { code: "ControlLeft", ctrlKey: true }); assert.equal(lens.active, true);
   enabled = false; assert.equal(lens.active, false); enabled = true;
   owner.activeElement = { closest: () => ({}) }; assert.equal(lens.active, true); owner.activeElement = null;
   element.send("pointerleave"); assert.equal(lens.active, false);
   enter(); win.send("blur"); assert.equal(lens.active, false);
-  enter(); owner.hidden = true; owner.send("visibilitychange"); owner.hidden = false; assert.equal(lens.active, false);
-  enter(); lens.dispose(); const count = frames; enter(); owner.send("keydown", { ctrlKey: true });
+  owner.send("keydown", { code: "ControlLeft", ctrlKey: true }); enter(); owner.hidden = true; owner.send("visibilitychange"); owner.hidden = false; assert.equal(lens.active, false);
+  owner.send("keydown", { code: "ControlLeft", ctrlKey: true }); enter(); lens.dispose(); const count = frames; enter(); owner.send("keydown", { code: "ControlLeft", ctrlKey: true });
   assert.equal(lens.active, false); assert.equal(frames, count);
 });
 
-test("Ctrl+wheel changes only the lens, and the next activation starts again at x5", () => {
+test("left Ctrl+wheel changes only the lens, and the next activation starts again at x5", () => {
   const element = events(), owner = events(), win = events();
   element.ownerDocument = owner; owner.defaultView = win;
   element.getBoundingClientRect = () => ({ left: 0, top: 0, width: 500, height: 300 });
@@ -49,13 +51,91 @@ test("Ctrl+wheel changes only the lens, and the next activation starts again at 
   };
   assert.equal(wheel(-100).defaultPrevented, false); assert.equal(orbitWheelEvents, 1);
   element.send("pointerenter", { clientX: 200, clientY: 150, ctrlKey: true });
+  owner.send("keydown", { code: "ControlLeft", ctrlKey: true });
   assert.equal(lens.magnification, 5);
   assert.equal(wheel(-100).defaultPrevented, true); assert.ok(lens.magnification > 5);
   assert.equal(orbitWheelEvents, 1);
   wheel(100); assert.ok(Math.abs(lens.magnification - 5) < 1e-10);
-  wheel(-400); owner.send("keyup", { ctrlKey: false });
+  wheel(-400); owner.send("keyup", { code: "ControlLeft", ctrlKey: false });
   wheel(-100); assert.equal(orbitWheelEvents, 2);
-  owner.send("keydown", { ctrlKey: true }); assert.equal(lens.magnification, 5);
+  owner.send("keydown", { code: "ControlLeft", ctrlKey: true }); assert.equal(lens.magnification, 5);
   assert.ok(Math.abs(lensSourcePoint(.001, 0, 0, 0, 75, 4).x / .001 - .25) < 1e-8);
   lens.dispose();
+});
+
+
+test("lens projection rerenders the same rays at full resolution for orthographic and perspective cameras", () => {
+  for (const source of [new THREE.PerspectiveCamera(40, 1.6, .01, 100), new THREE.OrthographicCamera(-4, 4, 2.5, -2.5, .01, 100)]) {
+    source.position.set(2, 3, 8); source.lookAt(0, 0, 0); source.updateMatrixWorld();
+    const saved = source.projectionMatrix.clone(), detail = source.clone();
+    setLensProjection(THREE, detail, source, 800, 500, 150, 280, 5);
+    for (const [dx, dy] of [[0, 0], [120, -150], [-230, 50]]) {
+      const sourcePixel = lensSourcePoint(150 + dx, 280 + dy, 150, 280);
+      const ndc = new THREE.Vector3(sourcePixel.x / 800 * 2 - 1, 1 - sourcePixel.y / 500 * 2, .5);
+      const point = ndc.clone().unproject(source).project(detail);
+      assert.ok(Math.abs(point.x - ((150 + dx) / 800 * 2 - 1)) < 1e-10);
+      assert.ok(Math.abs(point.y - (1 - (280 + dy) / 500 * 2)) < 1e-10);
+    }
+    assert.deepEqual(source.projectionMatrix.elements, saved.elements);
+    assert.notDeepEqual(detail.projectionMatrix.elements, source.projectionMatrix.elements);
+  }
+});
+
+
+test("only left Ctrl activates the lens, including both keys and re-entry", () => {
+  const element = events(), owner = events(), win = events();
+  element.ownerDocument = owner; owner.defaultView = win;
+  element.getBoundingClientRect = () => ({ left: 0, top: 0, width: 500, height: 300 });
+  const lens = createViewportLens({ THREE: {}, renderer: { domElement: element } });
+  const enter = () => element.send("pointerenter", { clientX: 200, clientY: 150, ctrlKey: true });
+  enter(); assert.equal(lens.active, false, "aggregate ctrlKey is not enough");
+  owner.send("keydown", { code: "ControlRight", ctrlKey: true });
+  element.send("pointermove", { clientX: 201, clientY: 150, ctrlKey: true });
+  assert.equal(lens.active, false, "right Ctrl and pointer motion do not activate");
+  const wheel = Object.assign(new Event("wheel", { cancelable: true }), { deltaY: -100, deltaMode: 0 });
+  element.dispatchEvent(wheel); assert.equal(wheel.defaultPrevented, false);
+  owner.send("keydown", { code: "ControlLeft", ctrlKey: true });
+  assert.equal(lens.active, true, "left Ctrl activates while right Ctrl is held");
+  owner.send("keyup", { code: "ControlRight", ctrlKey: true });
+  assert.equal(lens.active, true, "releasing right Ctrl leaves left Ctrl active");
+  element.send("pointerleave"); assert.equal(lens.active, false);
+  enter(); assert.equal(lens.active, true, "left Ctrl remains held outside the canvas");
+  owner.send("keydown", { code: "ControlRight", ctrlKey: true });
+  owner.send("keyup", { code: "ControlLeft", ctrlKey: true });
+  assert.equal(lens.active, false, "releasing left Ctrl stops the lens despite right Ctrl");
+  element.send("pointermove", { clientX: 201, clientY: 150, ctrlKey: true });
+  assert.equal(lens.active, false);
+  owner.send("keydown", { code: "ControlLeft", ctrlKey: true }); win.send("blur");
+  enter(); assert.equal(lens.active, false, "blur clears keyboard state");
+  owner.send("keydown", { code: "ControlLeft", ctrlKey: true });
+  element.send("pointermove", { clientX: 201, clientY: 150, ctrlKey: false });
+  assert.equal(lens.active, false, "a missed key release cannot leave a stuck lens");
+  lens.dispose();
+});
+
+
+test("detail rendering runs only inside the lens and restores renderer state after failure", () => {
+  const element = events(), owner = events(); element.ownerDocument = owner;
+  element.getBoundingClientRect = () => ({left:0,top:0,width:800,height:600});
+  const scissor = new THREE.Vector4(3,4,100,200), calls = [];
+  const renderer = {domElement:element,autoClear:false,scissorTest:false,
+    render(scene,camera){calls.push([scene,camera]);}, copyFramebufferToTexture(){},
+    getDrawingBufferSize:out=>out.set(800,600),getScissor:out=>out.copy(scissor),
+    getScissorTest(){return this.scissorTest;},setScissorTest(value){this.scissorTest=value;},
+    setScissor(...values){values.length===1?scissor.copy(values[0]):scissor.set(...values);}};
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(40,4/3,.1,100);
+  let details = 0, fail = false;
+  const lens = createViewportLens({THREE,renderer,renderDetails(s,c){
+    details++; assert.equal(s,scene); assert.notEqual(c,camera);
+    assert.notDeepEqual(c.projectionMatrix.elements,camera.projectionMatrix.elements);
+    if(fail)throw Error("detail error");
+  }});
+  lens.render(scene,camera); assert.equal(details,0);
+  element.send("pointerenter",{clientX:400,clientY:300,ctrlKey:false});
+  owner.send("keydown",{code:"ControlLeft",ctrlKey:true});
+  lens.render(scene,camera); assert.equal(details,1);
+  assert.deepEqual(scissor.toArray(),[3,4,100,200]); assert.equal(renderer.autoClear,false); assert.equal(renderer.scissorTest,false);
+  fail=true; assert.throws(()=>lens.render(scene,camera),/detail error/);
+  assert.deepEqual(scissor.toArray(),[3,4,100,200]); assert.equal(renderer.autoClear,false); assert.equal(renderer.scissorTest,false);
+  owner.send("keyup",{code:"ControlLeft",ctrlKey:false}); lens.render(scene,camera); assert.equal(details,2); lens.dispose();
 });

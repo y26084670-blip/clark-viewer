@@ -432,7 +432,7 @@ export function ViewerToolsMenu(props) {
           <p class="viewer-movie-note">По завершении будет восстановлен исходный момент времени.</p>
         </Show>
         <Show when={result()}>{movie => <>
-          <video class="viewer-movie-preview" src={movie().url} aria-label="Предпросмотр созданного WebM" controls playsinline />
+          <video class="viewer-movie-preview" src={movie().url} aria-label="Предпросмотр созданного WebM" autoplay loop muted controls playsinline />
           <p>{movie().frameCount === 1 ? "WebM — 1 кадр" : `${movie().frameCount} кадров`} · {movie().width} × {movie().height}</p>
         </>}</Show>
         <Show when={error()}><p class="viewer-movie-error" role="alert">{error()}</p></Show>

@@ -9,6 +9,6 @@ export function TaskGifGallery(props) {
     createController={createTaskGifGalleryController} subscribe={subscribeTaskGifs}
     renderPreview={(preview, maximized) => <Show when={/\.webm$/i.test(preview()?.entry.name)}
       fallback={<TaskGifPlayer url={preview()?.url} name={preview()?.entry.name} crossfade={maximized()} />}>
-      <video class="task-webm-player" src={preview()?.url} controls playsinline aria-label={preview()?.entry.name} />
+      <video class="task-webm-player" src={preview()?.url} autoplay loop muted controls playsinline aria-label={preview()?.entry.name} />
     </Show>} />;
 }

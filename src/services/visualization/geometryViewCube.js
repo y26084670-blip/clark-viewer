@@ -17,8 +17,14 @@ function faceTexture(THREE, [axis, color]) {
   context.fillStyle = context.strokeStyle = "#ffff00";
   context.font = "900 144px Arial, sans-serif";
   context.lineWidth = 4; context.lineJoin = "round";
-  context.strokeText(axis, 128, 136, 224);
-  context.fillText(axis, 128, 136, 224);
+  const metrics = context.measureText(axis), scale = Math.min(1, 208 / metrics.width);
+  context.strokeText(axis, 116, 136, 208);
+  context.fillText(axis, 116, 136, 208);
+  // Keep the orientation dot beside the lower right of the letter on every face.
+  context.beginPath();
+  context.arc(116 + metrics.actualBoundingBoxRight * scale + 14,
+    136 + metrics.actualBoundingBoxDescent - 7, 9, 0, Math.PI * 2);
+  context.fill();
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }

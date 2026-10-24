@@ -19,6 +19,7 @@ export function Tasks(props) {
   const [pendingDisk, setPendingDisk] = createSignal(null), [accessBusy, setAccessBusy] = createSignal(false);
   const [accessNotice, setAccessNotice] = createSignal("");
   const [accessOpen, setAccessOpen] = createSignal(true);
+  const [diskPicked, setDiskPicked] = createSignal(false);
   const [projectListBusy, setProjectListBusy] = createSignal(false);
   const [projectBrowseNotice, setProjectBrowseNotice] = createSignal("");
   let catalogSelect;
@@ -171,7 +172,7 @@ export function Tasks(props) {
     } finally { if (accessIsCurrent(request)) setAccessBusy(false); }
   }
   async function pickRoot() {
-    if (props.busy || browserBusy()) return;
+    if (props.busy || browserBusy() || diskPicked()) return;
     if (!window.isSecureContext || typeof window.showDirectoryPicker !== "function") {
       setError("Выбор каталога недоступен. Откройте приложение по HTTPS или localhost в Chrome либо Edge."); return;
     }
@@ -182,6 +183,7 @@ export function Tasks(props) {
       if (!accessIsCurrent(request)) return;
       await openDisk(handle, request);
       if (!accessIsCurrent(request)) return;
+      setDiskPicked(true);
       try { await saveProjectDisk(handle); }
       catch { if (accessIsCurrent(request)) setAccessNotice("Диск открыт. Не удалось сохранить доступ; после перезагрузки выберите его снова."); }
     } catch (error) { if (accessIsCurrent(request) && error.name !== "AbortError") setError(error.message); }
@@ -267,7 +269,7 @@ export function Tasks(props) {
   }
   return <div class="tasks-layout">
     <ProjectDiskDialog open={accessOpen() && props.active !== false} busy={props.busy || accessBusy()}
-      disk={disk()} count={catalogs().length} pending={pendingDisk()} notice={accessNotice() || error()}
+      picked={diskPicked()} count={catalogs().length} pending={pendingDisk()} notice={accessNotice() || error()}
       onPick={pickRoot} onAllow={allowDisk} onClose={closeAccess} />
     <section class="task-browser-panel">
       <div class="task-browser-content">

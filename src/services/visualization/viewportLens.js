@@ -1,14 +1,13 @@
-export const VIEWPORT_LENS_DIAMETER = 150;
+export const VIEWPORT_LENS_RADIUS = 300;
+export const VIEWPORT_LENS_DIAMETER = VIEWPORT_LENS_RADIUS * 2;
 export const VIEWPORT_LENS_MAGNIFICATION = 5;
 
-// Inverse radial mapping: adjustable magnification at the centre, identity with matching derivative
-// at the rim. Both the image and hit testing use this mapping in CSS pixels.
-export function lensSourcePoint(x, y, centreX, centreY, radius = VIEWPORT_LENS_DIAMETER / 2, magnification = VIEWPORT_LENS_MAGNIFICATION) {
+// Uniform magnification inside a circular aperture. Picking uses the same
+// mapping as the displayed image, in CSS pixels.
+export function lensSourcePoint(x, y, centreX, centreY, radius = VIEWPORT_LENS_RADIUS, magnification = VIEWPORT_LENS_MAGNIFICATION) {
   const dx = x - centreX, dy = y - centreY, t = Math.hypot(dx, dy) / radius;
   if (!(t < 1)) return { x, y };
-  const inverse = 1 / magnification;
-  const factor = inverse + (1 - inverse) * t * t * (3 - 2 * t);
-  return { x: centreX + dx * factor, y: centreY + dy * factor };
+  return { x: centreX + dx / magnification, y: centreY + dy / magnification };
 }
 
 export function createViewportLens({ THREE, renderer, enabled = () => true, requestRender = () => {} }) {
@@ -16,8 +15,9 @@ export function createViewportLens({ THREE, renderer, enabled = () => true, requ
   let inside = false, control = false, x = 0, y = 0, disposed = false;
   let texture, scene, camera, material, quad;
   let magnification = VIEWPORT_LENS_MAGNIFICATION;
-  const editable = () => owner?.activeElement?.closest?.("input,textarea,select,[contenteditable]:not([contenteditable=false])");
-  const active = () => !disposed && inside && control && enabled() && !owner?.hidden && !editable();
+  // A slider or checkbox may retain focus after the pointer returns to 3D.
+  // Neither that focus nor the presence/magnitude of sources gates the lens.
+  const active = () => !disposed && inside && control && enabled() && !owner?.hidden;
   function move(event) {
     const wasActive = active(), rect = element.getBoundingClientRect();
     x = event.clientX - rect.left; y = event.clientY - rect.top;
@@ -60,22 +60,23 @@ export function createViewportLens({ THREE, renderer, enabled = () => true, requ
     material = new THREE.ShaderMaterial({
       depthTest: false, depthWrite: false, toneMapped: false, blending: THREE.NoBlending,
       uniforms: { image: { value: null }, resolution: { value: new THREE.Vector2() },
-        centre: { value: new THREE.Vector2() }, radius: { value: 75 }, magnification: { value: VIEWPORT_LENS_MAGNIFICATION } },
+        centre: { value: new THREE.Vector2() }, radius: { value: VIEWPORT_LENS_RADIUS },
+        rim: { value: 1 }, magnification: { value: VIEWPORT_LENS_MAGNIFICATION } },
       vertexShader: "varying vec2 uvScreen; void main(){ uvScreen=uv; gl_Position=vec4(position.xy,0.,1.); }",
       fragmentShader: `
         uniform sampler2D image;
         uniform vec2 resolution, centre;
-        uniform float radius, magnification;
+        uniform float radius, rim, magnification;
         varying vec2 uvScreen;
         void main() {
           vec2 pixel = uvScreen * resolution;
           vec2 offset = pixel - centre;
-          float t = length(offset) / radius;
-          if (t >= 1.) discard;
-          float inverse = 1. / magnification;
-          float factor = inverse + (1. - inverse) * t * t * (3. - 2. * t);
-          vec2 source = (centre + offset * factor) / resolution;
+          float distance = length(offset);
+          if (distance >= radius) discard;
+          vec2 source = (centre + offset / magnification) / resolution;
           gl_FragColor = texture2D(image, source);
+          // Keep the active aperture visible even over zero-valued/empty fields.
+          if (distance >= radius - rim) gl_FragColor = vec4(.65, .72, .8, 1.);
         }`,
     });
     scene = new THREE.Scene(); camera = new THREE.Camera();
@@ -106,6 +107,7 @@ export function createViewportLens({ THREE, renderer, enabled = () => true, requ
       }
       material.uniforms.centre.value.set(x * size.x / rect.width, (rect.height - y) * size.y / rect.height);
       material.uniforms.radius.value = VIEWPORT_LENS_DIAMETER / 2 * size.x / rect.width;
+      material.uniforms.rim.value = size.x / rect.width;
       // Copy the already rendered image, including its antialiasing, transparency
       // and output colors. Leave every pixel outside the lens untouched.
       renderer.render(sourceScene, sourceCamera);

@@ -1,3 +1,5 @@
+import { createViewportLens } from "../services/visualization/viewportLens.js";
+import { createGeometryAxisRotationController } from "../services/visualization/geometryCameraView.js";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -8,6 +10,7 @@ import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera,
 export function SurfaceChart(props) {
   let host, renderer, scene, camera, controls, surface, observer, axes;
   const labelObjects = [];
+  let viewportLens, axisRotation, controlsInteracting = false;
   let movieSnapshot = null, appliedFrameKey, disposed = false, contextLost = false, resizePending = false;
   let applyingView = false, lastView = null;
   const captureGate = createRenderedFrameGate();
@@ -19,7 +22,10 @@ export function SurfaceChart(props) {
   const pointer = new THREE.Vector2();
   function draw() {
     if (!renderer || !scene || !camera || disposed || contextLost) return;
-    try { renderer.render(scene, camera); captureGate.rendered(appliedFrameKey); }
+    try {
+      if (viewportLens) viewportLens.render(scene, camera); else renderer.render(scene, camera);
+      captureGate.rendered(appliedFrameKey);
+    }
     catch (error) { setError(error.message); captureGate.fail(error); }
   }
   function cameraChanged() {
@@ -38,9 +44,20 @@ export function SurfaceChart(props) {
     try {
       camera.position.fromArray(view.position); camera.quaternion.fromArray(view.quaternion);
       camera.up.fromArray(view.up); camera.zoom = view.zoom; controls.target.fromArray(view.target);
-      camera.updateProjectionMatrix(); controls.update(); lastView = view; draw();
+      camera.updateProjectionMatrix(); rebuildControls(controls.target.clone()); lastView = view; draw();
     } finally { applyingView = false; }
   });
+  function startControls() { controlsInteracting = true; setHover(""); }
+  function endControls() { controlsInteracting = false; }
+  function rebuildControls(target = new THREE.Vector3()) {
+    controls?.removeEventListener("change", cameraChanged); controls?.dispose();
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.copy(target); controls.enableDamping = false; controls.screenSpacePanning = true;
+    controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+    controls.addEventListener("change", cameraChanged);
+    controls.addEventListener("start", startControls); controls.addEventListener("end", endControls);
+    controls.update();
+  }
   function resize() {
     if (!renderer || !host) return;
     if (movieSnapshot) { resizePending = true; return; }
@@ -56,7 +73,7 @@ export function SurfaceChart(props) {
   function view(direction) {
     if (movieSnapshot || !camera) return;
     setHover("");
-    camera.up.set(0, 0, 1);
+    camera.up.set(0, 0, 1); camera.zoom = 1; camera.updateProjectionMatrix();
     const positions = { iso: [3.3, -4, 3], x: [4, 0, .01], y: [0, -4, .01], z: [0, -.001, 5] };
     applyingView = true;
     try {
@@ -65,15 +82,16 @@ export function SurfaceChart(props) {
       // Fit the same model without cutting off its sides in a tall canvas.
       const fit = Math.max(1, host.clientHeight / Math.max(1, host.clientWidth));
       camera.position.fromArray(positions[direction]).sub(controls.target).multiplyScalar(fit).add(controls.target);
-      controls.update();
+      rebuildControls(controls.target.clone());
     }
     finally { applyingView = false; }
     cameraChanged();
   }
   function pick(event) {
-    if (movieSnapshot || !surface?.visible || !props.grid) return;
+    if (movieSnapshot || controlsInteracting || axisRotation?.active || !surface?.visible || !props.grid) return;
     const rect = host.getBoundingClientRect();
-    pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
+    const point = viewportLens?.sourcePoint(event.clientX, event.clientY) ?? event;
+    pointer.set((point.clientX - rect.left) / rect.width * 2 - 1, -(point.clientY - rect.top) / rect.height * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
     const hit = raycaster.intersectObject(surface)[0];
     if (!hit) { setHover(""); return; }
@@ -96,6 +114,7 @@ export function SurfaceChart(props) {
       signal?.throwIfAborted();
       if (movieSnapshot) return;
       if (!ready() || disposed || contextLost || error() || !surface?.visible) throw new Error(error() || "Поверхность ещё не готова");
+      axisRotation?.stop(); viewportLens?.clear();
       draw();
       if (error()) throw new Error(error());
       setHover("");
@@ -152,14 +171,27 @@ export function SurfaceChart(props) {
       renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
       host.append(renderer.domElement); scene = new THREE.Scene(); scene.background = new THREE.Color(0xfafcfe);
       camera = new THREE.PerspectiveCamera(40, 1, .01, 100);
-      controls = new OrbitControls(camera, renderer.domElement); controls.addEventListener("change", cameraChanged);
+      // OrbitControls computes its up-axis transform at construction time.
+      camera.up.set(0, 0, 1); rebuildControls();
+      if (renderer.domElement.ownerDocument) {
+        viewportLens = createViewportLens({ THREE, renderer, enabled: () => !movieSnapshot && !contextLost, requestRender: draw });
+        axisRotation = createGeometryAxisRotationController({
+          element: renderer.domElement, getCamera: () => camera, getControls: () => controls,
+          canStart: () => !disposed && !movieSnapshot && !contextLost && !error(),
+          onStateChange: active => {
+            controlsInteracting = active;
+            if (!active && !disposed) rebuildControls(controls.target.clone());
+          },
+          onRotate: cameraChanged, onPointerMove: pick, onPointerLeave: () => setHover(""),
+        });
+      }
       scene.add(new THREE.AmbientLight(0xffffff, 2));
       const light = new THREE.DirectionalLight(0xffffff, 2); light.position.set(3, -4, 5); scene.add(light);
       axes = new THREE.AxesHelper(1.5); axes.position.set(-1.05, -1.05, -.05); scene.add(axes);
       observer = new ResizeObserver(resize); observer.observe(host);
       renderer.domElement.addEventListener("webglcontextlost", contextLostHandler);
       renderer.domElement.addEventListener("webglcontextrestored", contextRestoredHandler);
-      renderer.domElement.addEventListener("pointermove", pick);
+      if (!axisRotation) renderer.domElement.addEventListener("pointermove", pick);
       renderer.domElement.addEventListener("pointerleave", () => setHover(""));
       view("iso"); resize(); setReady(true);
       props.onViewReady?.({ view });
@@ -178,12 +210,16 @@ export function SurfaceChart(props) {
       surface = updateSurfaceMesh(surface, grid);
       if (!surface.parent) scene.add(surface);
       const { min, max } = surface.userData.limits;
-      // Surface axes are grid node indices; physical xyz is shown on hover.
-      label(0, `${grid.axes[0]}: 1 … ${grid.width}`, new THREE.Vector3(0, -1.2, -.12));
-      label(1, `${grid.axes[1]}: 1 … ${grid.height}`, new THREE.Vector3(-1.35, 0, -.12));
+      const footprint = surface.userData.footprint;
+      const { halfWidth: w, halfHeight: h } = footprint;
+      const side = (axis, count, length) => footprint.physical
+        ? `${axis}: ${Number(length.toPrecision(6))} мм · ${count} узлов` : `${axis}: 1 … ${count}`;
+      axes.position.set(-w - .05, -h - .05, -.05);
+      label(0, side(grid.axes[0], grid.width, footprint.length1), new THREE.Vector3(0, -h - .2, -.12));
+      label(1, side(grid.axes[1], grid.height, footprint.length2), new THREE.Vector3(-w - .35, 0, -.12));
       label(2, `${title}, ${unit}`, new THREE.Vector3(0, 0, 1.85));
-      label(3, min.toPrecision(6), new THREE.Vector3(-1.25, -1.25, 0));
-      label(4, max.toPrecision(6), new THREE.Vector3(-1.25, -1.25, 1.5));
+      label(3, min.toPrecision(6), new THREE.Vector3(-w - .25, -h - .25, 0));
+      label(4, max.toPrecision(6), new THREE.Vector3(-w - .25, -h - .25, 1.5));
       setLimits({ min, max }); appliedFrameKey = frameKey; draw();
     } catch (error) {
       if (surface) surface.visible = false;
@@ -193,7 +229,7 @@ export function SurfaceChart(props) {
   }
   createEffect(() => applyGrid(props.grid, props.label, props.unit, props.captureFrameKey));
   onCleanup(() => {
-    disposed = true; captureGate.close(); props.onCaptureReady?.(null);
+    disposed = true; viewportLens?.dispose(); axisRotation?.dispose(); captureGate.close(); props.onCaptureReady?.(null);
     props.onViewReady?.(null);
     renderer?.domElement.removeEventListener("webglcontextlost", contextLostHandler);
     renderer?.domElement.removeEventListener("webglcontextrestored", contextRestoredHandler);
@@ -202,7 +238,7 @@ export function SurfaceChart(props) {
     renderer?.dispose(); renderer?.forceContextLoss(); renderer?.domElement.remove();
   });
   return <div class="surface-chart">
-    <div ref={host} class="surface-canvas" />
+    <div ref={host} class="surface-canvas" title="ЛКМ — поворот; ПКМ — перенос; колесо — масштаб; Ctrl — линза от ×5, колесо — её увеличение; Ctrl/Alt+X/Y/Z — вращение вокруг оси" />
     <Show when={!props.grid}><div class="plot-empty">{props.emptyText || "Выберите площадку"}</div></Show>
     <Show when={limits()}><div class="surface-legend"><span>{limits().min.toPrecision(6)}</span><div /><span>{limits().max.toPrecision(6)} {props.unit}</span></div></Show>
     <Show when={error()}><div class="plot-error">{error()}</div></Show>

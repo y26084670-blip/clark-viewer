@@ -1,3 +1,5 @@
+import { createViewportLens } from "../../services/visualization/viewportLens.js";
+import { createThinVectorHover } from "../../services/visualization/thinVectorHover.js";
 import {
   For,
   Show,
@@ -1424,6 +1426,7 @@ function resizeCameraProjection(camera, aspect) {
 }
 
 export function ThreeGeometryViewport(props) {
+  let viewportLens, vectorHover;
   let host;
   let legendPanel;
   const [legendLeft, setLegendLeft] = createGeometryViewSetting("scalarLegendLeft", null);
@@ -1625,7 +1628,9 @@ export function ThreeGeometryViewport(props) {
       renderer.setScissorTest(false);
       renderer.setViewport(0, 0, viewportWidth, viewportHeight);
       renderer.clear(true, true, true);
-      renderer.render(threeScene, camera);
+      vectorHover?.resize(viewportWidth, viewportHeight, renderer.getPixelRatio());
+      if (viewportLens) viewportLens.render(threeScene, camera);
+      else renderer.render(threeScene, camera);
       const pickTime = timestamp ?? performance.now();
       if (flightController?.active && !flightController.approaching && pickTime - lastFlightPickTime >= PICK_INTERVAL_MS) {
         lastFlightPickTime = pickTime; pickFlightTarget();
@@ -1807,6 +1812,7 @@ export function ThreeGeometryViewport(props) {
   };
 
   const clearHoverTooltip = () => {
+    vectorHover?.clear();
     setFlightTarget(null);
     cancelPendingPick();
     setHoverTooltip(null);
@@ -1899,6 +1905,7 @@ export function ThreeGeometryViewport(props) {
 
   const pickAtPointer = (pointer, action = "hover") => {
     const flightPicking = action === "flight";
+    if (!flightPicking) vectorHover?.clear();
     if (typeof axisRotationController !== "undefined" && axisRotationController?.active) {
       clearHoverTooltip();
       return;
@@ -1916,8 +1923,9 @@ export function ThreeGeometryViewport(props) {
     }
 
     const bounds = renderer.domElement.getBoundingClientRect();
-    const x = pointer.clientX - bounds.left;
-    const y = pointer.clientY - bounds.top;
+    const mappedPointer = viewportLens?.sourcePoint(pointer.clientX, pointer.clientY) ?? pointer;
+    const x = mappedPointer.clientX - bounds.left;
+    const y = mappedPointer.clientY - bounds.top;
     if (x < 0 || y < 0 || x > bounds.width || y > bounds.height) {
       setHoverTooltip(null);
       return;
@@ -1960,6 +1968,7 @@ export function ThreeGeometryViewport(props) {
       const hit = hits.find(candidate => !geometryHit || candidate.distance <= geometryHit.distance + unitsPerPixel * 5);
       const scalar = resultHitScalar(hit);
       const vector = resultHitVector(hit);
+      if (!flightPicking && action === "hover") vectorHover?.set(hit);
       if (action === "seed") {
         if (vector?.source?.schemaId === "elements") props.onResultNodeDoubleClick?.(vector);
         return;
@@ -1988,6 +1997,18 @@ export function ThreeGeometryViewport(props) {
 
     const geometryHit = flightPicking && props.resultPickingOnly ? flightGeometryHit
       : geometryOpacity !== 0 ? raycaster.intersectObjects(geometryPickTargets, false)[0] ?? null : null;
+    if (!flightPicking && props.enableLens === true && prescribedSourceRoot?.visible && prescribedSourceStyle === "thin") {
+      const sources = prescribedSourceRoot.children.filter(object => object.visible && object.isLineSegments);
+      const hit = raycaster.intersectObjects(sources, false).find(hit =>
+        !geometryHit || geometryOpacity < 1 || hit.distance <= geometryHit.distance + unitsPerPixel * 5);
+      if (hit) {
+        vectorHover?.set(hit);
+        const stride = (hit.object.userData.segmentsPerVector ?? 1) * 2;
+        const item = hit.object.userData.resultVectors?.[Math.floor(hit.index / stride)];
+        if (item?.source) showTooltip(formatGeometryTooltip(item.source, item.instance), x, y);
+        return;
+      }
+    }
     const discretizationHit =
       discretizationPoints?.visible
         ? raycaster.intersectObject(discretizationPoints, false)[0] ?? null
@@ -2606,6 +2627,8 @@ export function ThreeGeometryViewport(props) {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       if (THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
       host.append(renderer.domElement);
+      viewportLens = createViewportLens({ THREE, renderer, enabled: () => props.enableLens === true && !contextLost && !flightController?.active && !movieSnapshot, requestRender });
+      vectorHover = createThinVectorHover({ scene: threeScene, requestRender });
 
       OrbitControlsClass = controlsModule.OrbitControls;
       handleControlsStart = () => {
@@ -2876,6 +2899,7 @@ export function ThreeGeometryViewport(props) {
   onCleanup(() => {
     rememberCamera();
     disposed = true;
+    viewportLens?.dispose(); vectorHover?.dispose();
     viewCubeControls?.dispose();
     axisRotationController?.dispose();
     flightController?.dispose();

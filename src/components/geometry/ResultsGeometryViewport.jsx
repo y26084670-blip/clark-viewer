@@ -787,6 +787,7 @@ export function ResultsGeometryViewport(props) {
             </div>
           </Show>
           <ThreeGeometryViewport
+            enableLens={true}
             taskKey={props.taskKey}
             cameraState={props.cameraState}
             onCameraStateChange={props.onCameraStateChange}

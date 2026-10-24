@@ -53,3 +53,10 @@
   outline: 2px solid #2184d1;
   outline-offset: 1px;
 }
+
+.object-list .tabulator-row.object-row-unavailable,
+.object-list .tabulator-row.object-row-unavailable:hover {
+  color: #7b838a;
+  background: #f0f2f4;
+  cursor: default;
+}

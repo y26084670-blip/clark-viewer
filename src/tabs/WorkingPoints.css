@@ -1,0 +1,32 @@
+.working-point-tabs {
+  display: flex;
+  flex-direction: column;
+  align-self: flex-start;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.working-point-tabs button {
+  min-width: 58px;
+  padding: 9px 7px;
+  border: 1px solid #8c9eac;
+  border-radius: 3px;
+  background: #e8edf1;
+  color: #243443;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.working-point-tabs button[aria-selected="true"] {
+  background: #145b8f;
+  border-color: #08426e;
+  color: white;
+}
+
+.working-point-tabs button:focus-visible {
+  outline: 2px solid #2184d1;
+  outline-offset: 2px;
+}
+
+.working-point-tabs button:disabled { cursor: default; opacity: .65; }

@@ -131,3 +131,16 @@ test("surface automatic range follows zero, large, tiny and signed frames withou
   }
   disposeSurfaceObject(surface);
 });
+
+
+test("surface footprint preserves physical aspect and nonuniform spacing on a rotated plane", () => {
+  const coordinates = [];
+  for (const u of [0, 3, 15]) for (const v of [0, 10]) coordinates.push(7 + v, 4, -20 + u);
+  const mesh = updateSurfaceMesh(null, { ...grid([0, 0, 0, 0, 0, 0], 3, 2), coordinates });
+  const p = mesh.geometry.attributes.position;
+  const width = p.getX(4) - p.getX(0), height = p.getY(1) - p.getY(0);
+  assert.ok(Math.abs(width / height - 1.5) < 1e-6);
+  assert.ok(Math.abs((p.getX(2) - p.getX(0)) / width - .2) < 1e-6);
+  assert.equal(mesh.userData.footprint.length1, 15); assert.equal(mesh.userData.footprint.length2, 10);
+  disposeSurfaceObject(mesh);
+});

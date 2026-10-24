@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createViewportLens, lensSourcePoint, VIEWPORT_LENS_DIAMETER } from "../src/services/visualization/viewportLens.js";
+import * as THREE from "three";
+import { createViewportLens, lensSourcePoint, setLensProjection, VIEWPORT_LENS_DIAMETER } from "../src/services/visualization/viewportLens.js";
 
 test("lens uniformly magnifies a 300 CSS px radius by x5", () => {
   assert.equal(VIEWPORT_LENS_DIAMETER, 600);
@@ -58,4 +59,22 @@ test("Ctrl+wheel changes only the lens, and the next activation starts again at 
   owner.send("keydown", { ctrlKey: true }); assert.equal(lens.magnification, 5);
   assert.ok(Math.abs(lensSourcePoint(.001, 0, 0, 0, 75, 4).x / .001 - .25) < 1e-8);
   lens.dispose();
+});
+
+
+test("lens projection rerenders the same rays at full resolution for orthographic and perspective cameras", () => {
+  for (const source of [new THREE.PerspectiveCamera(40, 1.6, .01, 100), new THREE.OrthographicCamera(-4, 4, 2.5, -2.5, .01, 100)]) {
+    source.position.set(2, 3, 8); source.lookAt(0, 0, 0); source.updateMatrixWorld();
+    const saved = source.projectionMatrix.clone(), detail = source.clone();
+    setLensProjection(THREE, detail, source, 800, 500, 150, 280, 5);
+    for (const [dx, dy] of [[0, 0], [120, -150], [-230, 50]]) {
+      const sourcePixel = lensSourcePoint(150 + dx, 280 + dy, 150, 280);
+      const ndc = new THREE.Vector3(sourcePixel.x / 800 * 2 - 1, 1 - sourcePixel.y / 500 * 2, .5);
+      const point = ndc.clone().unproject(source).project(detail);
+      assert.ok(Math.abs(point.x - ((150 + dx) / 800 * 2 - 1)) < 1e-10);
+      assert.ok(Math.abs(point.y - (1 - (280 + dy) / 500 * 2)) < 1e-10);
+    }
+    assert.deepEqual(source.projectionMatrix.elements, saved.elements);
+    assert.notDeepEqual(detail.projectionMatrix.elements, source.projectionMatrix.elements);
+  }
 });

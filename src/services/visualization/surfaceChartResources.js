@@ -43,6 +43,7 @@ export function updateSurfaceMesh(surface, grid) {
     if (!Number.isFinite(value)) throw new Error("Поверхность содержит нечисловые значения");
     min = Math.min(min, value); max = Math.max(max, value);
   }
+  const valueLimits = { min, max };
   // Display limits affect height/colour and the legend, never the saved values.
   const range = grid.displayRange;
   if (range && Number.isFinite(range.minimum) && Number.isFinite(range.maximum) && range.minimum <= range.maximum) {
@@ -77,6 +78,7 @@ export function updateSurfaceMesh(surface, grid) {
   }
   positions.needsUpdate = true; colors.needsUpdate = true;
   surface.geometry.computeBoundingBox(); surface.geometry.computeBoundingSphere();
+  surface.userData.valueLimits = valueLimits;
   surface.userData.limits = { min, max }; surface.visible = true;
   surface.userData.footprint = footprint;
   return surface;
@@ -84,15 +86,15 @@ export function updateSurfaceMesh(surface, grid) {
 
 export function updateSurfaceLabel(sprite, text, position, createCanvas = () => document.createElement("canvas")) {
   if (!sprite) {
-    const canvas = createCanvas(); canvas.width = 512; canvas.height = 64;
+    const canvas = createCanvas(); canvas.width = 1536; canvas.height = 192;
     const material = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false });
-    sprite = new THREE.Sprite(material); sprite.scale.set(1.5, .19, 1);
+    sprite = new THREE.Sprite(material); sprite.scale.set(4.5, .57, 1);
   }
   if (sprite.userData.text !== text) {
     const canvas = sprite.material.map.image, context = canvas.getContext("2d");
     context.clearRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = "#20262d"; context.font = "24px sans-serif"; context.textAlign = "center";
-    context.fillText(text, 256, 40); sprite.material.map.needsUpdate = true;
+    context.fillStyle = "#000000"; context.font = "72px sans-serif"; context.textAlign = "center";
+    context.fillText(text, 768, 120); sprite.material.map.needsUpdate = true;
     sprite.userData.text = text;
   }
   sprite.position.copy(position); sprite.visible = true;
@@ -101,6 +103,7 @@ export function updateSurfaceLabel(sprite, text, position, createCanvas = () => 
 
 export function disposeSurfaceObject(object) {
   if (!object) return;
+  for (const child of [...object.children]) disposeSurfaceObject(child);
   object.removeFromParent();
   // Three.js sprites share a built-in quad; only their texture/material belong
   // to this chart. Mesh and axes geometries are owned by this instance.

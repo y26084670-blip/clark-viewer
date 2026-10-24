@@ -12,6 +12,7 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@libav.js/variant-webm-vp9": "6.10.9",
     "chart.js": "^4.5.1",
     "gifenc": "1.0.3",
     "gifuct-js": "2.1.2",

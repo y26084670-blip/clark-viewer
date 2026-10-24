@@ -14,7 +14,7 @@ export function thinVectorSegment(hit) {
 // Native WebGL lines are one drawing-buffer pixel wide in Chromium; linewidth
 // on LineBasicMaterial is ignored. Draw only the hovered vector as a wide line.
 export function createThinVectorHover({ scene, requestRender }) {
-  let overlay, current = null;
+  let overlay, current = null, ratio = 1;
   function clear() {
     if (!current) return;
     current = null; overlay.visible = false; requestRender();
@@ -28,7 +28,7 @@ export function createThinVectorHover({ scene, requestRender }) {
       if (current?.object === next.object && current.start === next.start && current.version === attribute.version) return;
       if (!overlay) {
         overlay = new LineSegments2(new LineSegmentsGeometry().setPositions(new Float32Array(30)), new LineMaterial({
-          worldUnits: false, linewidth: 2, depthTest: true, depthWrite: false, transparent: true,
+          worldUnits: false, linewidth: 1 / ratio + 3, depthTest: true, depthWrite: false, transparent: true,
         }));
         overlay.name = "hovered-thin-vector"; overlay.renderOrder = 15;
         overlay.frustumCulled = false; overlay.matrixAutoUpdate = false;
@@ -46,9 +46,11 @@ export function createThinVectorHover({ scene, requestRender }) {
       overlay.visible = true; current = { ...next, version: attribute.version }; requestRender();
     },
     resize(width, height, pixelRatio = 1) {
+      ratio = pixelRatio;
       if (!overlay) return;
       overlay.material.resolution.set(width, height);
-      overlay.material.linewidth = 2 / pixelRatio;
+      // Native line: one physical pixel. Add three CSS pixels at every DPR.
+      overlay.material.linewidth = 1 / ratio + 3;
     },
     dispose() {
       current = null;

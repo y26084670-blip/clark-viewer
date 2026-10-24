@@ -23,7 +23,7 @@ function harness({ frameCount = 3, encoder = {}, adapter: changes = {}, limits }
   };
   const controller = createMovieExportController({ limits, createEncoder: () => ({
     async addFrame(image, { delayMs }) { events.push(["encoded", image.data[0], delayMs]); },
-    async finish() { events.push("finish"); return new Blob(["GIF89a"], { type: "image/gif" }); },
+    async finish() { events.push("finish"); return new Blob(["GIF89a"], { type: "video/webm" }); },
     close() { closed++; events.push("close"); }, ...encoder,
   }) });
   const unregister = controller.register(adapter);
@@ -44,8 +44,8 @@ test("movie captures every requested step exactly once and waits for each encodi
   assert.deepEqual(h.events.filter(event => Array.isArray(event) && event[0] === "capture").map(event => event[1]), [0, 1, 2]);
   assert.ok(gates.every(gate => gate.options.delayMs === 120));
   assert.match(h.events.find(event => Array.isArray(event) && event[1] === 1)[2], /t = 0.25 с/);
-  assert.match(gif.filename, /^areas_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.gif$/); assert.equal(gif.frameCount, 3);
-  assert.equal(gif.width, 2); assert.equal(gif.height, 1); assert.equal(gif.blob.type, "image/gif");
+  assert.match(gif.filename, /^areas_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.webm$/); assert.equal(gif.frameCount, 3);
+  assert.equal(gif.width, 2); assert.equal(gif.height, 1); assert.equal(gif.blob.type, "video/webm");
   assert.equal(h.time(), h.originalTime); assert.equal(h.frozen(), false); assert.equal(h.closed(), 1);
   assert.equal(progress.at(-1).phase, "restoring"); assert.equal(progress.at(-1).completed, 3);
 });
@@ -95,7 +95,7 @@ test("frame and interval limits fail before preparation; pixel and output limits
   const large = harness({ adapter: { capture: async () => ({ width: 1281, height: 1, data: new Uint8ClampedArray(1281 * 4) }) } });
   await assert.rejects(large.controller.run({ intervalMs: 100 }), /1280×960/); assert.equal(large.frozen(), false);
   const output = harness({ limits: { outputBytes: 5 } });
-  await assert.rejects(output.controller.run({ intervalMs: 100 }), /Размер GIF/); assert.equal(output.frozen(), false);
+  await assert.rejects(output.controller.run({ intervalMs: 100 }), /Размер WebM/); assert.equal(output.frozen(), false);
 });
 
 test("a resized frame, encoder failure and an observer exception do not strand frozen controls", async () => {

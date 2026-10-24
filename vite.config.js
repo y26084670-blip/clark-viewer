@@ -1,8 +1,9 @@
 import { defineConfig } from "vite";
+import { libavAssets } from "./scripts/libavAssets.mjs";
 import solid from "vite-plugin-solid";
 
 export default defineConfig({
-  plugins: [solid()],
+  plugins: [solid(), libavAssets()],
   build: { target: "es2020" },
   worker: { format: "es" },
   server: { host: "127.0.0.1", port: 5173, strictPort: true },

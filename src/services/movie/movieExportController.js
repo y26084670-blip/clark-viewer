@@ -24,7 +24,7 @@ function checkedContext(adapter, intervalMs, limits) {
   // previously edited dynamic interval is empty or invalid.
   if (context.frameCount === 1) intervalMs = 100;
   if (!Number.isSafeInteger(intervalMs) || intervalMs < limits.minIntervalMs || intervalMs > limits.maxIntervalMs || intervalMs % limits.intervalStepMs !== 0) {
-    throw new Error(`Интервал GIF должен быть от ${limits.minIntervalMs} до ${limits.maxIntervalMs} мс с шагом ${limits.intervalStepMs} мс`);
+    throw new Error(`Интервал WebM должен быть от ${limits.minIntervalMs} до ${limits.maxIntervalMs} мс с шагом ${limits.intervalStepMs} мс`);
   }
   return { ...context, intervalMs };
 }
@@ -111,8 +111,8 @@ export function createMovieExportController({ createEncoder, limits: overrides =
         }
         progress("encoding");
         const blob = await abortable(encoder.finish(), abort.signal);
-        if (!(blob instanceof Blob) || blob.type !== "image/gif") throw new Error("Кодировщик moview не вернул GIF");
-        if (!blob.size || blob.size > limits.outputBytes) throw new Error(`Размер GIF превышает допустимые ${Math.floor(limits.outputBytes / 1024 / 1024)} МиБ`);
+        if (!(blob instanceof Blob) || blob.type !== "video/webm") throw new Error("Кодировщик moview не вернул WebM");
+        if (!blob.size || blob.size > limits.outputBytes) throw new Error(`Размер WebM превышает допустимые ${Math.floor(limits.outputBytes / 1024 / 1024)} МиБ`);
         result = { blob, filename: movieFilename(context.filenamePrefix), frameCount: context.frameCount, ...size };
       } catch (error) {
         failure = abort.signal.aborted ? movieAbortError(abort.signal.reason) : error;

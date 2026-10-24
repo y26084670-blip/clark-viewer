@@ -70,8 +70,12 @@ export function TaskImageGallery(props) {
         <Show when={thumbnail().url} fallback={<span class="task-gif-placeholder" title={thumbnail().error || undefined}>
           {thumbnail().error ? "Не удалось прочитать изображение" : thumbnail().loading ? "Загрузка…" : props.label}
         </span>}>
-          <img src={thumbnail().url} alt="" loading="lazy" decoding="async"
-            onError={event => controller.thumbnailFailed(cellProps.entry, event.currentTarget.getAttribute("src"))} />
+          <Show when={/\.webm$/i.test(cellProps.entry.name)} fallback={
+            <img src={thumbnail().url} alt="" loading="lazy" decoding="async"
+              onError={event => controller.thumbnailFailed(cellProps.entry, event.currentTarget.getAttribute("src"))} />}>
+            <video src={thumbnail().url} muted preload="metadata" playsinline aria-label={cellProps.entry.name}
+              onError={event => controller.thumbnailFailed(cellProps.entry, event.currentTarget.getAttribute("src"))} />
+          </Show>
         </Show>
       </button>
       <div class="task-gif-cell-actions">
@@ -171,7 +175,7 @@ export function TaskImageGallery(props) {
     <Show when={props.allowDelete}><Portal>
       <dialog ref={confirmDialog} class="task-gif-confirm" aria-labelledby={`${titleId}-delete`}
         onCancel={event => { event.preventDefault(); setDeleteRequest(null); }} onClose={() => setDeleteRequest(null)}>
-        <h2 id={`${titleId}-delete`}>Удалить GIF?</h2>
+        <h2 id={`${titleId}-delete`}>Удалить файл?</h2>
         <p>Файл: <strong>{deleteRequest()?.entry.name}</strong></p>
         <p>Задание: {deleteRequest()?.task.name || "выбранное задание"}</p>
         <div class="task-gif-confirm-actions">

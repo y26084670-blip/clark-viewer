@@ -10,10 +10,18 @@ export function lensSourcePoint(x, y, centreX, centreY, radius = VIEWPORT_LENS_R
   return { x: centreX + dx / magnification, y: centreY + dy / magnification };
 }
 
+export function setLensProjection(THREE, detail, source, width, height, x, y, magnification) {
+  const centreX = 2 * x / width - 1, centreY = 1 - 2 * y / height;
+  const crop = new THREE.Matrix4().set(magnification, 0, 0, (1 - magnification) * centreX,
+    0, magnification, 0, (1 - magnification) * centreY, 0, 0, 1, 0, 0, 0, 0, 1);
+  detail.projectionMatrix.multiplyMatrices(crop, source.projectionMatrix);
+  detail.projectionMatrixInverse.copy(detail.projectionMatrix).invert();
+}
+
 export function createViewportLens({ THREE, renderer, enabled = () => true, requestRender = () => {} }) {
   const element = renderer.domElement, owner = element.ownerDocument, win = owner?.defaultView;
   let inside = false, control = false, x = 0, y = 0, disposed = false;
-  let texture, scene, camera, material, quad;
+  let texture, scene, camera, material, quad, detailCamera;
   let magnification = VIEWPORT_LENS_MAGNIFICATION;
   // A slider or checkbox may retain focus after the pointer returns to 3D.
   // Neither that focus nor the presence/magnitude of sources gates the lens.
@@ -61,22 +69,22 @@ export function createViewportLens({ THREE, renderer, enabled = () => true, requ
       depthTest: false, depthWrite: false, toneMapped: false, blending: THREE.NoBlending,
       uniforms: { image: { value: null }, resolution: { value: new THREE.Vector2() },
         centre: { value: new THREE.Vector2() }, radius: { value: VIEWPORT_LENS_RADIUS },
-        rim: { value: 1 }, magnification: { value: VIEWPORT_LENS_MAGNIFICATION } },
+        rim: { value: 1 } },
       vertexShader: "varying vec2 uvScreen; void main(){ uvScreen=uv; gl_Position=vec4(position.xy,0.,1.); }",
       fragmentShader: `
         uniform sampler2D image;
         uniform vec2 resolution, centre;
-        uniform float radius, rim, magnification;
+        uniform float radius, rim;
         varying vec2 uvScreen;
         void main() {
           vec2 pixel = uvScreen * resolution;
           vec2 offset = pixel - centre;
           float distance = length(offset);
-          if (distance >= radius) discard;
-          vec2 source = (centre + offset / magnification) / resolution;
-          gl_FragColor = texture2D(image, source);
-          // Keep the active aperture visible even over zero-valued/empty fields.
-          if (distance >= radius - rim) gl_FragColor = vec4(.65, .72, .8, 1.);
+          if (distance < radius - rim) discard;
+          // Restore only the surroundings, one source pixel to one output pixel.
+          gl_FragColor = texture2D(image, uvScreen);
+          if (distance < radius) gl_FragColor = vec4(.65, .72, .8, 1.);
+
         }`,
     });
     scene = new THREE.Scene(); camera = new THREE.Camera();
@@ -97,26 +105,37 @@ export function createViewportLens({ THREE, renderer, enabled = () => true, requ
       const rect = element.getBoundingClientRect();
       if (!(rect.width > 0 && rect.height > 0)) { renderer.render(sourceScene, sourceCamera); return; }
       if (!material) allocate();
-      material.uniforms.magnification.value = magnification;
       const size = renderer.getDrawingBufferSize(material.uniforms.resolution.value);
+      const pixelRatio = size.x / rect.width;
       if (texture?.image.width !== size.x || texture?.image.height !== size.y) {
-        texture?.dispose();
-        texture = new THREE.FramebufferTexture(size.x, size.y);
-        texture.minFilter = texture.magFilter = THREE.LinearFilter;
+        texture?.dispose(); texture = new THREE.FramebufferTexture(size.x, size.y);
+        texture.minFilter = texture.magFilter = THREE.NearestFilter;
         material.uniforms.image.value = texture;
       }
-      material.uniforms.centre.value.set(x * size.x / rect.width, (rect.height - y) * size.y / rect.height);
-      material.uniforms.radius.value = VIEWPORT_LENS_DIAMETER / 2 * size.x / rect.width;
-      material.uniforms.rim.value = size.x / rect.width;
-      // Copy the already rendered image, including its antialiasing, transparency
-      // and output colors. Leave every pixel outside the lens untouched.
+      material.uniforms.centre.value.set(x * pixelRatio, (rect.height - y) * size.y / rect.height);
+      material.uniforms.radius.value = VIEWPORT_LENS_RADIUS * pixelRatio;
+      material.uniforms.rim.value = pixelRatio;
       renderer.render(sourceScene, sourceCamera);
       renderer.copyFramebufferToTexture(texture);
-      const previousAutoClear = renderer.autoClear;
+      if (!detailCamera || detailCamera.type !== sourceCamera.type) detailCamera = sourceCamera.clone();
+      else detailCamera.copy(sourceCamera, false);
+      setLensProjection(THREE, detailCamera, sourceCamera, rect.width, rect.height, x, y, magnification);
+      const previousAutoClear = renderer.autoClear, previousScissor = renderer.getScissor(new THREE.Vector4());
+      const previousScissorTest = renderer.getScissorTest();
       try {
-        renderer.autoClear = false;
-        renderer.render(scene, camera);
-      } finally { renderer.autoClear = previousAutoClear; }
+        // Render GEOMETRY again in the same antialiased framebuffer. This also
+        // preserves the original transparency/tone mapping exactly. Scissor
+        // limits fragment work; the saved image only restores circle corners.
+        const left = Math.max(0, x - VIEWPORT_LENS_RADIUS), top = Math.max(0, y - VIEWPORT_LENS_RADIUS);
+        const right = Math.min(rect.width, x + VIEWPORT_LENS_RADIUS), bottom = Math.min(rect.height, y + VIEWPORT_LENS_RADIUS);
+        renderer.setScissor(left, rect.height - bottom, right - left, bottom - top);
+        renderer.setScissorTest(true); renderer.autoClear = true;
+        renderer.render(sourceScene, detailCamera);
+        renderer.autoClear = false; renderer.render(scene, camera);
+      } finally {
+        renderer.setScissor(previousScissor); renderer.setScissorTest(previousScissorTest);
+        renderer.autoClear = previousAutoClear;
+      }
     },
     dispose() {
       clear(); disposed = true;

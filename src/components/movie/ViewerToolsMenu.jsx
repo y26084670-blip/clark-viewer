@@ -2,14 +2,16 @@ import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup,
 import { Portal } from "solid-js/web";
 import { saveTaskGif } from "../../services/taskGifService.js";
 import { listTaskTestProtocols, readTaskTestProtocol } from "../../services/taskTestProtocolService.js";
+import { GifWebmDialog } from "./GifWebmDialog.jsx";
 import { TaskConditionsDialog } from "./TaskConditionsDialog.jsx";
 import "./ViewerToolsMenu.css";
 
 export function ViewerToolsMenu(props) {
   const menuId = createUniqueId(), titleId = createUniqueId(), protocolsTitleId = createUniqueId();
   const [conditionsOpen, setConditionsOpen] = createSignal(false);
+  const [conversionTask, setConversionTask] = createSignal(null);
   const canEditProtocol = createMemo(() => Boolean(props.backfillEligible));
-  let taskProtocolMenuItem;
+  let taskProtocolMenuItem, conversionMenuItem;
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [menuPosition, setMenuPosition] = createSignal({ left: 8, top: 8 });
   const [dialogOpen, setDialogOpen] = createSignal(false);
@@ -179,7 +181,7 @@ export function ViewerToolsMenu(props) {
       const movie = await props.onRun({ intervalMs: staticImage() ? 100 : intervalMs(), signal: abort.signal,
         onProgress: value => { if (!disposed && current === revision) setProgress(value); } });
       if (disposed || current !== revision || abort.signal.aborted) return;
-      if (!(movie?.blob instanceof Blob) || movie.blob.size === 0) throw new Error("Не удалось сформировать GIF.");
+      if (!(movie?.blob instanceof Blob) || movie.blob.size === 0) throw new Error("Не удалось сформировать WebM.");
       setResult({ ...movie, task: capturedTask, url: URL.createObjectURL(movie.blob) });
       setPhase("ready");
       queueMicrotask(() => saveButton?.focus());
@@ -221,7 +223,7 @@ export function ViewerToolsMenu(props) {
       setSavedNotice(`Сохранено: output3XX/demo/${saved.name}`);
     } catch (failure) {
       if (!disposed && current === revision && !closeAfterSave) {
-        setError(failure?.name === "AbortError" ? "Сохранение отменено. GIF доступен для повторного сохранения."
+        setError(failure?.name === "AbortError" ? "Сохранение отменено. WebM доступен для повторного сохранения."
           : failure?.message ?? String(failure));
       }
     } finally {
@@ -275,7 +277,7 @@ export function ViewerToolsMenu(props) {
   function onMenuKeyDown(event) {
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.code)) {
       event.preventDefault();
-      const items = [menuItem, taskProtocolMenuItem, rangeMenuItem, protocolsMenuItem, conditionsMenuItem].filter(item => item && !item.disabled);
+      const items = [menuItem, conversionMenuItem, taskProtocolMenuItem, rangeMenuItem, protocolsMenuItem, conditionsMenuItem].filter(item => item && !item.disabled);
       const current = Math.max(0, items.indexOf(event.target));
       const index = event.code === "Home" ? 0 : event.code === "End" ? items.length - 1
         : event.code === "ArrowUp" ? (current + items.length - 1) % items.length : (current + 1) % items.length;
@@ -287,7 +289,7 @@ export function ViewerToolsMenu(props) {
   const progressText = () => {
     const current = progress();
     if (phase() === "cancelling") return "Отмена и восстановление вида…";
-    if (current.phase === "encoding") return "Формирование GIF…";
+    if (current.phase === "encoding") return "Формирование WebM…";
     if (current.phase === "restoring") return "Восстановление исходного вида…";
     if (current.phase === "capturing") return `Кадр ${current.completed} из ${current.total}`;
     return "Подготовка кадров…";
@@ -297,7 +299,7 @@ export function ViewerToolsMenu(props) {
     const handle = props.task?.handle;
     if (handle === protocolTaskHandle) return;
     protocolTaskHandle = handle;
-    setConditionsOpen(false);
+    setConditionsOpen(false); setConversionTask(null);
     protocolReadAbort?.abort(); protocolReadAbort = null; setProtocolOpening("");
     setProtocolsDialogOpen(false); setProtocolOpenError("");
     void refreshProtocols(handle);
@@ -360,6 +362,8 @@ export function ViewerToolsMenu(props) {
     <button ref={trigger} type="button" class="viewer-tools-trigger" aria-haspopup="menu" aria-expanded={menuOpen()}
       aria-controls={menuId} onClick={toggleMenu} onKeyDown={onTriggerKeyDown}>Инструменты</button>
     <Portal>
+      <Show when={conversionTask()} keyed>{task => <GifWebmDialog task={task} onBusyChange={props.onBusyChange}
+        onClose={() => { setConversionTask(null); trigger?.focus(); }} />}</Show>
       <TaskConditionsDialog open={conditionsOpen()} task={props.task} onBusyChange={props.onBusyChange}
         onClose={() => { setConditionsOpen(false); trigger?.focus(); }} />
       <Show when={menuOpen()}>
@@ -367,6 +371,8 @@ export function ViewerToolsMenu(props) {
           style={{ left: `${menuPosition().left}px`, top: `${menuPosition().top}px` }} onKeyDown={onMenuKeyDown}>
           <button ref={menuItem} type="button" role="menuitem" aria-disabled={!props.eligible}
             onClick={openSetup}>Создать moview</button>
+          <button ref={conversionMenuItem} type="button" role="menuitem" disabled={!props.task?.handle || !props.backfillEligible}
+            onClick={() => { if (props.task?.handle && props.backfillEligible) { closeMenu(); setConversionTask(props.task); } }}>GIF → WebM</button>
           <button ref={taskProtocolMenuItem} type="button" role="menuitem" disabled={!canEditProtocol()}
             onClick={() => { if (canEditProtocol()) { closeMenu(); props.onCreateProtocol?.(trigger); } }}>Создать протокол</button>
           <Show when={!props.eligible}><p class="viewer-tools-disabled-reason">{props.disabledReason}</p></Show>
@@ -406,36 +412,37 @@ export function ViewerToolsMenu(props) {
         onCancel={event => { event.preventDefault(); closeDialog(); }}
         onClose={() => { if (dialogOpen()) closeDialog(); }}>
         <h2 id={titleId}>Создать moview</h2>
+        <p class="viewer-movie-note">WebM · VP9 · CRF 30</p>
         <Show when={!running() && phase() !== "ready"}>
           <Show when={staticImage()} fallback={<p>Текущий вид · шаги 0–{Math.max(0, props.frameCount - 1)} · {props.frameCount} кадров.</p>}>
-            <p>Статический GIF — 1 кадр текущего вида.</p>
+            <p>WebM — 1 кадр текущего вида.</p>
           </Show>
           <Show when={!staticImage()}>
             <label class="viewer-movie-interval">Интервал между кадрами, мс
               <input ref={intervalInput} type="number" min="20" max="60000" step="10" value={intervalMs()}
                 onInput={event => setIntervalMs(event.currentTarget.valueAsNumber)} />
             </label>
-            <p>Длительность GIF: {validInterval() ? duration() : "—"} с.</p>
+            <p>Длительность WebM: {validInterval() ? duration() : "—"} с.</p>
           </Show>
           <p class="viewer-movie-note">Сохраняются камера и режим масштаба. Нормировка длин векторов 3D фиксирована; «Авто» графиков сохраняет выбранный режим. Подпись показывает время расчёта.</p>
         </Show>
         <Show when={running()}>
           <p role="status" aria-live="polite">{progressText()}</p>
-          <progress max={Math.max(1, progress().total)} value={progress().completed} aria-label="Создание GIF" />
+          <progress max={Math.max(1, progress().total)} value={progress().completed} aria-label="Создание WebM" />
           <p class="viewer-movie-note">По завершении будет восстановлен исходный момент времени.</p>
         </Show>
         <Show when={result()}>{movie => <>
-          <img class="viewer-movie-preview" src={movie().url} alt="Предпросмотр созданного GIF" />
-          <p>{movie().frameCount === 1 ? "Статический GIF — 1 кадр" : `${movie().frameCount} кадров`} · {movie().width} × {movie().height}</p>
+          <video class="viewer-movie-preview" src={movie().url} aria-label="Предпросмотр созданного WebM" controls playsinline />
+          <p>{movie().frameCount === 1 ? "WebM — 1 кадр" : `${movie().frameCount} кадров`} · {movie().width} × {movie().height}</p>
         </>}</Show>
         <Show when={error()}><p class="viewer-movie-error" role="alert">{error()}</p></Show>
-        <Show when={saving()}><p class="viewer-movie-note" role="status">Сохранение GIF в задании…</p></Show>
+        <Show when={saving()}><p class="viewer-movie-note" role="status">Сохранение WebM в задании…</p></Show>
         <Show when={savedNotice()}><p class="viewer-movie-saved" role="status">{savedNotice()}</p></Show>
         <div class="viewer-movie-actions">
           <Show when={running()} fallback={<>
             <Show when={result()} fallback={<button ref={startButton} type="button" disabled={!props.eligible || !validInterval()} onClick={startCapture}>Начать</button>}>
-              <Show when={saveInTask()} fallback={<a ref={saveButton} class="viewer-movie-save" href={result()?.url} download={result()?.filename}>Сохранить GIF</a>}>
-                <button ref={saveButton} type="button" class="viewer-movie-save" disabled={saving()} onClick={saveToTask}>Сохранить GIF</button>
+              <Show when={saveInTask()} fallback={<a ref={saveButton} class="viewer-movie-save" href={result()?.url} download={result()?.filename}>Сохранить WebM</a>}>
+                <button ref={saveButton} type="button" class="viewer-movie-save" disabled={saving()} onClick={saveToTask}>Сохранить WebM</button>
               </Show>
               <label class="viewer-movie-task-save"><input type="checkbox" checked={saveInTask()} disabled={saving()}
                 onChange={event => changeSaveLocation(event.currentTarget.checked)} />в задании</label>

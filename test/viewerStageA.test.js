@@ -74,8 +74,8 @@ test('filename prefixes include active fields and streamlines, deduplicate B/A a
   assert.equal(movie3DFilenamePrefix([]),'3d');
   assert.equal(movie3DFilenamePrefix([{quantityKey:'MHdot'},{quantityKey:'JEdot'}]),'MH_JE_3d');
   const d=new Date(2026,9,6,18,10,0);
-  assert.equal(movieFilename('M_B_3d',d),'M_B_3d_2026-10-06_18-10-00.gif');
-  assert.equal(movieFilename('areas',d),'areas_2026-10-06_18-10-00.gif');
+  assert.equal(movieFilename('M_B_3d',d),'M_B_3d_2026-10-06_18-10-00.webm');
+  assert.equal(movieFilename('areas',d),'areas_2026-10-06_18-10-00.webm');
 });
 const pixels=()=>({width:2,height:2,data:new Uint8Array([255,0,0,255,0,255,0,255,0,0,255,255,255,255,255,255])});
 test('static GIF has exactly one decoded image, delay=0 and no NETSCAPE loop extension',()=>{
@@ -96,7 +96,7 @@ test('static session rejects a second frame; dynamic GIF keeps multiple frames a
 for(const frameCount of [1,3])test(`controller captures ${frameCount} frame(s), locks filename and restores once`,async()=>{
   const task={},calls=[],options=[];let prefix='M_3d';
   const controller=createMovieExportController({createEncoder:()=>({
-    async addFrame(_image,option){options.push(option);},async finish(){return new Blob(['test'],{type:'image/gif'});},close(){calls.push('close');},
+    async addFrame(_image,option){options.push(option);},async finish(){return new Blob(['test'],{type:'video/webm'});},close(){calls.push('close');},
   })});
   controller.register({getContext:()=>({task,frameCount,originalTime:0,timeStep:frameCount===1?0:.1,filenamePrefix:prefix,title:'3D'}),
     async prepare(){calls.push('prepare');},async capture(index){calls.push(index);prefix='J_3d';return pixels();},

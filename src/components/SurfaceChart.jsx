@@ -4,11 +4,12 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { disposeSurfaceObject, updateSurfaceLabel, updateSurfaceMesh } from "../services/visualization/surfaceChartResources.js";
+import { updateSurfaceDecorations } from "../services/visualization/surfaceContours.js";
 import { captureMovieCanvas } from "../services/movie/movieCanvas.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../services/movie/renderedFrameGate.js";
 
 export function SurfaceChart(props) {
-  let host, renderer, scene, camera, controls, surface, observer, axes;
+  let host, renderer, scene, camera, controls, surface, observer, axes, decorations;
   const labelObjects = [];
   let viewportLens, axisRotation, controlsInteracting = false;
   let movieSnapshot = null, appliedFrameKey, disposed = false, contextLost = false, resizePending = false;
@@ -20,6 +21,7 @@ export function SurfaceChart(props) {
   const [hover, setHover] = createSignal("");
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
+  const formatValue = value => Number(value.toPrecision(5)).toString();
   function draw() {
     if (!renderer || !scene || !camera || disposed || contextLost) return;
     try {
@@ -63,7 +65,10 @@ export function SurfaceChart(props) {
     if (movieSnapshot) { resizePending = true; return; }
     resizePending = false;
     const width = Math.max(1, host.clientWidth), height = Math.max(1, host.clientHeight);
-    renderer.setSize(width, height); camera.aspect = width / height; camera.updateProjectionMatrix(); draw();
+    renderer.setSize(width, height);
+    const aspect = width / height, halfWidth = 2.6 * Math.max(1, aspect), halfHeight = halfWidth / aspect;
+    camera.left = -halfWidth; camera.right = halfWidth; camera.top = halfHeight; camera.bottom = -halfHeight;
+    camera.updateProjectionMatrix(); draw();
   }
   function label(index, text, position) {
     const sprite = updateSurfaceLabel(labelObjects[index], text, position);
@@ -142,19 +147,19 @@ export function SurfaceChart(props) {
   function drawMovieLegend(context, { width, height }) {
     const range = limits();
     if (!range) return;
-    const boxWidth = Math.min(300, width - 16), x = width - boxWidth - 8, y = height - 61;
-    context.fillStyle = "rgba(255,255,255,.9)"; context.fillRect(x, y, boxWidth, 53);
-    context.font = "12px sans-serif"; context.textBaseline = "top";
-    context.fillStyle = "#20262d"; context.fillText(props.unit ?? "", x + 7, y + 5);
+    const boxWidth = Math.min(600, width - 16), x = width - boxWidth - 8, y = height - 137;
+    context.fillStyle = "rgba(255,255,255,.9)"; context.fillRect(x, y, boxWidth, 129);
+    context.font = "36px sans-serif"; context.textBaseline = "top";
+    context.fillStyle = "#000000"; context.fillText(props.unit ?? "", x + 7, y + 5);
     const gradient = context.createLinearGradient(x + 7, 0, x + boxWidth - 7, 0);
     const color = new THREE.Color();
     for (let stop = 0; stop <= 20; stop++) {
       color.setHSL(.66 * (1 - stop / 20), .9, .48);
       gradient.addColorStop(stop / 20, color.getStyle());
     }
-    context.fillStyle = gradient; context.fillRect(x + 7, y + 22, boxWidth - 14, 10);
-    context.fillStyle = "#20262d"; context.fillText(range.min.toPrecision(6), x + 7, y + 36);
-    context.textAlign = "right"; context.fillText(range.max.toPrecision(6), x + boxWidth - 7, y + 36);
+    context.fillStyle = gradient; context.fillRect(x + 7, y + 50, boxWidth - 14, 16);
+    context.fillStyle = "#000000"; context.fillText(formatValue(range.min), x + 7, y + 77);
+    context.textAlign = "right"; context.fillText(formatValue(range.max), x + boxWidth - 7, y + 77);
     context.textAlign = "left";
   }
   function contextLostHandler(event) {
@@ -170,7 +175,7 @@ export function SurfaceChart(props) {
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
       host.append(renderer.domElement); scene = new THREE.Scene(); scene.background = new THREE.Color(0xfafcfe);
-      camera = new THREE.PerspectiveCamera(40, 1, .01, 100);
+      camera = new THREE.OrthographicCamera(-2.6, 2.6, 2.6, -2.6, .01, 100);
       // OrbitControls computes its up-axis transform at construction time.
       camera.up.set(0, 0, 1); rebuildControls();
       if (renderer.domElement.ownerDocument) {
@@ -202,6 +207,7 @@ export function SurfaceChart(props) {
     setHover("");
     if (!grid) {
       if (surface) surface.visible = false;
+      if (decorations) decorations.visible = false;
       labelObjects.forEach(label => { label.visible = false; });
       setLimits(null); setError(""); appliedFrameKey = frameKey; draw(); return;
     }
@@ -209,20 +215,25 @@ export function SurfaceChart(props) {
       setError("");
       surface = updateSurfaceMesh(surface, grid);
       if (!surface.parent) scene.add(surface);
+      decorations = updateSurfaceDecorations(decorations, surface, grid.values,
+        { projections: props.projections ?? true, isolines: props.isolines ?? 0 });
+      if (!decorations.parent) scene.add(decorations);
       const { min, max } = surface.userData.limits;
       const footprint = surface.userData.footprint;
       const { halfWidth: w, halfHeight: h } = footprint;
       const side = (axis, count, length) => footprint.physical
-        ? `${axis}: ${Number(length.toPrecision(6))} мм · ${count} узлов` : `${axis}: 1 … ${count}`;
-      axes.position.set(-w - .05, -h - .05, -.05);
-      label(0, side(grid.axes[0], grid.width, footprint.length1), new THREE.Vector3(0, -h - .2, -.12));
-      label(1, side(grid.axes[1], grid.height, footprint.length2), new THREE.Vector3(-w - .35, 0, -.12));
-      label(2, `${title}, ${unit}`, new THREE.Vector3(0, 0, 1.85));
-      label(3, min.toPrecision(6), new THREE.Vector3(-w - .25, -h - .25, 0));
-      label(4, max.toPrecision(6), new THREE.Vector3(-w - .25, -h - .25, 1.5));
+        ? `${axis}: 0 … ${Number(length.toPrecision(4))} мм` : `${axis}: 1 … ${count}`;
+      axes.position.set(-w - .06, -h - .06, -.02);
+      axes.scale.set((2 * w + .12) / 1.5, (2 * h + .12) / 1.5, 1.15);
+      label(0, side(grid.axes[0], grid.width, footprint.length1), new THREE.Vector3(0, -h - .45, -.1));
+      label(1, side(grid.axes[1], grid.height, footprint.length2), new THREE.Vector3(-w - 1.15, 0, -.25));
+      label(2, `${title}, ${unit}`, new THREE.Vector3(-w - .1, -h - .1, 1.95));
+      label(3, formatValue(min), new THREE.Vector3(-w - .25, -h - .2, 0));
+      label(4, formatValue(max), new THREE.Vector3(-w - .25, -h - .2, 1.5));
       setLimits({ min, max }); appliedFrameKey = frameKey; draw();
     } catch (error) {
       if (surface) surface.visible = false;
+      if (decorations) decorations.visible = false;
       labelObjects.forEach(label => { label.visible = false; });
       setLimits(null); setError(error.message); draw(); captureGate.fail(error);
     }
@@ -234,13 +245,13 @@ export function SurfaceChart(props) {
     renderer?.domElement.removeEventListener("webglcontextlost", contextLostHandler);
     renderer?.domElement.removeEventListener("webglcontextrestored", contextRestoredHandler);
     observer?.disconnect(); controls?.removeEventListener("change", cameraChanged); controls?.dispose();
-    disposeSurfaceObject(surface); disposeSurfaceObject(axes); labelObjects.forEach(disposeSurfaceObject);
+    disposeSurfaceObject(surface); disposeSurfaceObject(decorations); disposeSurfaceObject(axes); labelObjects.forEach(disposeSurfaceObject);
     renderer?.dispose(); renderer?.forceContextLoss(); renderer?.domElement.remove();
   });
   return <div class="surface-chart">
     <div ref={host} class="surface-canvas" title="ЛКМ — поворот; ПКМ — перенос; колесо — масштаб; Ctrl — линза от ×5, колесо — её увеличение; Ctrl/Alt+X/Y/Z — вращение вокруг оси" />
     <Show when={!props.grid}><div class="plot-empty">{props.emptyText || "Выберите площадку"}</div></Show>
-    <Show when={limits()}><div class="surface-legend"><span>{limits().min.toPrecision(6)}</span><div /><span>{limits().max.toPrecision(6)} {props.unit}</span></div></Show>
+    <Show when={limits()}><div class="surface-legend"><span>{formatValue(limits().min)}</span><div /><span>{formatValue(limits().max)} {props.unit}</span></div></Show>
     <Show when={error()}><div class="plot-error">{error()}</div></Show>
     <Show when={hover()}><div class="surface-hover">{hover()}</div></Show>
   </div>;

@@ -190,6 +190,7 @@ function createPrescribedSourceVectors(
   lengthReference = null,
   displayRange = null,
   normalizedLength = null,
+  colorByMagnitude = false,
 ) {
   const root = sourceVectorRoot(THREE, previousRoot, style);
   if (style === "cones") return updateResultCones(THREE, root, acceptedInstances
@@ -217,7 +218,7 @@ function createPrescribedSourceVectors(
     } : null;
     return root;
   }
-  const colored = normalizedLength !== null;
+  const colored = colorByMagnitude || normalizedLength !== null;
   let colorMinimum = Infinity, colorMaximum = -Infinity;
   if (colored) for (const item of vectors) {
     if (acceptedInstances && !acceptedInstances.has(sourceInstanceKey(item.source, item.instance))) continue;
@@ -602,12 +603,12 @@ export function updateResultLayers(THREE, previous, definitions, {
         state.vectorRoot = createPrescribedSourceVectors(THREE, vectors, null,
           scene.sceneDiagonal, vectorStyle,
           { current: scale, magnetization: scale },
-          scene.maximumMagnitude, color, state.vectorRoot, palette, layer.vectorLengthReference, displayRange, normalizedLength);
-        if (normalizeVectors || vectorStyle === "points" || vectorStyle === "cones") legend = state.vectorRoot.userData.colorLegend;
+          scene.maximumMagnitude, color, state.vectorRoot, palette, layer.vectorLengthReference, displayRange, normalizedLength, true);
+        legend = state.vectorRoot.userData.colorLegend;
         if (vectorStyle !== "points" && vectorStyle !== "cones") {
           const nodes = updateResultPoints(THREE,
             state.vectorRoot.getObjectByName("result-vector-nodes"), vectors,
-            { color, colorMap: normalizeVectors, minimum: legend?.minimum, maximum: legend?.maximum, palette });
+            { color, colorMap: true, minimum: legend?.minimum, maximum: legend?.maximum, palette });
           nodes.name = "result-vector-nodes";
           if (nodes.parent !== state.vectorRoot) state.vectorRoot.add(nodes);
         }
@@ -2041,7 +2042,7 @@ export function ThreeGeometryViewport(props) {
           true, node.characteristicSize);
       } else {
         if (scalar) showTooltip(formatResultScalarTooltip(scalar), x, y);
-        else if (vector) showTooltip(formatResultVectorTooltip(vector, { showMagnitude: resultVectorColorMap || resultNormalizeVectors }), x, y);
+        else if (vector) showTooltip(formatResultVectorTooltip(vector, { showMagnitude: true }), x, y);
         else setHoverTooltip(null);
         return;
       }

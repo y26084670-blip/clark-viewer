@@ -21,26 +21,39 @@ export function setLensProjection(THREE, detail, source, width, height, x, y, ma
 export function createViewportLens({ THREE, renderer, enabled = () => true, requestRender = () => {},
   renderDetails = (scene, camera) => renderer.render(scene, camera) }) {
   const element = renderer.domElement, owner = element.ownerDocument, win = owner?.defaultView;
-  let inside = false, leftControl = false, x = 0, y = 0, disposed = false;
+  let inside = false, spaceHeld = false, spaceCaptured = false, x = 0, y = 0, disposed = false;
   let texture, scene, camera, material, quad, detailCamera;
   let magnification = VIEWPORT_LENS_MAGNIFICATION;
-  // A slider or checkbox may retain focus after the pointer returns to 3D.
-  // Neither that focus nor the presence/magnitude of sources gates the lens.
-  const active = () => !disposed && inside && leftControl && enabled() && !owner?.hidden;
+  // Retained button/slider focus must not activate a control under Space.
+  // Text editing and a different dialog retain their normal keyboard behavior.
+  const editing = () => {
+    const focus = owner?.activeElement;
+    const tag = focus?.tagName?.toLowerCase();
+    const dialog = focus?.closest?.("dialog[open], [role='dialog']");
+    return focus?.isContentEditable || tag === "textarea" || tag === "select"
+      || tag === "input" && !["range", "checkbox", "radio", "button", "submit", "reset"].includes(focus.type)
+      || dialog && !dialog.contains(element);
+  };
+  const active = () => !disposed && inside && spaceHeld && enabled() && !owner?.hidden && !editing();
   function move(event) {
     const wasActive = active(), rect = element.getBoundingClientRect();
     x = event.clientX - rect.left; y = event.clientY - rect.top;
     inside = x >= 0 && y >= 0 && x < rect.width && y < rect.height;
-    // Pointer events cannot distinguish the two Ctrl keys. Only keyboard
-    // events may activate the lens; pointer events can clear a missed release.
-    if (!event.ctrlKey) leftControl = false;
+    // Space has no pointer-event modifier; keyup/blur/visibility clear it.
     if (!wasActive && active()) magnification = VIEWPORT_LENS_MAGNIFICATION;
     if (wasActive || active()) requestRender();
   }
   function key(event) {
-    if (event.code !== "ControlLeft") return;
+    if (event.code !== "Space") return;
     const wasActive = active();
-    leftControl = event.type === "keydown";
+    const down = event.type === "keydown";
+    if (down && (event.isComposing || editing())) return;
+    spaceHeld = down;
+    if (active() || !down && spaceCaptured) {
+      event.preventDefault(); event.stopPropagation();
+      spaceCaptured = down;
+    }
+    if (!down) spaceCaptured = false;
     if (!wasActive && active()) magnification = VIEWPORT_LENS_MAGNIFICATION;
     if (wasActive !== active()) requestRender();
   }
@@ -49,12 +62,12 @@ export function createViewportLens({ THREE, renderer, enabled = () => true, requ
     if (wasActive) requestRender();
   }
   function clear() {
-    leave(); leftControl = false;
+    leave(); spaceHeld = false; spaceCaptured = false;
   }
   function visibility() { if (owner.hidden) clear(); }
   function wheel(event) {
     if (!active()) return;
-    // Capture before OrbitControls: left Ctrl+wheel never zooms the main camera
+    // Capture before OrbitControls: Space+wheel never zooms the main camera
     // or the browser page. Trackpads and line/page wheel units work alike.
     event.preventDefault(); event.stopImmediatePropagation();
     const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 150 : 1);

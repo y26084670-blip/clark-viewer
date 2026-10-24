@@ -15,7 +15,7 @@ test("lens uniformly magnifies a 300 CSS px radius by x5", () => {
 });
 function events() {
   const target = new EventTarget();
-  target.send = (type, properties = {}) => target.dispatchEvent(Object.assign(new Event(type), properties));
+  target.send = (type, properties = {}) => target.dispatchEvent(Object.assign(new Event(type, { cancelable: true }), properties));
   return target;
 }
 test("lens works with retained input focus and no sources, and clears on leave, blur, hidden document and disposal", () => {
@@ -25,20 +25,20 @@ test("lens works with retained input focus and no sources, and clears on leave, 
   let enabled = true, frames = 0;
   const lens = createViewportLens({ THREE: {}, renderer: { domElement: element }, enabled: () => enabled, requestRender: () => frames++ });
   const enter = () => element.send("pointerenter", { clientX: 200, clientY: 150, ctrlKey: true });
-  owner.send("keydown", { code: "ControlLeft", ctrlKey: true });
+  owner.send("keydown", { code: "Space", ctrlKey: true });
   enter(); assert.equal(lens.active, true);
-  owner.send("keyup", { code: "ControlLeft", ctrlKey: false }); assert.equal(lens.active, false);
-  owner.send("keydown", { code: "ControlLeft", ctrlKey: true }); assert.equal(lens.active, true);
+  owner.send("keyup", { code: "Space", ctrlKey: false }); assert.equal(lens.active, false);
+  owner.send("keydown", { code: "Space", ctrlKey: true }); assert.equal(lens.active, true);
   enabled = false; assert.equal(lens.active, false); enabled = true;
-  owner.activeElement = { closest: () => ({}) }; assert.equal(lens.active, true); owner.activeElement = null;
+  owner.activeElement = { tagName: "INPUT", type: "range" }; assert.equal(lens.active, true); owner.activeElement = null;
   element.send("pointerleave"); assert.equal(lens.active, false);
   enter(); win.send("blur"); assert.equal(lens.active, false);
-  owner.send("keydown", { code: "ControlLeft", ctrlKey: true }); enter(); owner.hidden = true; owner.send("visibilitychange"); owner.hidden = false; assert.equal(lens.active, false);
-  owner.send("keydown", { code: "ControlLeft", ctrlKey: true }); enter(); lens.dispose(); const count = frames; enter(); owner.send("keydown", { code: "ControlLeft", ctrlKey: true });
+  owner.send("keydown", { code: "Space", ctrlKey: true }); enter(); owner.hidden = true; owner.send("visibilitychange"); owner.hidden = false; assert.equal(lens.active, false);
+  owner.send("keydown", { code: "Space", ctrlKey: true }); enter(); lens.dispose(); const count = frames; enter(); owner.send("keydown", { code: "Space", ctrlKey: true });
   assert.equal(lens.active, false); assert.equal(frames, count);
 });
 
-test("left Ctrl+wheel changes only the lens, and the next activation starts again at x5", () => {
+test("Space+wheel changes only the lens, and the next activation starts again at x5", () => {
   const element = events(), owner = events(), win = events();
   element.ownerDocument = owner; owner.defaultView = win;
   element.getBoundingClientRect = () => ({ left: 0, top: 0, width: 500, height: 300 });
@@ -51,14 +51,14 @@ test("left Ctrl+wheel changes only the lens, and the next activation starts agai
   };
   assert.equal(wheel(-100).defaultPrevented, false); assert.equal(orbitWheelEvents, 1);
   element.send("pointerenter", { clientX: 200, clientY: 150, ctrlKey: true });
-  owner.send("keydown", { code: "ControlLeft", ctrlKey: true });
+  owner.send("keydown", { code: "Space", ctrlKey: true });
   assert.equal(lens.magnification, 5);
   assert.equal(wheel(-100).defaultPrevented, true); assert.ok(lens.magnification > 5);
   assert.equal(orbitWheelEvents, 1);
   wheel(100); assert.ok(Math.abs(lens.magnification - 5) < 1e-10);
-  wheel(-400); owner.send("keyup", { code: "ControlLeft", ctrlKey: false });
+  wheel(-400); owner.send("keyup", { code: "Space", ctrlKey: false });
   wheel(-100); assert.equal(orbitWheelEvents, 2);
-  owner.send("keydown", { code: "ControlLeft", ctrlKey: true }); assert.equal(lens.magnification, 5);
+  owner.send("keydown", { code: "Space", ctrlKey: true }); assert.equal(lens.magnification, 5);
   assert.ok(Math.abs(lensSourcePoint(.001, 0, 0, 0, 75, 4).x / .001 - .25) < 1e-8);
   lens.dispose();
 });
@@ -82,34 +82,60 @@ test("lens projection rerenders the same rays at full resolution for orthographi
 });
 
 
-test("only left Ctrl activates the lens, including both keys and re-entry", () => {
+test("only Space activates the lens and releases on keyup outside the canvas", () => {
   const element = events(), owner = events(), win = events();
   element.ownerDocument = owner; owner.defaultView = win;
   element.getBoundingClientRect = () => ({ left: 0, top: 0, width: 500, height: 300 });
   const lens = createViewportLens({ THREE: {}, renderer: { domElement: element } });
-  const enter = () => element.send("pointerenter", { clientX: 200, clientY: 150, ctrlKey: true });
-  enter(); assert.equal(lens.active, false, "aggregate ctrlKey is not enough");
-  owner.send("keydown", { code: "ControlRight", ctrlKey: true });
-  element.send("pointermove", { clientX: 201, clientY: 150, ctrlKey: true });
-  assert.equal(lens.active, false, "right Ctrl and pointer motion do not activate");
-  const wheel = Object.assign(new Event("wheel", { cancelable: true }), { deltaY: -100, deltaMode: 0 });
-  element.dispatchEvent(wheel); assert.equal(wheel.defaultPrevented, false);
-  owner.send("keydown", { code: "ControlLeft", ctrlKey: true });
-  assert.equal(lens.active, true, "left Ctrl activates while right Ctrl is held");
-  owner.send("keyup", { code: "ControlRight", ctrlKey: true });
-  assert.equal(lens.active, true, "releasing right Ctrl leaves left Ctrl active");
-  element.send("pointerleave"); assert.equal(lens.active, false);
-  enter(); assert.equal(lens.active, true, "left Ctrl remains held outside the canvas");
-  owner.send("keydown", { code: "ControlRight", ctrlKey: true });
-  owner.send("keyup", { code: "ControlLeft", ctrlKey: true });
-  assert.equal(lens.active, false, "releasing left Ctrl stops the lens despite right Ctrl");
-  element.send("pointermove", { clientX: 201, clientY: 150, ctrlKey: true });
-  assert.equal(lens.active, false);
-  owner.send("keydown", { code: "ControlLeft", ctrlKey: true }); win.send("blur");
-  enter(); assert.equal(lens.active, false, "blur clears keyboard state");
-  owner.send("keydown", { code: "ControlLeft", ctrlKey: true });
+  const enter = () => element.send("pointerenter", { clientX: 200, clientY: 150 });
+  enter();
+  for (const code of ["ControlLeft", "ControlRight"]) {
+    assert.equal(owner.send("keydown", { code, ctrlKey: true }), true);
+    assert.equal(lens.active, false);
+    owner.send("keyup", { code, ctrlKey: false });
+  }
+  assert.equal(owner.send("keydown", { code: "Space" }), false, "prevent scrolling/control activation over the canvas");
+  assert.equal(lens.active, true);
   element.send("pointermove", { clientX: 201, clientY: 150, ctrlKey: false });
-  assert.equal(lens.active, false, "a missed key release cannot leave a stuck lens");
+  assert.equal(lens.active, true, "Space is independent of pointer modifier flags");
+  assert.equal(owner.send("keydown", { code: "Space", repeat: true }), false);
+  element.send("pointerleave"); assert.equal(lens.active, false);
+  enter(); assert.equal(lens.active, true, "holding Space survives re-entry");
+  element.send("pointerleave");
+  assert.equal(owner.send("keyup", { code: "Space" }), false, "suppress a focused button's release action even after leaving");
+  enter(); assert.equal(lens.active, false);
+  element.send("pointerleave");
+  assert.equal(owner.send("keydown", { code: "Space" }), true, "Space outside 3D keeps its default action");
+  assert.equal(owner.send("keyup", { code: "Space" }), true);
+  enter(); owner.send("keydown", { code: "Space" }); win.send("blur");
+  enter(); assert.equal(lens.active, false, "blur clears the held key");
+  lens.dispose();
+});
+
+test("Space leaves typing and other dialogs alone but works with retained button and slider focus", () => {
+  const element = events(), owner = events(); element.ownerDocument = owner;
+  element.getBoundingClientRect = () => ({ left: 0, top: 0, width: 500, height: 300 });
+  let enabled = true;
+  const lens = createViewportLens({ THREE: {}, renderer: { domElement: element }, enabled: () => enabled });
+  element.send("pointerenter", { clientX: 200, clientY: 150 });
+  for (const focus of [{ tagName: "INPUT", type: "text" }, { tagName: "TEXTAREA" },
+    { isContentEditable: true }, { closest: () => ({ contains: () => false }) }]) {
+    owner.activeElement = focus;
+    assert.equal(owner.send("keydown", { code: "Space" }), true);
+    assert.equal(lens.active, false);
+    owner.send("keyup", { code: "Space" });
+  }
+  for (const focus of [{ tagName: "BUTTON" }, { tagName: "INPUT", type: "checkbox" },
+    { tagName: "INPUT", type: "range" }, { closest: () => ({ contains: () => true }) }]) {
+    owner.activeElement = focus;
+    assert.equal(owner.send("keydown", { code: "Space" }), false);
+    assert.equal(lens.active, true);
+    assert.equal(owner.send("keyup", { code: "Space" }), false);
+  }
+  owner.activeElement = null; enabled = false;
+  assert.equal(owner.send("keydown", { code: "Space" }), true); assert.equal(lens.active, false);
+  owner.send("keyup", { code: "Space" }); enabled = true;
+  assert.equal(owner.send("keydown", { code: "Space", isComposing: true }), true); assert.equal(lens.active, false);
   lens.dispose();
 });
 
@@ -132,10 +158,10 @@ test("detail rendering runs only inside the lens and restores renderer state aft
   }});
   lens.render(scene,camera); assert.equal(details,0);
   element.send("pointerenter",{clientX:400,clientY:300,ctrlKey:false});
-  owner.send("keydown",{code:"ControlLeft",ctrlKey:true});
+  owner.send("keydown",{code:"Space",ctrlKey:true});
   lens.render(scene,camera); assert.equal(details,1);
   assert.deepEqual(scissor.toArray(),[3,4,100,200]); assert.equal(renderer.autoClear,false); assert.equal(renderer.scissorTest,false);
   fail=true; assert.throws(()=>lens.render(scene,camera),/detail error/);
   assert.deepEqual(scissor.toArray(),[3,4,100,200]); assert.equal(renderer.autoClear,false); assert.equal(renderer.scissorTest,false);
-  owner.send("keyup",{code:"ControlLeft",ctrlKey:false}); lens.render(scene,camera); assert.equal(details,2); lens.dispose();
+  owner.send("keyup",{code:"Space",ctrlKey:false}); lens.render(scene,camera); assert.equal(details,2); lens.dispose();
 });

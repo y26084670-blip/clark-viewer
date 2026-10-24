@@ -6,6 +6,7 @@ import solid from "vite-plugin-solid";
 import * as THREE from "three";
 import { resultHitScalar, resultHitVector } from "../src/services/visualization/geometryPicking.js";
 import { fitCameraToVisibleObjects } from "../src/services/visualization/geometryCameraFit.js";
+import { createLensVectorDetails } from "../src/services/visualization/lensVectorDetails.js";
 
 const server = await createServer({ configFile: false, plugins: [solid({ ssr: true })],
   root: fileURLToPath(new URL("..", import.meta.url)), server: { middlewareMode: true, hmr: false } });
@@ -59,9 +60,10 @@ test("three simultaneous vector categories keep independent normalization and sa
     assert.deepEqual(Array.from(coordinates.slice(0, 3)), point.origin);
     assert.ok(Math.abs(coordinates[3] - coordinates[0] - .7) < 1e-6);
     assert.equal(resultHitVector({ object: line, index: 0 }), point);
-    assert.equal(states.get(definition.key).legends.length, 0);
+    assert.equal(states.get(definition.key).legends.length, 1);
+    assert.equal(states.get(definition.key).legends[0].unit, point.unit);
   }
-  assert.equal(states.get("elements").vectorRoot.children[0].material.color.getHex(), 0x44dd66);
+  assert.equal(states.get("elements").vectorRoot.children[0].material.color.getHex(), 0xffffff);
   clean(states);
 });
 
@@ -469,22 +471,20 @@ for (const style of ["thin", "solid", "cones"]) test(`normalized ${style} vector
   states = run(states, definitions, { style, normalizeVectors: true, scale: 3 });
   assert.equal(states.get("elements").legends[0].maximum, 100);
   assert.ok(arrowLengths(states.get("elements").vectorRoot, style).every(l => Math.abs(l - 8.4) < 1e-5));
+  const normalizedColors = vectorColors(states.get("elements").vectorRoot, style);
   states = run(states, definitions, { style, normalizeVectors: false, scale: 2 });
   const ordinary = arrowLengths(states.get("elements").vectorRoot, style);
   assert.ok(Math.abs(ordinary[1] / ordinary[0] - 10) < 1e-5);
-  if (style === "thin") assert.equal(states.get("elements").vectorRoot.getObjectByName("prescribed-source-magnetization").material.vertexColors, false);
-  if (style === "solid") {
-    const mesh = states.get("elements").vectorRoot.getObjectByName("prescribed-source-magnetization-shaft"), c = new THREE.Color();
-    mesh.getColorAt(0, c); assert.equal(c.getHex(), 0xffffff);
-  }
+  assert.deepEqual(vectorColors(states.get("elements").vectorRoot, style), normalizedColors,
+    "normalization changes length, never the value colour");
   for (const normalized of [true, false, true]) {
     states = run(states, definitions, { style, normalizeVectors: normalized, scale: 2 });
     if (normalized) assert.ok([...states.values()].flatMap(s => arrowLengths(s.vectorRoot, style)).every(l => Math.abs(l - 5.6) < 1e-5));
     if (style !== "cones") for (const state of states.values()) {
       const markers = state.vectorRoot.children.filter(child => child.isPoints);
       assert.equal(markers.length, 1, "palette/toggle changes must not accumulate point markers");
-      assert.equal(markers[0].material.vertexColors, normalized);
-      assert.equal(Boolean(markers[0].geometry.getAttribute("color")), normalized);
+      assert.equal(markers[0].material.vertexColors, true);
+      assert.equal(Boolean(markers[0].geometry.getAttribute("color")), true);
     }
   }
   assert.deepEqual(definitions[0].scene, saved[0].scene); assert.deepEqual(definitions[1].scene, saved[1].scene);
@@ -501,3 +501,59 @@ test("normalization preserves arrows beside scalar maps, and zero vectors do not
   assert.equal(states.get("regions").legends[0].minimum, 0);
   clean(states);
 }));
+
+function vectorColors(root, style) {
+  const object = root.getObjectByName(style === "thin" ? "prescribed-source-magnetization" : style === "cones" ? "result-cones" : "prescribed-source-magnetization-shaft");
+  if (style === "thin") {
+    const colors = object.geometry.getAttribute("color");
+    return object.userData.resultVectors.map((_, i) => new THREE.Color().fromBufferAttribute(colors, i * 2).toArray());
+  }
+  return Array.from({ length: object.count }, (_, i) => {
+    const color = new THREE.Color(); object.getColorAt(i, color); return color.toArray();
+  });
+}
+
+for (const style of ["thin", "solid", "cones"]) test(`ordinary ${style} vectors retain palette colours through scale, lens, range and frame changes`, () => {
+  const definitions = [layer("elements", [item(1), item(3), item(0)])];
+  let states = run(new Map(), definitions, { style });
+  const root = states.get("elements").vectorRoot;
+  const original = vectorColors(root, style);
+  assert.notDeepEqual(original[0], original[1]);
+  assert.deepEqual(states.get("elements").legends.map(l => [l.minimum, l.maximum]), [[0, 3]]);
+  const lengths = arrowLengths(root, style);
+  assert.ok(Math.abs(lengths[1] / lengths[0] - 3) < 1e-5);
+  states = run(states, definitions, { style, scale: 2 });
+  assert.equal(states.get("elements").vectorRoot, root);
+  assert.deepEqual(vectorColors(root, style), original);
+  states = run(states, definitions, { style, palette: "Rainbow" });
+  assert.notDeepEqual(vectorColors(root, style), original);
+
+  const world = new THREE.Scene(), camera = new THREE.OrthographicCamera(-10, 10, 10, -10, .1, 100);
+  camera.position.set(0, 0, 20); camera.lookAt(0, 0, 0); camera.updateMatrixWorld(); world.add(root);
+  const detail = createLensVectorDetails(THREE);
+  const expectLensColors = () => {
+    const expected = vectorColors(root, style);
+    detail.render(world, camera, () => {
+      const arrows = world.getObjectByName("lens-detailed-vectors");
+      assert.equal(arrows.count, expected.length);
+      for (let i = 0; i < arrows.count; i++) {
+        const c = new THREE.Color(); arrows.getColorAt(i, c);
+        c.toArray().forEach((v, k) => assert.ok(Math.abs(v - expected[i][k]) < 1e-6));
+      }
+    });
+  };
+  expectLensColors();
+  definitions[0] = { ...definitions[0], displayRange: { available: true, minimum: 0, maximum: 30 } };
+  states = run(states, definitions, { style });
+  assert.equal(states.get("elements").legends[0].maximum, 30);
+  assert.notDeepEqual(vectorColors(root, style), original);
+  expectLensColors();
+  const before = vectorColors(root, style);
+  definitions[0] = { ...definitions[0], scene: scene([item(10), item(30), item(0)]) };
+  states = run(states, definitions, { style });
+  assert.equal(states.get("elements").vectorRoot, root);
+  assert.notDeepEqual(vectorColors(root, style), before);
+  expectLensColors();
+  assert.equal(root.visible, true);
+  detail.dispose(); clean(states);
+});

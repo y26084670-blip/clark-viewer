@@ -59,7 +59,9 @@ function updatePositions(geometry, data) {
     geometry.setAttribute("position", attribute);
   }
   attribute.array.set(data); attribute.needsUpdate = true;
-  geometry.setDrawRange(0, data.length / 3);
+  // A projected surface is indexed: its draw count is the triangle index
+  // count, not the number of vertices (which would leave only a narrow strip).
+  geometry.setDrawRange(0, geometry.index?.count ?? data.length / 3);
   geometry.computeBoundingSphere();
 }
 
@@ -71,55 +73,44 @@ function dotMaterial() {
     pixels[k + 3] = Math.hypot(x + .5 - size / 2, y + .5 - size / 2) <= size / 2 ? 255 : 0;
   }
   const map = new THREE.DataTexture(pixels, size, size); map.needsUpdate = true;
-  return new THREE.PointsMaterial({ color: 0x000000, size: 9, sizeAttenuation: false, map, alphaTest: .5, depthTest: false });
+  return new THREE.PointsMaterial({ color: 0x000000, size: 2, sizeAttenuation: false, map, alphaTest: .5, depthTest: false });
 }
 
 // Reuse all overlay objects and buffers during time scrolling.
-export function updateSurfaceDecorations(group, surface, values, { projections = true, isolines = 0 } = {}) {
+export function updateSurfaceDecorations(group, surface, values, { isolines = 0 } = {}) {
   if (!group) {
     group = new THREE.Group(); group.name = "surface-projections-and-isolines";
-    for (let view = 0; view < 4; view++) {
-      const layer = new THREE.Group(); layer.name = ["surface-contours", "projection-xy", "projection-xz", "projection-yz"][view];
-      if (view) {
-        const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({
-          vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: .35, depthWrite: false,
-          polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
-        }));
-        mesh.name = "projection"; mesh.renderOrder = -2; layer.add(mesh);
-      }
-      const lines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x000000 }));
-      lines.name = "isolines"; lines.renderOrder = 2; lines.frustumCulled = false; layer.add(lines);
-      const dots = new THREE.Points(new THREE.BufferGeometry(), dotMaterial());
-      dots.name = "extrema"; dots.renderOrder = 3; dots.frustumCulled = false; layer.add(dots);
-      group.add(layer);
-    }
+    const contours = new THREE.Group(); contours.name = "surface-contours";
+    const lines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x000000 }));
+    lines.name = "isolines"; lines.renderOrder = 2; lines.frustumCulled = false; contours.add(lines);
+    const dots = new THREE.Points(new THREE.BufferGeometry(), dotMaterial());
+    dots.name = "extrema"; dots.renderOrder = 3; dots.frustumCulled = false; contours.add(dots);
+    group.add(contours);
+    const plane = new THREE.Group(); plane.name = "projection-xy";
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({
+      vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: .35, depthWrite: false,
+    }));
+    mesh.name = "projection"; mesh.renderOrder = -2; plane.add(mesh); group.add(plane);
   }
-  const { halfWidth: w, halfHeight: h } = surface.userData.footprint;
   const contours = surfaceContours(surface, values, isolines);
-  const project = (data, view) => {
+  // A positive gap below the lowest rendered vertex, including a flat surface
+  // or a component drawn with the common X/Y/Z range. Preserve X/Y exactly.
+  const floor = surface.geometry.boundingBox.min.z - 1.5;
+  const project = (data, bottom = false) => {
     const result = Float32Array.from(data);
     for (let k = 0; k < result.length; k += 3) {
-      if (view === 1) result[k + 2] = -.04;
-      else if (view === 2) result[k + 1] = h + .04;
-      else if (view === 3) result[k] = -w - .04;
-      else result[k + 2] += .002; // Prevent z-fighting on the original surface.
+      result[k + 2] = bottom ? floor : result[k + 2] + .002;
     }
     return result;
   };
-  for (const [view, layer] of group.children.entries()) {
-    layer.visible = !view || projections;
-    if (!layer.visible) continue;
-    if (view) {
-      const mesh = layer.getObjectByName("projection"), original = surface.geometry;
-      if (mesh.userData.topology !== original) {
-        mesh.geometry.dispose(); mesh.geometry = original.clone(); mesh.userData.topology = original;
-      }
-      updatePositions(mesh.geometry, project(original.attributes.position.array, view));
-      mesh.geometry.attributes.color.copyArray(original.attributes.color.array); mesh.geometry.attributes.color.needsUpdate = true;
-    }
-    updatePositions(layer.getObjectByName("isolines").geometry, project(contours.lines, view));
-    updatePositions(layer.getObjectByName("extrema").geometry, project(contours.points, view));
+  const mesh = group.getObjectByName("projection"), original = surface.geometry;
+  if (mesh.userData.topology !== original) {
+    mesh.geometry.dispose(); mesh.geometry = original.clone(); mesh.userData.topology = original;
   }
+  updatePositions(mesh.geometry, project(original.attributes.position.array, true));
+  mesh.geometry.attributes.color.copyArray(original.attributes.color.array); mesh.geometry.attributes.color.needsUpdate = true;
+  updatePositions(group.getObjectByName("isolines").geometry, project(contours.lines));
+  updatePositions(group.getObjectByName("extrema").geometry, project(contours.points));
   group.visible = true; group.userData.levels = contours.levels;
   return group;
 }

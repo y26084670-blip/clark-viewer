@@ -27,23 +27,42 @@ test("isolated minimum and maximum are points; intermediate contours follow tria
   }
 });
 
-test("all three projected planes share raw values, preserve buffers and dispose their textures", () => {
-  const values = [0, 1, 2, 3], mesh = updateSurfaceMesh(null, { width: 2, height: 2, values });
+test("only the lower plane is projected, with matching footprint, a gap and no contours", () => {
+  const values = [0, 1, 2, 3], mesh = updateSurfaceMesh(null, { width: 2, height: 2, values,
+    coordinates: [0,0,0, 0,3,0, 12,0,0, 12,3,0] });
   const original = mesh.geometry.attributes.position.array.slice();
   const group = updateSurfaceDecorations(null, mesh, values, { isolines: 3 });
-  assert.equal(group.children.length, 4);
-  for (const [index, axis, constant] of [[1, 2, -.04], [2, 1, 1.04], [3, 0, -1.04]]) {
-    const layer = group.children[index], p = layer.getObjectByName("projection").geometry.attributes.position;
-    for (let i = 0; i < p.count; i++) assert.ok(Math.abs(p.array[i * 3 + axis] - constant) < 1e-6);
-    assert.equal(layer.getObjectByName("extrema").geometry.drawRange.count, 2);
+  assert.equal(group.children.length, 2);
+  const projection = group.children[1], projectedGeometry = projection.getObjectByName("projection").geometry;
+  const p = projectedGeometry.attributes.position;
+  assert.equal(projectedGeometry.drawRange.count, mesh.geometry.index.count);
+  assert.equal(projection.children.length, 1);
+  assert.equal(projection.getObjectByName("isolines"), undefined);
+  for (let i = 0; i < p.count; i++) {
+    assert.equal(p.getX(i), original[3 * i]); assert.equal(p.getY(i), original[3 * i + 1]);
+    assert.ok(Math.abs(p.getZ(i) + 1.5) < 1e-6);
   }
+  assert.equal(group.getObjectByName("extrema").geometry.drawRange.count, 2);
+  assert.equal(group.getObjectByName("extrema").material.size, 2);
   const geometry = group.children[0].getObjectByName("isolines").geometry;
-  updateSurfaceDecorations(group, mesh, values, { projections: false, isolines: 2 });
+  updateSurfaceDecorations(group, mesh, values, { isolines: 2 });
   assert.equal(group.children[0].getObjectByName("isolines").geometry, geometry);
-  assert.ok(group.children.slice(1).every(layer => !layer.visible));
+  assert.equal(projection.visible, true);
+  assert.equal(projection.getObjectByName("projection").geometry, projectedGeometry);
   assert.deepEqual(mesh.geometry.attributes.position.array, original);
   let disposed = 0; group.traverse(object => object.material?.map?.addEventListener("dispose", () => disposed++));
-  disposeSurfaceObject(group); disposeSurfaceObject(mesh); assert.equal(disposed, 4);
+  disposeSurfaceObject(group); disposeSurfaceObject(mesh); assert.equal(disposed, 1);
+});
+
+test("the lower plane keeps a gap through flat, signed and shared-range frames", () => {
+  let mesh, group;
+  for (const values of [[0,0,0,0], [-4,-3,-2,-1], [5,6,7,8]]) {
+    mesh = updateSurfaceMesh(mesh, { width: 2, height: 2, values, displayRange: { minimum: -10, maximum: 10 } });
+    group = updateSurfaceDecorations(group, mesh, values, { isolines: 2 });
+    const p = group.getObjectByName("projection").geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) assert.ok(Math.abs(mesh.geometry.boundingBox.min.z - p.getZ(i) - 1.5) < 1e-6);
+  }
+  disposeSurfaceObject(group); disposeSurfaceObject(mesh);
 });
 
 

@@ -3,7 +3,7 @@ import { createGeometryAxisRotationController } from "../services/visualization/
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { disposeSurfaceObject, updateSurfaceLabel, updateSurfaceMesh } from "../services/visualization/surfaceChartResources.js";
+import { disposeSurfaceObject, resizeSurfaceLabels, updateSurfaceLabel, updateSurfaceMesh } from "../services/visualization/surfaceChartResources.js";
 import { updateSurfaceDecorations } from "../services/visualization/surfaceContours.js";
 import { captureMovieCanvas } from "../services/movie/movieCanvas.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../services/movie/renderedFrameGate.js";
@@ -25,6 +25,7 @@ export function SurfaceChart(props) {
   function draw() {
     if (!renderer || !scene || !camera || disposed || contextLost) return;
     try {
+      resizeSurfaceLabels(labelObjects, camera, host.clientHeight);
       if (viewportLens) viewportLens.render(scene, camera); else renderer.render(scene, camera);
       captureGate.rendered(appliedFrameKey);
     }
@@ -147,9 +148,9 @@ export function SurfaceChart(props) {
   function drawMovieLegend(context, { width, height }) {
     const range = limits();
     if (!range) return;
-    const boxWidth = Math.min(600, width - 16), x = width - boxWidth - 8, y = height - 137;
-    context.fillStyle = "rgba(255,255,255,.9)"; context.fillRect(x, y, boxWidth, 129);
-    context.font = "36px sans-serif"; context.textBaseline = "top";
+    const boxWidth = Math.min(220, width - 16), x = width - boxWidth - 8, y = height - 55;
+    context.fillStyle = "rgba(255,255,255,.9)"; context.fillRect(x, y, boxWidth, 47);
+    context.font = "12px sans-serif"; context.textBaseline = "top";
     context.fillStyle = "#000000"; context.fillText(props.unit ?? "", x + 7, y + 5);
     const gradient = context.createLinearGradient(x + 7, 0, x + boxWidth - 7, 0);
     const color = new THREE.Color();
@@ -157,9 +158,9 @@ export function SurfaceChart(props) {
       color.setHSL(.66 * (1 - stop / 20), .9, .48);
       gradient.addColorStop(stop / 20, color.getStyle());
     }
-    context.fillStyle = gradient; context.fillRect(x + 7, y + 50, boxWidth - 14, 16);
-    context.fillStyle = "#000000"; context.fillText(formatValue(range.min), x + 7, y + 77);
-    context.textAlign = "right"; context.fillText(formatValue(range.max), x + boxWidth - 7, y + 77);
+    context.fillStyle = gradient; context.fillRect(x + 7, y + 20, boxWidth - 14, 8);
+    context.fillStyle = "#000000"; context.fillText(formatValue(range.min), x + 7, y + 32);
+    context.textAlign = "right"; context.fillText(formatValue(range.max), x + boxWidth - 7, y + 32);
     context.textAlign = "left";
   }
   function contextLostHandler(event) {
@@ -216,7 +217,7 @@ export function SurfaceChart(props) {
       surface = updateSurfaceMesh(surface, grid);
       if (!surface.parent) scene.add(surface);
       decorations = updateSurfaceDecorations(decorations, surface, grid.values,
-        { projections: props.projections ?? true, isolines: props.isolines ?? 0 });
+        { isolines: props.isolines ?? 0 });
       if (!decorations.parent) scene.add(decorations);
       const { min, max } = surface.userData.limits;
       const footprint = surface.userData.footprint;

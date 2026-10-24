@@ -750,6 +750,7 @@ export function ResultsGeometryViewport(props) {
               >
                 <option value="thin">тип векторов: Тонкие</option>
                 <option value="solid">тип векторов: Объемные</option>
+                <option value="cones">тип векторов: Конусы</option>
               </select>
             </Show>
           </div>

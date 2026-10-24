@@ -97,3 +97,18 @@ test("no vector thinning; clipped vectors and arrows crossing the near plane are
   const crossing = lines([[[0,0,13],[0,0,9]]]); f.scene.add(crossing);
   capture(f, mesh => assert.equal(mesh.count,1)); f.detail.dispose();
 });
+
+test("palette cones retain their endpoints and individual colours in the detailed lens pass", () => {
+  const f = fixture();
+  const cone = new THREE.InstancedMesh(new THREE.ConeGeometry(1,1), new THREE.ShaderMaterial(), 1);
+  cone.userData.lensVectorPart = "cone";
+  cone.setMatrixAt(0, new THREE.Matrix4().compose(new THREE.Vector3(1,1,0), new THREE.Quaternion(), new THREE.Vector3(.3,2,.3)));
+  const expected = new THREE.Color(.2,.4,.6); cone.setColorAt(0,expected); f.scene.add(cone);
+  capture(f, mesh => {
+    assert.equal(cone.visible,false);
+    endpoints(mesh,0).flat().forEach((value,i)=>close(value,[1,0,0,1,2,0][i]));
+    const actual = new THREE.Color(); mesh.getColorAt(0,actual);
+    actual.toArray().forEach((v,i)=>close(v,expected.toArray()[i]));
+  });
+  assert.equal(cone.visible,true); f.detail.dispose(); cone.dispose(); cone.geometry.dispose(); cone.material.dispose();
+});

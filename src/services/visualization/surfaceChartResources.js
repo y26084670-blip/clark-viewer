@@ -101,6 +101,15 @@ export function updateSurfaceLabel(sprite, text, position, createCanvas = () => 
   return sprite;
 }
 
+// Text lives in a high-resolution atlas. Reduce the displayed font by two
+// typographic points (8/3 CSS px), rather than subtracting two atlas texels.
+export function resizeSurfaceLabels(labels, camera, viewportHeight) {
+  const pixelsPerWorldUnit = viewportHeight / (camera.top - camera.bottom);
+  const previousFontPx = .57 * 72 / 192 * pixelsPerWorldUnit;
+  const factor = Math.max(.1, 1 - (2 * 96 / 72) / previousFontPx);
+  for (const label of labels) label.scale.set(4.5 * factor, .57 * factor, 1);
+}
+
 export function disposeSurfaceObject(object) {
   if (!object) return;
   for (const child of [...object.children]) disposeSurfaceObject(child);

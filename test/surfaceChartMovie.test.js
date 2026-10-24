@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import * as THREE from "three";
 import { batch, createEffect, createSignal, createRoot, onCleanup, onMount } from "solid-js/dist/solid.js";
-import { disposeSurfaceObject, updateSurfaceLabel, updateSurfaceMesh } from "../src/services/visualization/surfaceChartResources.js";
+import { disposeSurfaceObject, resizeSurfaceLabels, updateSurfaceLabel, updateSurfaceMesh } from "../src/services/visualization/surfaceChartResources.js";
 import { updateSurfaceDecorations } from "../src/services/visualization/surfaceContours.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../src/services/movie/renderedFrameGate.js";
 
@@ -15,7 +15,7 @@ const end = source.indexOf('  return <div class="surface-chart"', start);
 // mesh buffers, palettes, labels, camera and frame gates are production code.
 const component = new Function("props", "dependencies", `
   const {createEffect,createSignal,onCleanup,onMount,THREE,OrbitControls,ResizeObserver,
-    disposeSurfaceObject,updateSurfaceLabel,updateSurfaceMesh,updateSurfaceDecorations,captureMovieCanvas,
+    disposeSurfaceObject,resizeSurfaceLabels,updateSurfaceLabel,updateSurfaceMesh,updateSurfaceDecorations,captureMovieCanvas,
     captureRenderedMovieFrame,createRenderedFrameGate,restoreMovieCamera,snapshotMovieCamera,testHost}=dependencies;
   const devicePixelRatio=2;
   ${source.slice(start, end)}
@@ -57,7 +57,7 @@ function runtime({ initial = [0, 0, 0, 0], failInit = false, viewState, onViewCh
       onViewReady: value => { viewControls = value; },
       onCaptureReady: value => { registered = value; } }, {
       createEffect, createSignal, onCleanup, onMount, THREE: { ...THREE, WebGLRenderer: Renderer }, OrbitControls: Controls,
-      ResizeObserver: class { observe() {} disconnect() {} }, disposeSurfaceObject, updateSurfaceMesh, updateSurfaceDecorations,
+      ResizeObserver: class { observe() {} disconnect() {} }, disposeSurfaceObject, resizeSurfaceLabels, updateSurfaceMesh, updateSurfaceDecorations,
       updateSurfaceLabel: (sprite, text, position) => updateSurfaceLabel(sprite, text, position, labelCanvas),
       captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera, testHost: host,
       captureMovieCanvas: (source, options) => {

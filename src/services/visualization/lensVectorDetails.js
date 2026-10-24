@@ -63,18 +63,20 @@ export function createLensVectorDetails(THREE) {
   const up = new THREE.Vector3(0, 1, 0), direction = new THREE.Vector3(), midpoint = new THREE.Vector3();
   const viewPoint = new THREE.Vector3();
   const rotation = new THREE.Quaternion(), scale = new THREE.Vector3(), matrix = new THREE.Matrix4();
+  const color = new THREE.Color();
   const instance = new THREE.Matrix4(), viewProjection = new THREE.Matrix4();
   const frustum = new THREE.Frustum(), sphere = new THREE.Sphere();
 
   function endpoints(object) {
     const position = object.geometry?.getAttribute("position");
     const thin = object.isLineSegments && object.userData.resultVectors;
+    const cone = object.userData.lensVectorPart === "cone";
     const heads = object.userData.lensVectorPart === "shaft"
       ? object.parent?.getObjectByName(object.name.replace(/-shaft$/, "-head")) : null;
-    if (!thin && !heads) return null;
+    if (!thin && !heads && !cone) return null;
     const stride = (object.userData.segmentsPerVector ?? 1) * 2;
     const count = thin ? Math.min(object.userData.resultVectors.length,
-      Math.floor(Math.min(position?.count ?? 0, object.geometry.drawRange.count) / stride)) : Math.min(object.count, heads.count);
+      Math.floor(Math.min(position?.count ?? 0, object.geometry.drawRange.count) / stride)) : cone ? object.count : Math.min(object.count, heads.count);
     const key = [count, thin ? position : object.instanceMatrix, thin ? position.version : object.instanceMatrix.version,
       heads?.instanceMatrix.version, ...object.matrixWorld.elements, ...(heads?.matrixWorld.elements ?? [])];
     let stored = cache.get(object);
@@ -88,7 +90,7 @@ export function createLensVectorDetails(THREE) {
       } else {
         object.getMatrixAt(index, instance); matrix.multiplyMatrices(object.matrixWorld, instance);
         origin.set(0, -.5, 0).applyMatrix4(matrix);
-        heads.getMatrixAt(index, instance); matrix.multiplyMatrices(heads.matrixWorld, instance);
+        if (heads) { heads.getMatrixAt(index, instance); matrix.multiplyMatrices(heads.matrixWorld, instance); }
         tip.set(0, .5, 0).applyMatrix4(matrix);
       }
       const length = origin.distanceTo(tip);
@@ -150,7 +152,9 @@ export function createLensVectorDetails(THREE) {
           direction.subVectors(record.tip, record.origin).normalize();
           rotation.setFromUnitVectors(up, direction); scale.setScalar(record.length);
           mesh.setMatrixAt(index, matrix.compose(record.origin, rotation, scale));
-          mesh.setColorAt(index, record.object.material.color);
+          if (record.object.instanceColor) record.object.getColorAt(record.index, color);
+          else color.copy(record.object.material.color);
+          mesh.setColorAt(index, color);
           opacity.setX(index, record.object.material.opacity * lensDepthOpacity(record.depth, near, far));
         });
         mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; opacity.needsUpdate = true;

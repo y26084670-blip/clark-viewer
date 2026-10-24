@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
-import { disposeSurfaceObject, updateSurfaceLabel, updateSurfaceMesh } from "../src/services/visualization/surfaceChartResources.js";
+import { disposeSurfaceObject, resizeSurfaceLabels, updateSurfaceLabel, updateSurfaceMesh } from "../src/services/visualization/surfaceChartResources.js";
 
 const grid = (values, width = 2, height = 2) => ({ width, height, values: new Float64Array(values) });
+
+test("axis labels shrink by two typographic points independent of canvas height", () => {
+  const sprite = new THREE.Sprite(), camera = new THREE.OrthographicCamera(-2.6, 2.6, 5.2, -5.2);
+  for (const height of [600, 900]) {
+    const pixelsPerUnit = height / (camera.top - camera.bottom);
+    resizeSurfaceLabels([sprite], camera, height);
+    assert.ok(Math.abs((.57 - sprite.scale.y) * 72 / 192 * pixelsPerUnit - 8 / 3) < 1e-9);
+  }
+});
 
 test("full-cycle display bounds keep a saved value at the same height and colour across frames", () => {
   const bounds = { minimum: 0, maximum: 100 }, first = grid([0, 25, 50, 100]);

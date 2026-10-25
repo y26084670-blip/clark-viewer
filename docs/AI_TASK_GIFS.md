@@ -1,6 +1,21 @@
 # GIF и DOCS выбранного задания
 
-Обновлено: 2026-10-21 15:10 UTC+3.
+Обновлено: 2026-10-26 00:20 UTC+3.
+
+<a id="webm-speed"></a>
+## Скорость WebM — 4.52.0
+
+Заголовок окна просмотра WebM содержит 0,1× / 0,3× / 0,5× / 1× / 2×;
+каждый вновь открытый ролик начинает с 1×. При паузе, обновлении списка
+и изменении размера значение сохраняется. Скорость меняет только просмотр.
+Предпросмотр экспортируемого фильма в «Инструментах» не затрагивается.
+
+`TaskGifGallery.jsx`, `TaskImageGallery.jsx`, `TaskMediaDialog.jsx`,
+`TaskGifGallery.css` и `scripts/check-webm-speed-browser.mjs` совпадают
+с Editor 4.79.0. Общий владелец поведения —
+[контракт Editor](https://github.com/y26084670-blip/clark-editor/blob/main/docs/AI_UI_CONTRACTS.md#task-webm-speed),
+результаты обеих проверок —
+[AI_VERIFICATION](https://github.com/y26084670-blip/clark-editor/blob/main/docs/AI_VERIFICATION.md#verification-webm-speed).
 
 <a id="task-docs"></a>
 ## GIF/DOCS — 4.47.1

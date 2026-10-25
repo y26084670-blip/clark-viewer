@@ -21,7 +21,7 @@ export function TaskMediaDialog(props) {
       top: Math.max(0, Math.min(top, Math.max(0, window.innerHeight - bounds.height))) });
   }
   function startDrag(event) {
-    if (maximized() || event.button !== 0 || event.isPrimary === false || event.target.closest?.("button")) return;
+    if (maximized() || event.button !== 0 || event.isPrimary === false || event.target.closest?.("button, select, input, label")) return;
     const bounds = dialog?.getBoundingClientRect();
     if (!bounds) return;
     event.preventDefault();
@@ -96,6 +96,7 @@ export function TaskMediaDialog(props) {
       <header ref={dialogHeader} class="task-gif-dialog-header" onPointerDown={startDrag} onPointerMove={moveDrag}
         onPointerUp={stopDrag} onPointerCancel={stopDrag} onLostPointerCapture={stopDrag}>
         <h2 id={titleId} title={props.title}>{props.title}</h2>
+        {props.renderHeader?.()}
         <button type="button" title={maximized() ? "Восстановить размер" : "Максимальный размер окна"}
           aria-label={maximized() ? "Восстановить размер" : "Максимальный размер окна"}
           onClick={toggleMaximized}>{maximized() ? "❐" : "□"}</button>

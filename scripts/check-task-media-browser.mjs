@@ -80,8 +80,13 @@ try {
   await inlineHtml().getByRole("heading", { name: "Снимок поля", exact: true }).waitFor();
   assert.equal(await inlineHtml().locator("img").evaluate(img => img.complete && img.naturalWidth === 360), true);
   assert.equal(await inlineHtml().locator("table tbody td").count(), 2);
-  await page.getByRole("button", { name: "Открыть протокол для редактирования", exact: true }).click();
-  assert.deepEqual(await page.evaluate(() => mediaFixture.stats().edits), [{ task: "Sketch", name: "protocol.html" }]);
+  const protocolTabPromise = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Открыть HTML в браузере", exact: true }).click();
+  const protocolTab = await protocolTabPromise;
+  await protocolTab.getByRole("heading", { name: "Снимок поля", exact: true }).waitFor();
+  assert.equal(await protocolTab.evaluate(() => window.opener), null);
+  await protocolTab.close();
+  assert.deepEqual(await page.evaluate(() => mediaFixture.stats().edits), []);
   assert.equal(await page.locator("dialog[open]").count(), 0);
   await page.screenshot({ path: `${output}/docs-protocol-1100x600.png` });
   await page.getByLabel("Документ DOCS", { exact: true }).selectOption("legacy.HTM");
@@ -89,15 +94,15 @@ try {
   assert.equal(await inlineHtml().locator("h1").evaluate(node => getComputedStyle(node).color), "rgb(1, 2, 3)");
   assert.equal(await inlineHtml().locator("a").getAttribute("href"), null);
   assert.equal(await page.evaluate(() => window.injected), undefined);
-  await page.getByRole("button", { name: "Развернуть документ", exact: true }).click();
-  await page.frameLocator('iframe[title="Полный HTML-документ DOCS"]').getByRole("heading", { name: "Обычный HTML" }).waitFor();
-  await dialog.getByRole("button", { name: "Закрыть просмотр документа" }).click();
+  // This deliberately hostile preview remains inert; interactive opening is
+  // exercised with a separate self-contained document in check-readme-browser.
+  assert.equal(await page.getByRole("button", { name: "Открыть HTML в браузере", exact: true }).isEnabled(), true);
   assert.deepEqual(forbiddenRequests, []);
   await gifTab().click();
   assert.equal(await page.locator("iframe").count(), 0);
   await docsTab().click(); await inlineHtml().getByRole("heading", { name: "Обычный HTML" }).waitFor();
   await page.getByLabel("Документ DOCS", { exact: true }).selectOption("README.txt"); await waitText("Строка 1:");
-  checks.push("HTML image/table preview; protocols route directly to editing; other HTML expands without scripts, navigation or remote requests");
+  checks.push("HTML image/table preview stays inert; Expand opens the original protocol in a separate browser tab");
 
 
   await page.locator('[role="tabpanel"]:not([hidden]) .task-gif-grid').evaluate(node => { node.scrollTop = node.scrollHeight; });
@@ -112,8 +117,11 @@ try {
   await page.evaluate(() => mediaFixture.pick("htmlOnly"));
   await inlineHtml().getByRole("heading", { name: "Снимок поля", exact: true }).waitFor();
   assert.equal(await docsTab().innerText(), "DOCS (1)");
-  await page.getByRole("button", { name: "Открыть протокол для редактирования", exact: true }).click();
-  assert.deepEqual((await page.evaluate(() => mediaFixture.stats().edits)).at(-1), { task: "HtmlOnly", name: "protocol.html" });
+  const htmlTabPromise = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Открыть HTML в браузере", exact: true }).click();
+  const htmlTab = await htmlTabPromise;
+  await htmlTab.getByRole("heading", { name: "Снимок поля", exact: true }).waitFor();
+  await htmlTab.close();
   await page.evaluate(() => mediaFixture.pick("empty"));
   await page.getByText("В DOCS нет документов TXT/MD/HTML", { exact: true }).waitFor();
   await page.evaluate(() => mediaFixture.pick("restricted"));
@@ -146,7 +154,7 @@ try {
   await dialog.locator("header button").last().focus();
   await page.keyboard.press("ArrowRight");
   await page.waitForFunction(() => document.querySelector(".task-gif-dialog[open] h2").textContent === "two.gif");
-  assert.equal(await dialog.getByRole("button", { name: "Следующий GIF" }).isDisabled(), true);
+  assert.equal(await dialog.locator(".task-gif-navigation-button.is-next").isDisabled(), true);
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Удалить one.gif", exact: true }).click();
   const confirm = page.locator(".task-gif-confirm[open]");

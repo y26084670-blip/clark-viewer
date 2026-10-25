@@ -25,6 +25,66 @@ try {
   await page.getByRole("tab", { name: /^DOCS/ }).click();
   const preview = page.getByLabel("Содержимое документа DOCS", { exact: true });
   await page.waitForFunction(() => document.querySelector('[aria-label="Содержимое документа DOCS"]')?.value.includes("Строка 1"));
+
+  const documentPicker = page.getByLabel("Документ DOCS", { exact: true });
+  const createReadme = page.getByRole("button", { name: "Создать README.txt", exact: true });
+  const editReadme = page.getByRole("button", { name: "Править", exact: true });
+  const deleteReadme = page.getByRole("button", { name: "Удалить", exact: true });
+  for (const name of ["notes.txt", "README.md"]) {
+    await documentPicker.selectOption(name);
+    await page.waitForFunction(() => !document.querySelector('[aria-label="Содержимое документа DOCS"]').getAttribute('aria-busy') || document.querySelector('[aria-label="Содержимое документа DOCS"]').getAttribute('aria-busy') === 'false');
+    assert.equal(await createReadme.isDisabled(), true);
+    assert.equal(await editReadme.isDisabled(), true);
+    assert.equal(await deleteReadme.isDisabled(), true);
+  }
+  await page.evaluate(() => mediaFixture.pick("second"));
+  await page.waitForFunction(() => document.querySelector('[aria-label="Документ DOCS"]').value === "README.md");
+  assert.equal(await createReadme.isDisabled(), true);
+  await documentPicker.selectOption("");
+  assert.equal(await createReadme.isEnabled(), true);
+  assert.equal(await editReadme.isDisabled(), true);
+  assert.equal(await deleteReadme.isDisabled(), true);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Создать README.txt"]').disabled);
+  assert.equal(await documentPicker.inputValue(), "");
+  await page.evaluate(() => mediaFixture.pick("first"));
+  await page.waitForFunction(() => document.querySelector('[aria-label="Документ DOCS"]').value === "README.txt");
+  console.log("PASS README actions follow the selected file, including explicit creation when only other documents exist");
+
+  const interactiveHtml = `<!doctype html><meta charset="utf-8"><title>Interactive DOCS</title>
+    <h1>Интерактивный отчёт</h1><button id="advance">Изменить время</button><output id="value">0</output>
+    <button id="download">Скачать CSV</button><script>
+    window.reportReady = true;
+    document.getElementById('advance').onclick=()=>document.getElementById('value').textContent++;
+    document.getElementById('download').onclick=()=>{const a=document.createElement('a');
+      a.href=URL.createObjectURL(new Blob(['current,value\\n1,2'],{type:'text/csv'}));a.download='report.csv';a.click();};
+    </script>`;
+  await page.evaluate(source => mediaFixture.put("DOCS/interactive.html", source), interactiveHtml);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForFunction(() => [...document.querySelector('[aria-label="Документ DOCS"]').options].some(o => o.value === "interactive.html"));
+  await documentPicker.selectOption("interactive.html");
+  await page.frameLocator('iframe[title="HTML-документ DOCS"]').getByRole('heading', {name:'Интерактивный отчёт'}).waitFor();
+  assert.equal(await page.evaluate(() => window.reportReady), undefined);
+  for (const button of [createReadme, editReadme, deleteReadme]) assert.equal(await button.isDisabled(), true);
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByRole('button', {name:'Открыть HTML в браузере',exact:true}).click();
+  const popup = await popupPromise;
+  await popup.waitForFunction(() => window.reportReady);
+  assert.equal(await popup.evaluate(() => window.opener), null);
+  await popup.getByRole('button', {name:'Изменить время'}).click();
+  assert.equal(await popup.locator('#value').innerText(), '1');
+  const downloadPromise = popup.waitForEvent('download');
+  await popup.getByRole('button', {name:'Скачать CSV'}).click();
+  assert.equal((await downloadPromise).suggestedFilename(), 'report.csv');
+  await popup.reload(); await popup.waitForFunction(() => window.reportReady);
+  assert.equal(await popup.locator('#value').innerText(), '0');
+  await page.evaluate(() => mediaFixture.pick("second"));
+  await popup.reload(); await popup.waitForFunction(() => window.reportReady);
+  await popup.close();
+  await page.evaluate(() => mediaFixture.pick("first"));
+  await page.waitForFunction(() => document.querySelector('[aria-label="Документ DOCS"]').value === "README.txt");
+  console.log("PASS HTML scripts, CSV download, reload and task switch in an independent browser tab");
+
   const editor = page.locator(".task-gif-dialog[open]");
   await page.getByRole("button", { name: "Править", exact: true }).click();
   const input = page.getByLabel("Текст README.txt", { exact: true });

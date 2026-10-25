@@ -8,6 +8,13 @@ export function TaskImageGallery(props) {
   const [view, setView] = createSignal({ entries: [], thumbnails: {}, loading: false, error: "", deleting: null, preview: null });
   const [deleteRequest, setDeleteRequest] = createSignal(null);
   const controller = props.createController({ publish: setView });
+  let previousPreviewUrl;
+  createEffect(() => {
+    const url = view().preview?.url;
+    if (url === previousPreviewUrl) return;
+    previousPreviewUrl = url;
+    props.onPreviewChange?.();
+  });
   let grid, opener, observer;
   let confirmDialog, confirmCancelButton, deleteOpener;
   let disposed = false, deleteBusy = false;
@@ -159,6 +166,7 @@ export function TaskImageGallery(props) {
       </p></Show>
     </div>
     <TaskMediaDialog open={Boolean(view().preview)} title={view().preview?.entry.name} opener={() => opener}
+      renderHeader={() => props.renderPreviewHeader?.(() => view().preview)}
       onClose={() => controller.closePreview()} closeLabel={`Закрыть просмотр ${props.label}`}
       showNavigation={view().entries.length > 1} canPrevious={canNavigate(-1)} canNext={canNavigate(1)}
       onNavigate={direction => controller.navigatePreview(direction)}

@@ -255,7 +255,7 @@ export function SurfaceChart(props) {
   });
   return <div class="surface-chart">
     <div ref={host} class="surface-canvas" title="ЛКМ — поворот; ПКМ — перенос; колесо — масштаб; Пробел — линза от ×5, колесо — её увеличение; Ctrl/Alt+X/Y/Z — вращение вокруг оси" />
-    <Show when={ready() && !error() && showLensHint()}><span class="viewport-lens-hint">Нажми Пробел !</span></Show>
+    <Show when={ready() && !error() && showLensHint()}><span class="viewport-lens-hint">Щелкни и нажми Пробел !</span></Show>
     <Show when={!props.grid}><div class="plot-empty">{props.emptyText || "Выберите площадку"}</div></Show>
     <Show when={limits()}><div class="surface-legend"><span>{formatValue(limits().min)}</span><div /><span>{formatValue(limits().max)} {props.unit}</span></div></Show>
     <Show when={error()}><div class="plot-error">{error()}</div></Show>

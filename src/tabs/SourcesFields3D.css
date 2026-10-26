@@ -128,7 +128,20 @@
 .source-graphs-panel {
   left: auto;
   right: 0;
+  min-width: 330px;
+  max-height: min(560px, 70vh);
+  overflow: auto;
 }
+
+.source-graph-axis-actions, .source-graph-build-actions { display: flex; align-items: center; gap: 6px; }
+.source-graph-axis-actions button, .source-graph-build-actions button { flex: 1; padding-inline: 7px; }
+.source-graphs-panel button[aria-pressed="true"] { background: #285b3a; border-color: #70bd85; }
+.source-graph-error { color: #ffd091; white-space: normal; }
+.embedded-geometry:has(.source-graph-hint) { position: relative; }
+.source-graph-hint { position: absolute; bottom: 12px; left: 130px; right: 12px; z-index: 12; width: fit-content; max-width: calc(100% - 142px); padding: 7px 10px; border: 1px solid #788c9d; border-radius: 4px; background: #1d3048ed; color: #f0f4f7; font: 13px/1.4 Arial,sans-serif; pointer-events: none; }
+.source-graph-delete-dialog { max-width: min(420px, 90vw); padding: 20px; background: #1d3048; color: #f0f4f7; color-scheme: dark; border: 1px solid #788c9d; border-radius: 6px; }
+.source-graph-delete-dialog::backdrop { background: #0007; }
+.source-graph-delete-dialog > div { display: flex; justify-content: flex-end; gap: 10px; }
 
 .source-graphs-panel button:hover {
   background: #3b4651;

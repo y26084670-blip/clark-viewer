@@ -6,9 +6,12 @@ import { createResultLayerReader } from "../../src/services/results/resultLayerR
 import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS } from "../../src/services/visualization/resultStreamlineField.js";
 
 import { applyResultGlobalRange, resultGlobalScale } from "../../src/services/results/resultGlobalScale.js";
+import { createGraphAxesController, graphAxisKey } from "../../src/services/visualization/graphAxes.js";
+import { createResultGraphReader, graphQuantityKey, graphResultSignature } from "../../src/services/results/resultGraphRequests.js";
 
 const streamlineSessions = new WeakMap();
 const cameraSessions = new WeakMap();
+const graphSessions = new WeakMap();
 
 // Execute the actual component setup, excluding JSX. Memo reads are evaluated on
 // demand and only lifecycle/frame-hook adapters are replaced; this verifies the
@@ -48,9 +51,11 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_METHODS", "streamlineSessions", "cameraSessions",
     "QUANTITIES", "assignedHtsElements", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
     "createMovieTabAdapter", "completedMovieFrame", "onMount", "applyResultGlobalRange", "resultGlobalScale",
+    "createGraphAxesController", "graphAxisKey", "createResultGraphReader", "graphQuantityKey", "graphResultSignature", "graphSessions",
     `${setup} return { cameraState, rememberCamera, quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
       colorMap, effectiveColorMap, normalizeVectors, changeNormalizeVectors, changeColorMap, conductivityAvailable, unavailableConductivity, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
       addStreamline, deleteStreamline, streamlineMethod, changeStreamlineMethod, streamlines,
+      graphsOnly, setGraphsOnly, showGraphs, setShowGraphs, graphController, graphState, buildGraphs, currentGraphResults, graphResults, graphBusy,
       controls: ${controlBindings},
       streamlineControls: ${streamlineBindings},
       globalMinMax, setGlobalMinMax, globalRanges, effectiveGlobalMinMax, resultLayers, timeIndex, selections }; } return SourcesFields3D(props);`);
@@ -61,7 +66,10 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS, streamlineSessions, cameraSessions, QUANTITIES, assignedHtsElements, resultDisplaySelection,
     RESULT_LAYER_GROUPS, options.readerFactory ?? createResultLayerReader,
     (source, reader) => { requestSource = source; load = reader; options.observeRequest?.(source); return () => state; },
-    options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame, () => {}, applyResultGlobalRange, resultGlobalScale);
+    options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame, () => {}, applyResultGlobalRange, resultGlobalScale,
+    createGraphAxesController, graphAxisKey, options.graphReaderFactory ?? createResultGraphReader, graphQuantityKey, graphResultSignature, graphSessions);
+  // Existing field-display cases explicitly keep result visualization enabled.
+  if (options.graphsOnly !== true) api.setGraphsOnly(false);
   return { ...api, request: () => requestSource(), load: request => load(request),
     setResultState(next) { state = next; },
     flushEffects() { effects.forEach(callback => callback()); },

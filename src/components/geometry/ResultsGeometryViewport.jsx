@@ -791,6 +791,10 @@ export function ResultsGeometryViewport(props) {
             geometryRevision={props.model}
             resultLayers={props.resultLayers}
             resultStreamlines={props.resultStreamlines}
+            graphController={props.graphController} graphState={props.graphState} graphResults={props.graphResults}
+            graphComponents={props.graphComponents} graphBackground={props.graphBackground} showGraphs={props.showGraphs}
+            graphViewRequest={props.graphViewRequest} graphBlocked={props.graphBlocked}
+            onGraphProjectionChange={value => setOrthographicView(value === "orthographic")}
             streamlineWidth={props.streamlineWidth}
             streamlineColorMap={props.streamlineColorMap}
             selectedStreamline={props.selectedStreamline}

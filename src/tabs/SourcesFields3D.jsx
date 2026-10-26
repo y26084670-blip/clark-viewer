@@ -15,12 +15,15 @@ import { applyResultGlobalRange, resultGlobalScale } from "../services/results/r
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import { movie3DFilenamePrefix } from "../services/movie/movieFilename.js";
 import { STREAMLINE_METHODS, STREAMLINE_DEFAULT_TOLERANCE } from "../services/visualization/resultStreamlineField.js";
+import { createGraphAxesController, graphAxisKey } from "../services/visualization/graphAxes.js";
+import { createResultGraphReader, graphQuantityKey, graphResultSignature } from "../services/results/resultGraphRequests.js";
 import "./SourcesFields3D.css";
 
-// Switching tabs unmounts this component. Retain only small seed descriptors,
-// not HDF5 buffers or worker/GPU resources, for the lifetime of the loaded task.
+// Switching tabs unmounts this component. Retain descriptors and sampled curves,
+// not source HDF5 buffers or worker/GPU resources, for the loaded task's lifetime.
 const streamlineSessions = new WeakMap();
 const cameraSessions = new WeakMap();
+const graphSessions = new WeakMap();
 
 export function SourcesFields3D(props) {
   const cameraState = () => props.task && cameraSessions.get(props.task);
@@ -30,10 +33,11 @@ export function SourcesFields3D(props) {
   const flightBusy = () => flightState() !== "idle";
   const changeTime = index => { if (!flightBusy()) props.setTime(index); };
   onMount(()=>{
-    const remove=installSourcesFieldsKeyboard(window,{blocked:()=>props.movieBusy,flightBusy,
+    const remove=installSourcesFieldsKeyboard(window,{blocked:()=>props.movieBusy || Boolean(graphState().mode) || graphBusy(),flightBusy,
       time:()=>props.time,maxTime:()=>props.task?.general.countTimeSteps??0,setTime:changeTime,
       view:command=>setCameraRequest(previous=>({command,sequence:(previous?.sequence??0)+1}))});
     const closeMenus = event => {
+      if (openSourceMenu() === "graphs" && graphState().mode && event.target?.closest?.(".geometry-viewer-canvas-region")) return;
       if (!event.target?.closest?.(".source-toolbar-menu")) setOpenSourceMenu(null);
     };
     window.addEventListener("pointerdown", closeMenus, true);
@@ -45,10 +49,69 @@ export function SourcesFields3D(props) {
   const [streamlineMethod, setStreamlineMethod] = createSignal(savedStreamlines?.method ?? "trilinear");
   const [streamlineNotice, setStreamlineNotice] = createSignal("");
   const [openSourceMenu, setOpenSourceMenu] = createSignal(null);
-  // Interface only for now; these options do not alter the result reader or 3D scene.
-  const [graphsOnly, setGraphsOnly] = createSignal(true);
-  const [graphComponents, setGraphComponents] = createSignal({ X: true, Y: true, Z: true });
-  const [graphBackground, setGraphBackground] = createSignal("#ffffff");
+  const savedGraphs = props.task && graphSessions.get(props.task);
+  const [graphsOnly, setGraphsOnly] = createSignal(savedGraphs?.only ?? true);
+  const [showGraphs, setShowGraphs] = createSignal(savedGraphs?.show ?? true);
+  const [graphComponents, setGraphComponents] = createSignal(savedGraphs?.components ?? { X: true, Y: true, Z: true });
+  const [graphBackground, setGraphBackground] = createSignal(savedGraphs?.background ?? "#ffffff");
+  const [graphState, setGraphState] = createSignal(null);
+  const graphController = createGraphAxesController(setGraphState, savedGraphs?.axes ?? []);
+  setGraphState(graphController.state);
+  const [graphResults, setGraphResults] = createSignal(savedGraphs?.results ?? []);
+  const [graphBusy, setGraphBusy] = createSignal(false), [graphError, setGraphError] = createSignal("");
+  const [graphViewRequest, setGraphViewRequest] = createSignal(null);
+  let graphReader = createResultGraphReader({ initialTask: props.task, initialResults: savedGraphs?.results }), graphTask = props.task;
+  let graphRevision = 0, graphTime = props.time, deleteAxisDialog;
+  const graphBlocked = () => props.movieBusy || flightBusy() || graphBusy();
+  const graphQuantities = () => ({ elements: elementsQuantity(), regions: regionsQuantity(), virtual: virtualQuantity() });
+  const activeGraphAxis = () => graphState().axes.find(a => a.id === graphState().active);
+  const scalarGraph = () => {
+    const axis = activeGraphAxis();
+    return axis ? QUANTITIES[graphQuantityKey(props.task, axis, graphQuantities())]?.components === 1 : !hasVectors() && hasScalars();
+  };
+  const currentGraphResults = () => graphResults().filter(result => {
+    const axis = graphState().axes.find(a => a.id === result.id);
+    return axis && result.signature === graphResultSignature(axis, props.time, graphQuantityKey(props.task, axis, graphQuantities()), streamlineMethod());
+  });
+  const graphSession = () => ({ axes: graphState().axes, results: graphResults(), only: graphsOnly(), show: showGraphs(), components: graphComponents(), background: graphBackground() });
+  createEffect(() => {
+    if (props.task !== graphTask) {
+      if (graphTask) graphSessions.set(graphTask, graphSession());
+      graphRevision++; graphReader.close(); graphTask = props.task;
+      const saved = graphTask && graphSessions.get(graphTask);
+      graphController.reset(saved?.axes ?? []); setGraphResults(saved?.results ?? []);
+      setGraphsOnly(saved?.only ?? true); setShowGraphs(saved?.show ?? true);
+      setGraphComponents(saved?.components ?? { X: true, Y: true, Z: true }); setGraphBackground(saved?.background ?? "#ffffff");
+      graphReader = createResultGraphReader({ initialTask: graphTask, initialResults: saved?.results });
+      setGraphBusy(false); setGraphError(""); setGraphViewRequest(null);
+    }
+    if (props.time !== graphTime) { graphTime = props.time; graphController.cancel(); }
+  });
+  onCleanup(() => {
+    graphRevision++; graphReader.close();
+    if (graphTask) graphSessions.set(graphTask, graphSession());
+  });
+  createEffect(() => {
+    const deleting = graphState().deleting;
+    if (!deleteAxisDialog) return;
+    if (deleting != null && !deleteAxisDialog.open) deleteAxisDialog.showModal();
+    else if (deleting == null && deleteAxisDialog.open) deleteAxisDialog.close();
+  });
+  async function buildGraphs() {
+    if (graphBlocked() || !graphState().axes.length) return;
+    graphController.cancel(); setGraphError(""); setGraphBusy(true);
+    const version = ++graphRevision, task = props.task, time = props.time, method = streamlineMethod(), quantities = graphQuantities(), axes = graphState().axes;
+    try {
+      const results = await graphReader.read({ task, time, method, quantities, axes });
+      if (version !== graphRevision) return;
+      if (task !== props.task || time !== props.time || method !== streamlineMethod()
+        || JSON.stringify(quantities) !== JSON.stringify(graphQuantities()) || axes.map(graphAxisKey).join("|") !== graphState().axes.map(graphAxisKey).join("|")) {
+        setGraphError("Параметры изменились. Нажмите «Построить» ещё раз."); return;
+      }
+      setGraphResults(results);
+    } catch (error) { if (version === graphRevision && error.name !== "AbortError") setGraphError(error.message); }
+    finally { if (version === graphRevision) setGraphBusy(false); }
+  }
   let nextStreamlineId = savedStreamlines?.nextId ?? 1, streamlineTask = props.task;
   createEffect(() => {
     if (props.task === streamlineTask) return;
@@ -143,13 +206,14 @@ export function SourcesFields3D(props) {
   }));
   const globalRanges = createMemo(() => resultGlobalScale(props.task, requestedLayers(), streamlineSeeds()));
   const effectiveGlobalMinMax = createMemo(() => globalMinMax() && globalRanges().available);
-  const hasRequestedResults = createMemo(() => requestedLayers().some(layer => layer.quantityKey !== "none" && layer.selected.length > 0));
+  const hasRequestedResults = createMemo(() => !graphsOnly() && requestedLayers().some(layer => layer.quantityKey !== "none" && layer.selected.length > 0));
   const layerReader = createResultLayerReader();
   onCleanup(() => layerReader.close());
   // Even a completely disabled frame reaches the reader so it can release its
   // workers; no HDF5 is read, and geometry follows the requested time immediately.
-  const result = useResultFrame(() => props.task && ({ task: props.task, time: props.time, layers: requestedLayers(),
-    streamlineSeeds: streamlineSeeds(), streamlineTolerance: STREAMLINE_DEFAULT_TOLERANCE,
+  const result = useResultFrame(() => props.task && ({ task: props.task, time: props.time,
+    layers: graphsOnly() ? requestedLayers().map(layer => ({ ...layer, quantityKey: "none" })) : requestedLayers(),
+    streamlineSeeds: graphsOnly() ? [] : streamlineSeeds(), streamlineTolerance: STREAMLINE_DEFAULT_TOLERANCE,
     streamlineMethod: streamlineMethod(), performanceEnabled }),
     request => layerReader.read(request), { onPerformance: onFramePerformance, performanceEnabled });
   const displayed = () => result().frame;
@@ -163,7 +227,7 @@ export function SourcesFields3D(props) {
     color: layer.quantityKey === "J" ? 0xff5454 : layer.quantityKey === "M" ? 0x44dd66 : 0x44bbff,
   });
   const resultLayers = createMemo(() => hasRequestedResults() ? (value()?.layers ?? []).map(layerMetadata) : []);
-  const timeIndex = () => hasRequestedResults() || streamlineSeeds().length ? displayed()?.request.time ?? props.time : props.time;
+  const timeIndex = () => !graphsOnly() && (hasRequestedResults() || streamlineSeeds().length) ? displayed()?.request.time ?? props.time : props.time;
   const flightDisabledReason = () => props.movieBusy ? "Дождитесь завершения создания GIF."
     : result().loading || result().error || timeIndex() !== props.time
       ? "Дождитесь готовности выбранного кадра." : "";
@@ -303,16 +367,32 @@ export function SourcesFields3D(props) {
             <div class="source-toolbar-menu-panel source-graphs-panel">
               <label class="source-toolbar-option"><input type="checkbox" checked={graphsOnly()}
                 onChange={event => setGraphsOnly(event.currentTarget.checked)} /> только графики</label>
-              <button type="button">задать ось</button>
+              <label class="source-toolbar-option"><input type="checkbox" checked={showGraphs()}
+                onChange={event => setShowGraphs(event.currentTarget.checked)} /> Показывать графики</label>
+              <div class="source-graph-axis-actions"><span>ось:</span>
+                <For each={[["add", "Добавить"], ["edit", "Изменить"], ["delete", "Удалить"]]}>{([mode, label]) =>
+                  <button type="button" aria-pressed={graphState().mode === mode} disabled={graphBlocked() || (mode !== "add" && !graphState().axes.length)}
+                    onClick={() => graphController.toggle(mode)}>{label}</button>}
+                </For>
+              </div>
+              <Show when={activeGraphAxis()}><span>Выбрана ось №{graphState().active}</span></Show>
               <For each={["X", "Y", "Z"]}>{axis =>
                 <label class="source-toolbar-option"><input type="checkbox" checked={graphComponents()[axis]}
+                  disabled={scalarGraph()}
                   onChange={event => setGraphComponents(previous => ({ ...previous, [axis]: event.currentTarget.checked }))} />
                   {axis}-компонента
                 </label>}
               </For>
               <label class="source-graph-background"><input type="color" aria-label="фон" value={graphBackground()}
                 onInput={event => setGraphBackground(event.currentTarget.value)} /> фон</label>
-              <button type="button">повернуть</button>
+              <div class="source-graph-build-actions">
+                <button type="button" disabled={graphBlocked() || !graphState().axes.length} onClick={buildGraphs}>Построить</button>
+                <button type="button" disabled={graphBlocked() || !showGraphs() || !currentGraphResults().some(g => g.id === graphState().active && !g.error)}
+                  onClick={() => setGraphViewRequest(previous => ({ id: graphState().active, sequence: (previous?.sequence ?? 0) + 1 }))}>Повернуть</button>
+              </div>
+              <Show when={graphBusy()}><span role="status">Построение графиков…</span></Show>
+              <Show when={graphError()}><span class="source-graph-error" role="alert">{graphError()}</span></Show>
+              <For each={currentGraphResults().filter(g => g.error || g.notice)}>{graph => <span class="source-graph-error" role={graph.error ? "alert" : "status"}>Ось №{graph.id}: {graph.error || graph.notice}</span>}</For>
             </div>
           </Show>
         </div>
@@ -325,24 +405,38 @@ export function SourcesFields3D(props) {
           onOpen={() => setOpenSourceMenu(null)} />
       </div>
       <div class="embedded-geometry">
+        <Show when={graphState().mode}><div class="source-graph-hint" role="status">
+          {graphState().notice || (graphState().mode === "add" ? graphState().pending ? "Укажите вторую точку того же объекта и образа. Esc — отмена." : "Укажите первый узел области или центр ЭО. Esc — отмена."
+            : graphState().mode === "edit" ? "Перетаскивайте концы осей между узлами. Отожмите «Изменить» для завершения."
+            : "Щёлкните по концу оси для удаления. Отожмите «Удалить» для завершения.")}
+        </div></Show>
         <ResultsGeometryViewport cameraState={cameraState()} onCameraStateChange={rememberCamera} open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
-          allowFlight={true} flightBlocked={props.movieBusy} flightDisabledReason={flightDisabledReason()}
+          allowFlight={true} flightBlocked={props.movieBusy || graphBusy() || Boolean(graphState().mode)} flightDisabledReason={flightDisabledReason()}
           onFlightStateChange={setFlightState}
           cameraRequest={cameraRequest()}
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={timeIndex()}
-          selections={selections()} resultLayers={resultLayers()}
+          selections={selections()} resultLayers={graphsOnly() ? [] : resultLayers()}
           resultError={[result().error, ...(value()?.errors ?? []).map(error => error.message)].filter(Boolean).join(" · ")}
-          resultStreamlines={streamlines()} selectedStreamline={selectedStreamline()}
+          resultStreamlines={graphsOnly() ? [] : streamlines()} selectedStreamline={selectedStreamline()}
+          graphController={graphController} graphState={graphState()} graphResults={currentGraphResults().filter(g => !g.error)}
+          graphComponents={graphComponents()} graphBackground={graphBackground()} showGraphs={showGraphs()}
+          graphViewRequest={graphViewRequest()} graphBlocked={graphBlocked()}
           streamlineWidth={streamlineWidth()} streamlineColorMap={true}
           onSelectStreamline={setSelectedStreamline} onResultNodeDoubleClick={addStreamline}
           captureFrameKey={displayed()} onCaptureReady={movie.onCaptureReady}
-          resultVectorScale={scale()} resultPickingOnly={true}
+          resultVectorScale={scale()} resultPickingOnly={!graphsOnly()}
           resultVectorColorMap={effectiveColorMap()}
           resultNormalizeVectors={normalizeVectors()}
           performanceProfile={performanceProfile()} />
       </div>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep}
         disabled={flightBusy()} onChange={changeTime} />
+      <dialog ref={deleteAxisDialog} class="source-graph-delete-dialog" aria-label="Удаление оси графика"
+        onCancel={event => { event.preventDefault(); graphController.confirmDelete(false); }}>
+        <p>Удалить ось №{graphState().deleting} и её график?</p>
+        <div><button type="button" onClick={() => graphController.confirmDelete(true)}>Удалить ось</button>
+          <button type="button" autofocus onClick={() => graphController.confirmDelete(false)}>Отмена</button></div>
+      </dialog>
     </section>
   </div>;
 }

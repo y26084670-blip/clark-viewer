@@ -73,6 +73,9 @@ import { updateResultSurfaceMeshes } from "../../services/visualization/resultSu
 import { loadStreamlineRenderer, resizeStreamlineMaterials, streamlinePointerHandlers, updateStreamlineMeshes } from "../../services/visualization/resultStreamlineRenderer.js";
 import { captureMovieCanvas } from "../../services/movie/movieCanvas.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../../services/movie/renderedFrameGate.js";
+import { resolveGraphNode } from "../../services/visualization/graphAxes.js";
+import { installGraphAxisInteraction } from "../../services/visualization/graphAxisInteraction.js";
+import { updateGraphScene, disposeGraphScene } from "../../services/visualization/resultGraphRenderer.js";
 
 export const GEOMETRY_INSTANCE_BUDGET = 20_000;
 export const GEOMETRY_DISCRETIZATION_SEGMENT_BUDGET =
@@ -1512,6 +1515,7 @@ export function ThreeGeometryViewport(props) {
   let helperRoot;
   let resultLayers = [];
   let streamlines = [], selectedStreamline = null, streamlineRoot = null;
+  let graphRoot, graphPreview, graphInteraction, graphFrames = [], graphsDirty = false;
   let streamlineWidth = 2, streamlineColorMap = true;
   let resultLayerStates = new Map();
   let resultVectorScale = 1;
@@ -1655,6 +1659,7 @@ export function ThreeGeometryViewport(props) {
       }
       if (sourcesDirty) { sourcesDirty = false; replacePrescribedSources(); }
       if (vectorsDirty) { vectorsDirty = false; replaceResultLayers(); }
+      if (graphsDirty) { graphsDirty = false; replaceGraphs(); }
       if (pendingCameraState && currentBounds && !currentBounds.isEmpty()) {
         // OrbitControls caches its up-axis transform in the constructor. Restore
         // that basis before applying a flight pose, including axial approaches.
@@ -1960,6 +1965,7 @@ export function ThreeGeometryViewport(props) {
   };
 
   const pickAtPointer = (pointer, action = "hover") => {
+    if (props.graphState?.mode) { clearHoverTooltip(); return; }
     const flightPicking = action === "flight";
     if (!flightPicking) vectorHover?.clear();
     if (typeof axisRotationController !== "undefined" && axisRotationController?.active) {
@@ -2200,6 +2206,14 @@ export function ThreeGeometryViewport(props) {
       [geometryRoot, true, true], [vertexPoints, verticesVisible],
       [discretizationLines, discretizationLinesVisible], [discretizationPoints, discretizationPointsVisible],
     ], geometryOpacity, geometryMaterialDefaults);
+    if (discretizationPoints) {
+      discretizationPoints.material.depthTest = !props.graphState?.mode;
+      discretizationPoints.renderOrder = props.graphState?.mode ? 34 : 21;
+      if (props.graphState?.mode) {
+        discretizationPoints.visible = true; discretizationPoints.material.opacity = 1;
+        if (!discretizationPoints.material.transparent) { discretizationPoints.material.transparent = true; discretizationPoints.material.needsUpdate = true; }
+      }
+    }
     for (const state of resultLayerStates.values()) state.vectorRoot?.traverse(object => {
       if (object.name === "result-volume-domain") object.material.uniforms.uOpacity.value = geometryOpacity ?? 1;
     });
@@ -2478,6 +2492,48 @@ export function ThreeGeometryViewport(props) {
     requestRender();
   };
 
+  const replaceGraphs = () => {
+    if (!THREE || !helperRoot) return;
+    graphRoot ??= new THREE.Group(); graphRoot.name = "result-graphs";
+    graphFrames = updateGraphScene(THREE, graphRoot, props.scene, props.graphState?.axes ?? [], props.graphResults ?? [], {
+      active: props.graphState?.active, components: props.graphComponents, background: props.graphBackground,
+      visible: props.showGraphs !== false, filters: activeResultFilters,
+    });
+    if (graphRoot.parent !== helperRoot) helperRoot.add(graphRoot);
+    graphInteraction?.sync();
+  };
+
+  const previewGraphAxis = (start, end) => {
+    if (!THREE || !helperRoot) return;
+    if (!start || !end) { if (graphPreview?.visible) { graphPreview.visible = false; requestRender(); } return; }
+    if (!graphPreview) {
+      graphPreview = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+        new THREE.LineBasicMaterial({ color: 0xffb42e, transparent: true, depthTest: false, depthWrite: false }));
+      graphPreview.name = "graph-axis-preview"; graphPreview.renderOrder = 33;
+    }
+    const positions = graphPreview.geometry.attributes.position;
+    positions.setXYZ(0, ...start); positions.setXYZ(1, ...end); positions.needsUpdate = true;
+    graphPreview.geometry.computeBoundingSphere(); graphPreview.visible = true;
+    if (graphPreview.parent !== helperRoot) helperRoot.add(graphPreview);
+    requestRender();
+  };
+
+  const faceGraph = request => {
+    if (!request || !ready() || props.graphBlocked || movieSnapshot) return;
+    renderNow();
+    const group = graphRoot?.children.find(g => g.userData.axisId === request.id), plane = group?.getObjectByName("result-graph-plane");
+    if (!plane?.visible) return;
+    const frame = group.userData.frame;
+    switchProjection("orthographic", { fit: false });
+    props.onGraphProjectionChange?.("orthographic");
+    const center = plane.getWorldPosition(new THREE.Vector3());
+    controls.target.copy(center); camera.up.fromArray(frame.up);
+    camera.position.copy(center).addScaledVector(new THREE.Vector3(...frame.normal), Math.max(frame.length * 2, 1));
+    camera.lookAt(center); rebuildOrbitControls();
+    fitCameraToVisibleObjects(THREE, camera, controls, [plane], { padding: 1.12 });
+    hasFramedGeometry = true; clearHoverTooltip(); requestRender();
+  };
+
   const updateMovingGeometry = (sceneModel, filters, mode, showEdges) => {
     const revision = props.geometryRevision;
     const context = geometryContext;
@@ -2513,7 +2569,7 @@ export function ThreeGeometryViewport(props) {
       fitVisibleObjects();
     }
     clearHoverTooltip();
-    sourcesDirty = vectorsDirty = true;
+    sourcesDirty = vectorsDirty = graphsDirty = true;
     requestRender();
     return true;
   };
@@ -2530,7 +2586,7 @@ export function ThreeGeometryViewport(props) {
       disposeObject(geometryRoot);
     }
     if (helperRoot) {
-      for (const layer of [prescribedSourceRoot, streamlineRoot, ...resultLayerRoots(resultLayerStates)]) {
+      for (const layer of [prescribedSourceRoot, streamlineRoot, graphRoot, graphPreview, ...resultLayerRoots(resultLayerStates)]) {
         if (layer) helperRoot.remove(layer);
       }
       threeScene.remove(helperRoot);
@@ -2544,7 +2600,7 @@ export function ThreeGeometryViewport(props) {
     helperRoot = new THREE.Group();
     helperRoot.name = "geometry-helpers";
     threeScene.add(geometryRoot, helperRoot);
-    for (const layer of [prescribedSourceRoot, streamlineRoot, ...resultLayerRoots(resultLayerStates)]) {
+    for (const layer of [prescribedSourceRoot, streamlineRoot, graphRoot, graphPreview, ...resultLayerRoots(resultLayerStates)]) {
       if (layer) helperRoot.add(layer);
     }
     geometryPickTargets = [];
@@ -2613,7 +2669,7 @@ export function ThreeGeometryViewport(props) {
       segmentBudget: props.discretizationSegmentBudget, pointBudget: props.discretizationPointBudget,
       primitiveCount: sceneModel?.primitives?.length ?? 0,
     };
-    sourcesDirty = vectorsDirty = true;
+    sourcesDirty = vectorsDirty = graphsDirty = true;
     updateGeometryOpacity();
     publishRenderStats();
     if (!contextLost) {
@@ -2773,12 +2829,20 @@ export function ThreeGeometryViewport(props) {
         onPointerMove: queuePointerPick, onPointerLeave: clearHoverTooltip,
       });
       const lineHandlers = streamlinePointerHandlers(pickAtPointer, () => movieSnapshot
-        || flightController.state !== "idle" || !props.resultPickingOnly);
+        || flightController.state !== "idle" || !props.resultPickingOnly || Boolean(props.graphState?.mode));
       handlePointerDown = lineHandlers.pointerdown;
       handleClick = lineHandlers.click; handleDoubleClick = lineHandlers.dblclick;
       renderer.domElement.addEventListener("pointerdown", handlePointerDown);
       renderer.domElement.addEventListener("click", handleClick);
       renderer.domElement.addEventListener("dblclick", handleDoubleClick);
+      if (props.graphController) graphInteraction = installGraphAxisInteraction({ THREE, element: renderer.domElement,
+        controller: props.graphController, getCamera: () => camera, getControls: () => controls,
+        getAxes: () => graphFrames, getPlanes: () => graphRoot?.children.flatMap(g => g.children.filter(c => c.name === "result-graph-plane")) ?? [],
+        getPoints: () => { materializeDiscretizationPoints(); return { positions: discretizationWorldPositions, ranges: discretizationPointRanges }; },
+        getNodePosition: node => resolveGraphNode(props.scene, node).position,
+        blocked: () => disposed || contextLost || Boolean(movieSnapshot) || props.graphBlocked || flightController.state !== "idle",
+        onPreview: previewGraphAxis, onChange: requestRender,
+      });
 
       threeScene.add(new THREE.AmbientLight(0xffffff, 1.25));
       const light = new THREE.DirectionalLight(0xffffff, 0.55);
@@ -2848,7 +2912,7 @@ export function ThreeGeometryViewport(props) {
   });
 
   createEffect(() => {
-    discretizationPointsVisible = props.showCentersAndNodes === true;
+    discretizationPointsVisible = props.showCentersAndNodes === true || Boolean(props.graphState?.mode);
     if (!ready()) return;
     if (
       discretizationPointsVisible &&
@@ -2894,6 +2958,17 @@ export function ThreeGeometryViewport(props) {
     if (!ready()) return;
     vectorsDirty = true;
     requestRender();
+  });
+
+  createEffect(() => {
+    props.graphState; props.graphResults; props.graphComponents; props.graphBackground; props.showGraphs; props.graphBlocked;
+    if (!ready()) return;
+    graphsDirty = true; graphInteraction?.sync(); requestRender();
+  });
+
+  createEffect(() => {
+    const request = props.graphViewRequest;
+    if (ready()) untrack(() => faceGraph(request));
   });
 
   createEffect(() => {
@@ -2960,6 +3035,7 @@ export function ThreeGeometryViewport(props) {
   onCleanup(() => {
     rememberCamera();
     disposed = true;
+    graphInteraction?.dispose();
     viewportLens?.dispose(); vectorHover?.dispose(); lensVectorDetails?.dispose(); lensHintPreference?.dispose();
     viewCubeControls?.dispose();
     axisRotationController?.dispose();
@@ -2979,6 +3055,7 @@ export function ThreeGeometryViewport(props) {
     // Streamline borders share their parent's geometry: release it once through
     // the owning renderer before the generic helper traversal.
     if (THREE && streamlineRoot) updateStreamlineMeshes(THREE, streamlineRoot, []);
+    disposeGraphScene(graphRoot);
     disposeObject(helperRoot);
     disposeObject(viewCubeRoot);
     if (renderer?.domElement) {

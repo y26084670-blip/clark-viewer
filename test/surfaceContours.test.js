@@ -50,6 +50,15 @@ test("only the lower plane is projected, with matching footprint, a gap and no c
   assert.equal(projection.visible, true);
   assert.equal(projection.getObjectByName("projection").geometry, projectedGeometry);
   assert.deepEqual(mesh.geometry.attributes.position.array, original);
+  // Changing time must update the full-strength projection palette as well
+  // as the height plot, while retaining its indexed geometry.
+  const nextValues = [3, 2, 1, 0];
+  updateSurfaceMesh(mesh, { width: 2, height: 2, values: nextValues,
+    coordinates: [0,0,0, 0,3,0, 12,0,0, 12,3,0] });
+  updateSurfaceDecorations(group, mesh, nextValues, { isolines: 2 });
+  assert.equal(projection.getObjectByName("projection").geometry, projectedGeometry);
+  assert.deepEqual(projectedGeometry.attributes.color.array, mesh.geometry.attributes.color.array);
+  assert.equal(projectedGeometry.drawRange.count, mesh.geometry.index.count);
   let disposed = 0; group.traverse(object => object.material?.map?.addEventListener("dispose", () => disposed++));
   disposeSurfaceObject(group); disposeSurfaceObject(mesh); assert.equal(disposed, 1);
 });

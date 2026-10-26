@@ -112,6 +112,11 @@ textarea[readonly] { resize: none; width: 100%; margin: 0; padding: 12px; border
 .line-chart-canvas > canvas { display: block; touch-action: none; cursor: crosshair; }
 .line-chart-canvas > canvas.chart-legend-hover { cursor: grab; }
 .line-chart-canvas > canvas.chart-panning { cursor: grabbing; }
+.chart-scroll-tooltip { position: fixed; z-index: 10000; box-sizing: border-box; max-width: calc(100vw - 16px); max-height: 220px; padding: 8px 10px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; border: 1px solid #78818e; border-radius: 5px; background: #1c222bf5; color: #f5f7fa; box-shadow: 0 3px 12px #0004; font: 12px/1.4 Arial, sans-serif; overflow-wrap: anywhere; user-select: text; }
+.chart-scroll-tooltip[hidden] { display: none; }
+.chart-tooltip-title { font-weight: bold; margin-bottom: 4px; }
+.chart-tooltip-item { display: flex; align-items: flex-start; gap: 6px; padding: 3px 0; }
+.chart-tooltip-swatch { flex: 0 0 9px; width: 9px; height: 9px; margin-top: 3px; border: 1px solid #fff9; }
 .chart-selection-frame { position: absolute; pointer-events: none; border: 1px solid #1674ba; background: #2689cd28; }
 .chart-toolbar { gap: 6px 10px; }
 .chart-toolbar-note { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

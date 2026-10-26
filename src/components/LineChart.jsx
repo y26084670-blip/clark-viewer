@@ -3,6 +3,7 @@ import Chart from "chart.js/auto";
 import { captureMovieCanvas } from "../services/movie/movieCanvas.js";
 import { chartPanLimits, chartZoomLimits, clampChartPoint } from "../services/visualization/chartZoom.js";
 import { chartTableText } from "../services/visualization/chartTable.js";
+import { createChartTooltip } from "../services/visualization/chartTooltip.js";
 
 const colors = ["#1776bd", "#d94943", "#289447", "#994bbc", "#db8b19", "#15a2a2"];
 
@@ -33,13 +34,20 @@ function drawOverlayLegend(chart, series, position) {
     entries.forEach((item, index) => {
       const y = top + padding + rowHeight * (index + 0.5);
       const xBox = left + padding, yBox = y - squareSize / 2;
-      ctx.fillStyle = item.color; ctx.strokeStyle = item.color; ctx.lineWidth = 1;
+      ctx.fillStyle = item.hidden ? "#fff" : item.color;
+      ctx.strokeStyle = item.color; ctx.lineWidth = 1;
       ctx.fillRect(xBox, yBox, squareSize, squareSize);
       ctx.strokeRect(xBox + 0.5, yBox + 0.5, squareSize - 1, squareSize - 1);
-      // Only the visible part of each square is interactive, including when
-      // every dataset is hidden or the chart is too small for the full legend.
-      const box = { index: item.index, left: xBox, top: Math.max(top, yBox),
-        right: Math.min(left + width, xBox + squareSize), bottom: Math.min(top + height, yBox + squareSize) };
+      if (!item.hidden) {
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(xBox + 2.5, yBox + 6);
+        ctx.lineTo(xBox + 5, yBox + 8.5); ctx.lineTo(xBox + 9.5, yBox + 3.5); ctx.stroke();
+      }
+      // The complete visible row toggles its curve. Dragging the same row
+      // still moves the legend, including when every dataset is hidden.
+      const box = { index: item.index, left,
+        top: Math.max(top, y - rowHeight / 2), right: left + width,
+        bottom: Math.min(top + height, y + rowHeight / 2) };
       if (box.right > box.left && box.bottom > box.top) hitBoxes.push(box);
       ctx.fillStyle = "#666";
       if (textWidth > 0) {
@@ -57,7 +65,7 @@ function drawOverlayLegend(chart, series, position) {
 }
 
 export function LineChart(props) {
-  let canvas, chart, drag, skipContextMenu = false, legendHitBoxes = [];
+  let canvas, chart, drag, tooltipWindow, skipContextMenu = false, legendHitBoxes = [];
   let currentSeries = [], autoPending = true;
   let legendBounds = null, legendPosition = { x: 1, y: 0 };
   let movieState = null, renderedFrameKey = null, currentMovieCursor = null, disposed = false;
@@ -151,6 +159,7 @@ export function LineChart(props) {
   };
   onMount(() => {
     props.onCaptureReady?.(captureAdapter);
+    if (canvas.ownerDocument) tooltipWindow = createChartTooltip(canvas);
     window.addEventListener("keydown", cancelOnEscape); setReady(true);
   });
   createEffect(() => {
@@ -175,7 +184,11 @@ export function LineChart(props) {
       cancelSelection();
       legendHitBoxes = [];
       if (!chart) chart = new Chart(canvas, { type: "scatter", data: { datasets },
-        plugins: [{ id: "selectionFrame", beforeEvent: () => movieState || drag ? false : undefined },
+        plugins: [{ id: "selectionFrame", beforeEvent: (_chart, args) => {
+          if (movieState || drag || (args?.event && legendAt(args.event))) {
+            tooltipWindow?.hide(true); return false;
+          }
+        } },
           { id: "movieTimeCursor", afterDatasetsDraw: drawMovieCursor },
           { id: "overlayLegend", afterDatasetsDraw: current => {
             const legend = untrack(showLegend) ? drawOverlayLegend(current, currentSeries, legendPosition) : { hitBoxes: [], bounds: null };
@@ -186,7 +199,8 @@ export function LineChart(props) {
         scales: { x: { type: "linear", min: range.xMin, max: range.xMax,
           ticks: integerX ? { precision: 0 } : {}, title: { display: true, text: xLabel } },
           y: { min: range.yMin, max: range.yMax, title: { display: true, text: yLabel } } },
-        plugins: { legend: { display: false, position: "top" }, tooltip: { callbacks: {
+        plugins: { legend: { display: false, position: "top" }, tooltip: {
+          enabled: false, external: context => tooltipWindow?.render(context), callbacks: {
           title: items => items[0]?.dataset.label ?? "",
           label: context => currentSeries[context.datasetIndex]?.tooltip?.(context.raw)
             ?? `${context.parsed.x}, ${context.parsed.y}`,
@@ -225,7 +239,7 @@ export function LineChart(props) {
     disposed = true;
     rejectRenderWaiters(new Error("График закрыт во время записи фильма"));
     props.onCaptureReady?.(null);
-    cancelSelection(); window.removeEventListener("keydown", cancelOnEscape); chart?.destroy();
+    cancelSelection(); window.removeEventListener("keydown", cancelOnEscape); chart?.destroy(); tooltipWindow?.dispose();
   });
 
   function abortError() {
@@ -301,7 +315,7 @@ export function LineChart(props) {
     prepare({ signal } = {}) {
       if (signal?.aborted) throw abortError();
       if (movieState) throw new Error("Запись этого графика уже выполняется");
-      assertCaptureSource(); clearChartHover();
+      assertCaptureSource(); tooltipWindow?.hide(true); clearChartHover();
       const range = { xMin: chart.scales.x.min, xMax: chart.scales.x.max,
         yMin: chart.scales.y.min, yMax: chart.scales.y.max };
       if (!Object.values(range).every(Number.isFinite) || range.xMin >= range.xMax || range.yMin >= range.yMax) {
@@ -390,6 +404,7 @@ export function LineChart(props) {
     const point = chartPoint(event), area = chart.chartArea;
     if (point.x < area.left || point.x > area.right || point.y < area.top || point.y > area.bottom) return;
     const legendItem = event.button === 0 ? legendItemAt(point) : null;
+    tooltipWindow?.hide(true);
     cancelSelection(); setMenu(null); event.preventDefault();
     const mode = event.button === 0 && legendAt(point) ? "legend" : event.button === 2 ? "pan" : "zoom";
     drag = { pointerId: event.pointerId, mode, datasetIndex: legendItem?.index, start: point, area: { ...area },
@@ -440,7 +455,9 @@ export function LineChart(props) {
   function updateSelection(event) {
     if (movieState) return;
     if (!drag) {
-      setLegendHover(Boolean(chart && legendAt(chartPoint(event))));
+      const overLegend = Boolean(chart && legendAt(chartPoint(event)));
+      if (overLegend) tooltipWindow?.hide(true);
+      setLegendHover(overLegend);
       return;
     }
     if (drag.pointerId !== event.pointerId) return;
@@ -512,7 +529,7 @@ export function LineChart(props) {
         <button type="button" disabled={capturing()} onClick={toggleAutoScale} aria-pressed={props.autoScaleToggle ? autoScale() : undefined}
           title={props.autoScaleToggle ? (autoScale() ? "Автомасштаб включён: нажмите, чтобы сохранить текущие пределы" : "Автомасштаб выключен: нажмите для автоматического подбора пределов") : "Автоматические пределы по обеим осям"}>Авто</button>
         {props.afterAuto}
-        <label title="Перетащите легенду внутри графика; щелчок по цветному квадрату скрывает или возвращает кривую"><input type="checkbox" disabled={capturing()} checked={showLegend()} onChange={event => { if (!movieState) setShowLegend(event.currentTarget.checked); }} />Показать легенду</label>
+        <label title="Щелчок по строке легенды скрывает или возвращает кривую; перетаскивание перемещает легенду"><input type="checkbox" disabled={capturing()} checked={showLegend()} onChange={event => { if (!movieState) setShowLegend(event.currentTarget.checked); }} />Показать легенду</label>
         {props.toolbarLast}
       </div>
     </div>

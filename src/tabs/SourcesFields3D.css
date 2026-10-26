@@ -93,9 +93,67 @@
 }
 
 .source-lines-panel {
+  left: auto;
+  right: 0;
   min-width: min(430px, 70vw);
   max-height: 300px;
   overflow: auto;
+}
+
+.source-line-method {
+  gap: 7px;
+}
+
+.source-line-method select {
+  flex: 1;
+}
+
+.source-lines-panel .source-presentation-slider input[type="range"] {
+  width: 100%;
+  min-width: 0;
+}
+
+.source-line-method select,
+.source-graphs-panel button {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #697683;
+  border-radius: 3px;
+  background: #303943;
+  color: #edf2f7;
+  color-scheme: dark;
+  font: inherit;
+}
+
+.source-graphs-panel {
+  left: auto;
+  right: 0;
+}
+
+.source-graphs-panel button:hover {
+  background: #3b4651;
+}
+
+.source-graph-background {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.source-graph-background input[type="color"] {
+  box-sizing: border-box;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid #697683;
+  border-radius: 3px;
+  background: #303943;
+  cursor: pointer;
+}
+
+.source-graph-background input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
 }
 
 .source-line-row {

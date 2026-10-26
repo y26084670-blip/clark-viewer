@@ -45,6 +45,10 @@ export function SourcesFields3D(props) {
   const [streamlineMethod, setStreamlineMethod] = createSignal(savedStreamlines?.method ?? "trilinear");
   const [streamlineNotice, setStreamlineNotice] = createSignal("");
   const [openSourceMenu, setOpenSourceMenu] = createSignal(null);
+  // Interface only for now; these options do not alter the result reader or 3D scene.
+  const [graphsOnly, setGraphsOnly] = createSignal(true);
+  const [graphComponents, setGraphComponents] = createSignal({ X: true, Y: true, Z: true });
+  const [graphBackground, setGraphBackground] = createSignal("#ffffff");
   let nextStreamlineId = savedStreamlines?.nextId ?? 1, streamlineTask = props.task;
   createEffect(() => {
     if (props.task === streamlineTask) return;
@@ -223,7 +227,7 @@ export function SourcesFields3D(props) {
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
             aria-expanded={openSourceMenu() === "presentation"} aria-label="Представление"
-            title="Настроить размер, карту, минимакс и толщину линий"
+            title="Настроить размер, карту, нормализацию и минимакс"
             onClick={() => toggleSourceMenu("presentation")}>Представление</button>
           <Show when={openSourceMenu() === "presentation"}>
             <div class="source-toolbar-menu-panel source-presentation-panel">
@@ -245,12 +249,6 @@ export function SourcesFields3D(props) {
                   onChange={event => !props.movieBusy && globalRanges().available
                     && setGlobalMinMax(event.currentTarget.checked)} /> Общий минимакс
               </label>
-              <label class="source-presentation-slider">Толщина
-                <input type="range" min="1" max="10" step="1"
-                  value={streamlineWidth()} aria-label="Толщина линий"
-                  onInput={event => setStreamlineWidth(event.currentTarget.valueAsNumber)} />
-                <span>{streamlineWidth()} px</span>
-              </label>
             </div>
           </Show>
         </div>
@@ -258,10 +256,24 @@ export function SourcesFields3D(props) {
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
             aria-expanded={openSourceMenu() === "lines"} aria-label="Векторные линии"
-            title="Выбрать или удалить построенные векторные линии"
+            title="Настроить метод и толщину, выбрать или удалить векторные линии"
             onClick={() => toggleSourceMenu("lines")}>Векторные линии</button>
           <Show when={openSourceMenu() === "lines"}>
             <div class="source-toolbar-menu-panel source-lines-panel">
+              <label class="source-line-method">Метод построения
+                <select aria-label="Метод построения" value={streamlineMethod()} disabled={props.movieBusy}
+                  title="Выбрать метод построения векторных линий" onChange={changeStreamlineMethod}>
+                  <For each={Object.entries(STREAMLINE_METHODS)}>{([key, label]) =>
+                    <option value={key}>{label}</option>}
+                  </For>
+                </select>
+              </label>
+              <label class="source-presentation-slider">Толщина
+                <input type="range" min="1" max="10" step="1"
+                  value={streamlineWidth()} aria-label="Толщина линий"
+                  onInput={event => setStreamlineWidth(event.currentTarget.valueAsNumber)} />
+                <span>{streamlineWidth()} px</span>
+              </label>
               <Show when={streamlineSeeds().length} fallback={<div class="source-toolbar-empty">Нет линий</div>}>
                 <For each={streamlineSeeds()}>{seed =>
                   <div class="source-line-row" classList={{ selected: selectedStreamline() === seed.id }}>
@@ -284,19 +296,23 @@ export function SourcesFields3D(props) {
 
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
-            aria-expanded={openSourceMenu() === "method"} aria-label="Метод построения"
-            title="Выбрать метод построения векторных линий"
-            onClick={() => toggleSourceMenu("method")}>Метод построения</button>
-          <Show when={openSourceMenu() === "method"}>
-            <div class="source-toolbar-menu-panel">
-              <For each={Object.entries(STREAMLINE_METHODS)}>{([key, label]) =>
-                <label class="source-toolbar-option">
-                  <input type="radio" name="source-streamline-method" value={key}
-                    checked={streamlineMethod() === key} disabled={props.movieBusy}
-                    onChange={changeStreamlineMethod} />
-                  <span>{label}</span>
+            aria-expanded={openSourceMenu() === "graphs"} aria-label="Графики"
+            title="Открыть панель графиков"
+            onClick={() => toggleSourceMenu("graphs")}>Графики</button>
+          <Show when={openSourceMenu() === "graphs"}>
+            <div class="source-toolbar-menu-panel source-graphs-panel">
+              <label class="source-toolbar-option"><input type="checkbox" checked={graphsOnly()}
+                onChange={event => setGraphsOnly(event.currentTarget.checked)} /> только графики</label>
+              <button type="button">задать ось</button>
+              <For each={["X", "Y", "Z"]}>{axis =>
+                <label class="source-toolbar-option"><input type="checkbox" checked={graphComponents()[axis]}
+                  onChange={event => setGraphComponents(previous => ({ ...previous, [axis]: event.currentTarget.checked }))} />
+                  {axis}-компонента
                 </label>}
               </For>
+              <label class="source-graph-background"><input type="color" aria-label="фон" value={graphBackground()}
+                onInput={event => setGraphBackground(event.currentTarget.value)} /> фон</label>
+              <button type="button">повернуть</button>
             </div>
           </Show>
         </div>

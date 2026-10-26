@@ -260,7 +260,7 @@ test("field method selector keeps the same seeds and tolerance, validates choice
 
 test("compact 3D toolbar exposes requested menus and fixed streamline settings",()=>{
   const source=readFileSync(new URL("../src/tabs/SourcesFields3D.jsx",import.meta.url),"utf8");
-  for(const label of ["Объемные элементы","Области интересов","Виртуальные элементы","Представление","Векторные линии","Метод построения"]) assert.ok(source.includes(label),label);
+  for(const label of ["Объемные элементы","Области интересов","Виртуальные элементы","Представление","Векторные линии","Графики"]) assert.ok(source.includes(label),label);
   assert.match(source,/RESULT_LAYER_QUANTITY_LABELS\[key\].*QUANTITIES\[key\]\?\.unit/s);
   assert.doesNotMatch(source,/Допуск, % шага сетки|Цвет по модулю|Стереть линию/);
   assert.ok(source.includes("Удалить линию №"));
@@ -278,9 +278,10 @@ test("compact 3D toolbar buttons expose concise explanatory tooltips",()=>{
     "Выбрать величину для объемных элементов",
     "Выбрать величину для областей интересов",
     "Выбрать величину для виртуальных элементов",
-    "Настроить размер, карту, минимакс и толщину линий",
-    "Выбрать или удалить построенные векторные линии",
+    "Настроить размер, карту, нормализацию и минимакс",
+    "Настроить метод и толщину, выбрать или удалить векторные линии",
     "Выбрать метод построения векторных линий",
+    "Открыть панель графиков",
   ]) assert.ok(source.includes(text),text);
 });
 

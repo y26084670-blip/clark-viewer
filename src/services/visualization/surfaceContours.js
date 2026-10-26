@@ -88,7 +88,7 @@ export function updateSurfaceDecorations(group, surface, values, { isolines = 0 
     group.add(contours);
     const plane = new THREE.Group(); plane.name = "projection-xy";
     const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({
-      vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: .35, depthWrite: false,
+      vertexColors: true, side: THREE.DoubleSide,
     }));
     mesh.name = "projection"; mesh.renderOrder = -2; plane.add(mesh); group.add(plane);
   }

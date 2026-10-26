@@ -4,7 +4,8 @@ import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseGIF, decompressFrames } from "gifuct-js";
+import { execFileSync } from "node:child_process";
+import { libavAssets } from "./libavAssets.mjs";
 import h5wasm from "h5wasm/node";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -14,12 +15,25 @@ await mkdir(fixture, { recursive: true }); await mkdir(output, { recursive: true
 await writeFile(path.join(fixture, "index.html"), '<!doctype html><html><head><meta charset="UTF-8"></head><body><div id="root"></div><script type="module" src="./fixture.jsx"></script></body></html>');
 await writeFile(path.join(fixture, "app.html"), '<!doctype html><html><head><meta charset="UTF-8"></head><body><div id="root"></div><script type="module" src="./app.jsx"></script></body></html>');
 await writeFile(path.join(fixture, "app.jsx"), `import {render} from 'solid-js/web';import App from '../src/App.jsx';import {Chart} from 'chart.js';import 'tabulator-tables/dist/css/tabulator_simple.min.css';import '../src/App.css';window.__appPlots=()=>Array.from(document.querySelectorAll('.constructor-plot canvas')).map(c=>Chart.getChart(c).data.datasets.filter(d=>d._seriesKey!=="marker").map(d=>({label:d.label,points:d.data})));render(()=><App/>,document.getElementById('root'));`);
+await writeFile(path.join(fixture, "tooltip.html"), '<!doctype html><html><head><meta charset="UTF-8"></head><body><div id="root"></div><script type="module" src="./tooltip.jsx"></script></body></html>');
+await writeFile(path.join(fixture, "tooltip.jsx"), `
+import {render} from 'solid-js/web';import {createSignal,Show} from 'solid-js';import Chart from 'chart.js/auto';
+import {LineChart} from '../src/components/LineChart.jsx';import '../src/App.css';
+const series=Array.from({length:24},(_,i)=>({label:'Набор '+(i+1),points:[{x:0,y:0},{x:1,y:1},{x:2,y:0}],
+ tooltip:p=>['Элемент '+(i+1),'Координаты X=1; Y=2; Z=3','Сохранённое значение '+p.y]}));
+function Fixture(){let dialog,capture;const [shown,setShown]=createSignal(true);
+window.__tooltip={setShown,modal(){dialog.close();dialog.showModal();},
+ point(){const c=document.querySelector('canvas'),chart=Chart.getChart(c),r=c.getBoundingClientRect();return {x:r.left+chart.scales.x.getPixelForValue(1)*r.width/chart.width,y:r.top+chart.scales.y.getPixelForValue(1)*r.height/chart.height};},
+ prepare(){capture.prepare();},restore(){capture.restore();}};
+return <dialog open ref={dialog} style="margin:20px;width:700px;height:450px;padding:0;display:flex;max-width:90vw"><Show when={shown()}><LineChart series={series} xLabel="X" yLabel="Y" onCaptureReady={value=>capture=value}/></Show></dialog>;}
+render(()=><Fixture/>,document.getElementById('root'));
+`);
 await writeFile(path.join(fixture, "fixture.jsx"), `
 import {render} from 'solid-js/web';import {createSignal,Show} from 'solid-js';import {Chart} from 'chart.js';
 import {PlotConstructor} from '../src/tabs/PlotConstructor.jsx';import '../src/App.css';
 import {installBrowserDefaults} from '../src/services/browserDefaults.js';
 import {createMovieExportController} from '../src/services/movie/movieExportController.js';
-import {createMovieGifEncoder} from '../src/services/movie/movieGifEncoder.js';
+import {createMovieWebmEncoder} from '../src/services/movie/movieWebmEncoder.js';
 installBrowserDefaults(window);
 const task={general:{countTimeSteps:2,timeStep:.5},metadata:{MH:{steps:[{index:0},{index:1},{index:2}],header:{stride:9},pointCount:1,ranges:{runId:'field-1'}}},
 handle:{getDirectoryHandle:async()=>{throw new DOMException('no OM','NotFoundError')}},reader:{history:async()=>{await window.__historyGate;return {steps:[0,1,2],stride:9,values:Float64Array.from([0,0,0,3,4,0,0,0,0,0,0,0,-3,0,4,0,0,0,0,0,0,3,4,0,0,0,0])}}}};
@@ -30,7 +44,7 @@ function Fixture(){
  const [recipes,setPlotRecipes]=createSignal([]),[sources,setPlotSources]=createSignal([]),[active,setActivePlotId]=createSignal(null);
  const [currentTask,setCurrentTask]=createSignal(task);
  const [time,setTime]=createSignal(1),[busy,setBusy]=createSignal(false),[shown,setShown]=createSignal(true);
- const controller=createMovieExportController({createEncoder:createMovieGifEncoder});
+ const controller=createMovieExportController({createEncoder:createMovieWebmEncoder});
  window.__graphs={setShown,singleTime(){setPlotRecipes([]);setTime(0);setCurrentTask({...task,name:'Единственный момент',general:{countTimeSteps:0,timeStep:.5},metadata:{MH:{...task.metadata.MH,steps:[{index:0}]}},reader:{history:async()=>({steps:[0],stride:9,values:Float64Array.from([0,0,0,3,4,0,0,0,0])})}});},visible(plot,index,value){const chart=Chart.getChart(document.querySelectorAll('.constructor-plot canvas')[plot]);chart.setDatasetVisibility(index,value);chart.update('none');},snapshot:()=>({time:time(),active:active(),recipes:recipes().map(r=>({id:r.id,count:r.curves.length})),plots:Array.from(document.querySelectorAll('.constructor-plot canvas')).map(c=>{const chart=Chart.getChart(c);return {id:chart.id,area:{...chart.chartArea},width:chart.width,height:chart.height,visible:chart.data.datasets.map((d,i)=>chart.isDatasetVisible(i)),series:chart.data.datasets.filter(d=>d._seriesKey!=="marker").map(d=>d.data),range:{xmin:chart.scales.x.min,xmax:chart.scales.x.max,ymin:chart.scales.y.min,ymax:chart.scales.y.max}}})}),
  async movie(){setBusy(true);try{const r=await controller.run({intervalMs:100});return {...r,bytes:Array.from(new Uint8Array(await r.blob.arrayBuffer()))};}finally{setBusy(false);}}};
  return <div class="app-container"><h1>Графики</h1><input aria-label="Проверка локального выделения" value="Локальный текст"/>
@@ -44,7 +58,7 @@ const errors = [], checks = [];
 const passed = name => { checks.push(name); console.log(`PASS ${checks.length}: ${name}`); };
 try {
  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
- server = await createServer({ configFile:false, root, plugins:[solid()], server:{host:'127.0.0.1',port:0} }); await server.listen();
+ server = await createServer({ configFile:false, root, cacheDir:path.join(root,'node_modules/.vite-plot-check'), plugins:[solid(),libavAssets()], server:{host:'127.0.0.1',port:0,hmr:false} }); await server.listen();
  browser = await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_EXECUTABLE||undefined,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
  page = await browser.newPage({viewport:{width:1440,height:950}}); page.on('pageerror',e=>errors.push(e.message));
  const base = 'http://127.0.0.1:'+server.httpServer.address().port+'/__plot_constructor_check__/';
@@ -74,16 +88,20 @@ try {
    window.__root=dir('Compare',{'Project 1':dir('Project 1',{'A':task('A','A'),'Variant':task('Variant','A')}),
      'Project 2':dir('Project 2',{'Variant':task('Variant','B'),'Broken':dir('Broken')})});
    window.__otherRoot=dir('Other',{'Project 3':dir('Project 3',{'Only':task('Only','B')})});
-   window.showDirectoryPicker=async()=>window.__root;
+   window.__root.name='clark.compare';window.__otherRoot.name='clark.other';
+   const disk=dir('D',{'clark.compare':window.__root,'clark.other':window.__otherRoot});
+   window.showDirectoryPicker=async()=>disk;
  },binary);
  await page.goto(base+'app.html');
  const tabs = page.locator('nav[aria-label="Вкладки просмотра"] > button:not([aria-haspopup])');
+ await tabs.first().waitFor();
  assert.deepEqual(await tabs.allTextContents(), ['Выбор задания','Источники / Поле 3D','Рабочие точки','Поле на линиях','Поле в областях','Графики']);
  await page.keyboard.press('Control+a'); assert.equal(await page.evaluate(()=>String(window.getSelection())), '');
  const cancelled = await page.evaluate(()=>!document.querySelector('header').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true})));
  assert.equal(cancelled,true); passed('Actual App has six tabs and suppresses native page selection/context menu');
 
- await page.getByRole('button',{name:'Выбрать каталог с проектами',exact:true}).click();
+ await page.getByRole('button',{name:'Выбрать диск с проектами',exact:true}).click();
+ await page.getByRole('button',{name:'Продолжить',exact:true}).click();
  await page.getByRole('combobox',{name:'Список проектов'}).selectOption('Project 1');
  await page.locator('.task-status-row').filter({hasText:/^A$/}).dblclick();
  const objects=page.locator('.object-list');
@@ -128,8 +146,7 @@ try {
  passed('Failed task selection leaves curves intact; comparison readers survive tab changes');
  await page.screenshot({path:path.join(output,'comparison.png'),fullPage:true});
  await tabs.filter({hasText:'Выбор задания'}).click();
- await page.evaluate(()=>{window.__root=window.__otherRoot;});
- await page.getByRole('button',{name:'Выбрать каталог с проектами',exact:true}).click();
+ await page.getByRole('combobox',{name:'Каталоги с проектами',exact:true}).selectOption('clark.other');
  await tabs.filter({hasText:'Графики'}).click();
  await ay.getByLabel('Источник данных').selectOption('other');
  await taskSelect.locator('option[value="Project 3/Only"]').waitFor({state:'attached'});
@@ -231,14 +248,14 @@ try {
  await page.screenshot({path:path.join(output,'graphs.png'),fullPage:true});
  async function checkMovie(filename) {
    const before=await snap(); const r=await page.evaluate(()=>window.__graphs.movie());
-   const bytes=Buffer.from(r.bytes),frames=decompressFrames(parseGIF(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)),true);
-   assert.equal(frames.length,3); assert.equal(r.frameCount,3); assert.equal((await snap()).time,before.time);
+   const bytes=Buffer.from(r.bytes);await writeFile(path.join(output,filename),bytes);
+   const info=JSON.parse(execFileSync('ffprobe',['-v','error','-count_frames','-show_entries','stream=codec_name,width,height,nb_read_frames','-of','json',path.join(output,filename)],{encoding:'utf8'})).streams[0];
+   assert.equal(info.codec_name,'vp9');assert.equal(Number(info.nb_read_frames),3);assert.equal(r.frameCount,3);assert.equal((await snap()).time,before.time);
    assert.equal((await snap()).active,before.active); assert.deepEqual((await snap()).plots.map(p=>p.range),before.plots.map(p=>p.range));
-   await writeFile(path.join(output,filename),bytes);
  }
- await checkMovie('xy-active.gif');
- await graphs.nth(0).locator('canvas').click(); await checkMovie('curves-active.gif');
- passed('Real GIF export follows the active plot, supports multiple curves and restores time and axes');
+ await checkMovie('xy-active.webm');
+ await graphs.nth(0).locator('canvas').click(); await checkMovie('curves-active.webm');
+ passed('Real WebM export follows the active plot, supports multiple curves and restores time and axes');
  const beforeRemount=(await snap()).recipes, active=(await snap()).active;
  await page.evaluate(()=>window.__graphs.setShown(false)); await page.evaluate(()=>window.__graphs.setShown(true));
  await waitSeries(0,11); await waitSeries(2,6); assert.deepEqual((await snap()).recipes,beforeRemount); assert.equal((await snap()).active,active);
@@ -273,6 +290,21 @@ try {
  await page.mouse.click(moved.x,moved.y);
  assert.equal((await snap()).plots[0].visible[0],!beforeLegend.visible[0]);
  passed('Legend checkbox does not shrink plot; dragging moves its hit boxes without toggling curves');
+ await page.mouse.click(moved.x+45,moved.y);
+ assert.equal((await snap()).plots[0].visible[0],beforeLegend.visible[0]);
+ await page.mouse.click(moved.x+45,moved.y);
+ assert.equal((await snap()).plots[0].visible[0],!beforeLegend.visible[0]);
+ await page.mouse.move(moved.x+45,moved.y);await page.mouse.down();
+ await page.mouse.move(moved.x+15,moved.y+20,{steps:4});
+ await page.mouse.move(moved.x+45,moved.y,{steps:4});await page.mouse.up();
+ assert.equal((await snap()).plots[0].visible[0],!beforeLegend.visible[0]);
+ const visibility=(await snap()).plots[0].visible;
+ await page.evaluate(()=>{const values=__graphs.snapshot().plots[0].visible;values.forEach((_,i)=>__graphs.visible(0,i,false));});
+ assert.ok((await snap()).plots[0].visible.every(v=>!v));
+ await page.mouse.click(moved.x+45,moved.y);
+ assert.equal((await snap()).plots[0].visible[0],true);
+ await page.evaluate(values=>values.forEach((v,i)=>__graphs.visible(0,i,v)),visibility);
+ passed('Clicking legend text toggles and restores curves even when all are hidden; a returning drag never toggles');
  const beforeExpand=(await snap()).plots[0];
  await legendGraph.getByRole('button',{name:'Развернуть',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('.constructor-plot:modal')?.getBoundingClientRect().width>800);
@@ -308,6 +340,26 @@ try {
  await page.screenshot({path:path.join(output,'single-time-values.png'),fullPage:true});
  await page.getByRole('button',{name:'Удалить таблицу'}).click();assert.equal(await graphs.count(),0);
  passed('Zero-interval table groups additions into rows without time; quantity/component headers, point and task path; component deletion leaves blank');
+ await page.goto(base+'tooltip.html');
+ await page.waitForFunction(()=>window.__tooltip&&document.querySelector('canvas')?.width>0);
+ const hoverTooltip=async()=>{const p=await page.evaluate(()=>__tooltip.point());await page.mouse.move(1,1);await page.mouse.move(p.x,p.y);await page.locator('.chart-scroll-tooltip:not([hidden])').waitFor();return p;};
+ const hoverPoint=await hoverTooltip(),tooltip=page.locator('.chart-scroll-tooltip:not([hidden])');
+ const tooltipBox=await tooltip.boundingBox();
+ assert.ok(tooltipBox.y>=hoverPoint.y+8);assert.ok(tooltipBox.height<=221);
+ assert.ok(await tooltip.evaluate(e=>e.scrollHeight>e.clientHeight));
+ assert.ok((await tooltip.innerText()).includes('Элемент 24'));
+ await page.mouse.move(tooltipBox.x+40,tooltipBox.y+60,{steps:4});await page.mouse.wheel(0,250);
+ await page.waitForFunction(()=>document.querySelector('.chart-scroll-tooltip')?.scrollTop>0);
+ await page.waitForTimeout(230);assert.equal(await tooltip.count(),1);
+ await page.screenshot({path:path.join(output,'scrollable-tooltip.png'),fullPage:true});
+ passed('Large tooltip opens below the pointer in a compact window; all data remain available through native vertical scrolling');
+ await page.mouse.move(1000,800);await tooltip.waitFor({state:'hidden'});
+ await page.evaluate(()=>__tooltip.modal());await page.waitForTimeout(100);await hoverTooltip();
+ assert.ok(await tooltip.evaluate(e=>{const r=e.getBoundingClientRect();return !!document.elementFromPoint(r.left+30,r.top+30)?.closest('.chart-scroll-tooltip');}));
+ await page.evaluate(()=>__tooltip.prepare());assert.equal(await tooltip.count(),0);
+ await page.evaluate(()=>__tooltip.restore());await hoverTooltip();
+ await page.evaluate(()=>__tooltip.setShown(false));assert.equal(await page.locator('.chart-scroll-tooltip').count(),0);
+ passed('Tooltip remains above an expanded modal plot, hides during capture and releases its DOM window on unmount');
  assert.deepEqual(errors,[]);
  await writeFile(path.join(output,'browser.json'),JSON.stringify({checks,errors},null,2));
  console.log(`BROWSER_OK ${checks.length}/${checks.length}`);

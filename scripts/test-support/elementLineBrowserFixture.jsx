@@ -11,7 +11,7 @@ const reads = [];
 const task = { name: "Профиль", plotLabel: "Проверка/Профиль", elements: window.__lineElements,
   regions: [], general: { countTimeSteps: 5, timeStep: .25 }, metadata,
   handle: { getDirectoryHandle: async () => { throw new DOMException("No OM", "NotFoundError"); } },
-  reader: { read: request => { reads.push(request); return service.read(request); }, history: request => service.history(request) } };
+  reader: { read: async request => { reads.push(request); await window.__lineReadGate; return service.read(request); }, history: request => service.history(request) } };
 
 function Fixture() {
   const [recipes, setPlotRecipes] = createSignal([]), [sources, setPlotSources] = createSignal([]);

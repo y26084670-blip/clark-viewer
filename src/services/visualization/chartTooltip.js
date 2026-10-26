@@ -42,8 +42,21 @@ export function createChartTooltip(canvas) {
   const outside = event => { if (!element?.contains(event.target) && event.target !== canvas) hide(true); };
   const scroll = event => { if (!element?.contains(event.target)) hide(true); };
   const resize = () => hide(true);
+  const wheel = event => {
+    if (event.ctrlKey || event.defaultPrevented || !element || element.hidden
+      || element.scrollHeight <= element.clientHeight || !Number.isFinite(event.deltaY) || event.deltaY === 0) return;
+    const lineHeight = Number.parseFloat(window.getComputedStyle(element).lineHeight) || 16;
+    const unit = event.deltaMode === 1 ? lineHeight : event.deltaMode === 2 ? element.clientHeight : 1;
+    cancelHide();
+    element.scrollTop = Math.max(0, Math.min(element.scrollHeight - element.clientHeight,
+      element.scrollTop + event.deltaY * unit));
+    // Keep the wheel inside the visible list even at either end. The pointer
+    // may stay on the result point; it need not cross into the tooltip window.
+    event.preventDefault(); event.stopPropagation();
+  };
   canvas.addEventListener("pointermove", track);
   canvas.addEventListener("pointerleave", leave);
+  canvas.addEventListener("wheel", wheel, { passive: false });
   document.addEventListener("pointerdown", outside, true);
   window.addEventListener("scroll", scroll, true);
   window.addEventListener("resize", resize);
@@ -64,7 +77,7 @@ export function createChartTooltip(canvas) {
         element.setAttribute("role", "tooltip"); element.tabIndex = 0;
         element.addEventListener("pointerenter", () => { hovered = true; cancelHide(); });
         element.addEventListener("pointerleave", () => { hovered = false; hide(true); });
-        element.addEventListener("wheel", event => event.stopPropagation(), { passive: true });
+        element.addEventListener("wheel", wheel, { passive: false });
         // Expanded plots are native modal dialogs in the browser's top layer.
         (canvas.closest("dialog") ?? document.body).append(element);
       }
@@ -98,6 +111,7 @@ export function createChartTooltip(canvas) {
       cancelHide(); element?.remove();
       canvas.removeEventListener("pointermove", track);
       canvas.removeEventListener("pointerleave", leave);
+      canvas.removeEventListener("wheel", wheel);
       document.removeEventListener("pointerdown", outside, true);
       window.removeEventListener("scroll", scroll, true);
       window.removeEventListener("resize", resize);

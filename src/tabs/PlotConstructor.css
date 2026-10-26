@@ -1,6 +1,17 @@
 .plot-constructor { display: flex; flex: 1; flex-direction: column; height: 100%; min-height: 0; min-width: 0; overflow: auto; padding: 12px; gap: 10px; }
 .constructor-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
-.constructor-controls fieldset { flex: 1 1 320px; display: flex; flex-direction: column; gap: 8px; border: 1px solid #99a9b8; min-width: 0; }
+/* Axis panels use the palette of components/updates/WhatsNewDialog.css. */
+.constructor-controls fieldset { flex: 1 1 320px; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 12px 12px; border: 1px solid #596773; border-radius: 8px; background: #1d3048; color: #f0f4f7; color-scheme: dark; }
+.constructor-controls legend { padding: 2px 8px; border-radius: 4px; background: #1d3048; color: #c4d9f5; font-weight: 600; }
+.constructor-controls fieldset :is(select, input) { background: #263b52; color: #f0f4f7; border-color: #7f8d99; accent-color: #8cbaed; }
+.constructor-controls fieldset option { background: #263b52; color: #f0f4f7; }
+.constructor-controls fieldset option:disabled { color: #b7c8d9; }
+.constructor-controls fieldset button { border-color: #7f8d99; background: #3a4650; color: #f0f4f7; }
+.constructor-controls fieldset button:not(:disabled):hover { border-color: #a9bac7; background: #4a5965; }
+.constructor-controls fieldset :is(input, select):disabled { opacity: .55; }
+.constructor-controls fieldset :is(button, input, select, summary):focus-visible { outline: 2px solid #a9bac7; outline-offset: 2px; }
+.constructor-controls fieldset .constructor-hint { color: #b7c8d9; }
+.constructor-controls fieldset .constructor-error { color: #ffd091; }
 .constructor-controls label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .constructor-controls select { max-width: 100%; flex: 1; min-width: 120px; }
 .constructor-controls input { width: 85px; }
@@ -39,7 +50,10 @@ dialog.constructor-expanded::backdrop { background: #182c4059; }
 .constructor-line-picker { display: flex; flex-direction: column; gap: 8px; }
 .constructor-line-indices { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .constructor-line-indices input { width: 68px; }
-.constructor-line-indices small { color: #526273; }
+.constructor-line-indices small { color: #b7c8d9; }
+.constructor-line-coordinates { padding: 4px 2px; color: #acd1ff; text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
+.constructor-line-coordinates:focus-visible { outline: 2px solid #a9bac7; outline-offset: 2px; }
+.constructor-coordinate-tooltip { position: fixed; z-index: 10000; box-sizing: border-box; padding: 8px 10px; border: 1px solid #78818e; border-radius: 5px; background: #1c222bf5; color: #f5f7fa; box-shadow: 0 3px 12px #0004; font: 12px/1.5 Arial, sans-serif; white-space: pre-line; overflow-wrap: anywhere; overflow: auto; overscroll-behavior: contain; cursor: default; text-decoration: none; }
 .constructor-line-images { font-size: 12px; }
 .constructor-line-images summary { cursor: pointer; }
 .constructor-line-images label { margin-top: 6px; }

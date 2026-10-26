@@ -21,11 +21,11 @@ import {render} from 'solid-js/web';import {createSignal,Show} from 'solid-js';i
 import {LineChart} from '../src/components/LineChart.jsx';import '../src/App.css';
 const series=Array.from({length:24},(_,i)=>({label:'Набор '+(i+1),points:[{x:0,y:0},{x:1,y:1},{x:2,y:0}],
  tooltip:p=>['Элемент '+(i+1),'Координаты X=1; Y=2; Z=3','Сохранённое значение '+p.y]}));
-function Fixture(){let dialog,capture;const [shown,setShown]=createSignal(true);
-window.__tooltip={setShown,modal(){dialog.close();dialog.showModal();},
+function Fixture(){let dialog,capture;const [shown,setShown]=createSignal(true),[short,setShort]=createSignal(false);
+window.__tooltip={setShown,setShort,modal(){dialog.close();dialog.showModal();},
  point(){const c=document.querySelector('canvas'),chart=Chart.getChart(c),r=c.getBoundingClientRect();return {x:r.left+chart.scales.x.getPixelForValue(1)*r.width/chart.width,y:r.top+chart.scales.y.getPixelForValue(1)*r.height/chart.height};},
  prepare(){capture.prepare();},restore(){capture.restore();}};
-return <dialog open ref={dialog} style="margin:20px;width:700px;height:450px;padding:0;display:flex;max-width:90vw"><Show when={shown()}><LineChart series={series} xLabel="X" yLabel="Y" onCaptureReady={value=>capture=value}/></Show></dialog>;}
+return <dialog open ref={dialog} style="margin:20px;width:700px;height:450px;padding:0;display:flex;max-width:90vw"><Show when={shown()}><LineChart series={short()?[{...series[0],tooltip:()=>['Значение']}]:series} xLabel="X" yLabel="Y" onCaptureReady={value=>capture=value}/></Show></dialog>;}
 render(()=><Fixture/>,document.getElementById('root'));
 `);
 await writeFile(path.join(fixture, "fixture.jsx"), `
@@ -348,11 +348,34 @@ try {
  assert.ok(tooltipBox.y>=hoverPoint.y+8);assert.ok(tooltipBox.height<=221);
  assert.ok(await tooltip.evaluate(e=>e.scrollHeight>e.clientHeight));
  assert.ok((await tooltip.innerText()).includes('Элемент 24'));
+ const pageScroll=await page.evaluate(()=>scrollY);
+ await page.mouse.wheel(0,250);
+ await page.waitForFunction(()=>document.querySelector('.chart-scroll-tooltip')?.scrollTop>0);
+ await page.waitForTimeout(230);assert.equal(await tooltip.count(),1);
+ assert.equal(await page.evaluate(()=>scrollY),pageScroll);
+ const beforeLines=await tooltip.evaluate(e=>e.scrollTop);
+ const wheelAccepted=await page.locator('canvas').evaluate(canvas=>!canvas.dispatchEvent(new WheelEvent('wheel',{deltaY:3,deltaMode:1,bubbles:true,cancelable:true})));
+ assert.equal(wheelAccepted,true);assert.ok(await tooltip.evaluate((e,before)=>e.scrollTop>before,beforeLines));
+ await tooltip.evaluate(e=>{e.scrollTop=e.scrollHeight;});
+ await page.mouse.wheel(0,200);await page.waitForTimeout(100);
+ assert.equal(await tooltip.count(),1);assert.equal(await page.evaluate(()=>scrollY),pageScroll);
+ await page.mouse.wheel(0,-200);await page.waitForFunction(()=>{const e=document.querySelector('.chart-scroll-tooltip');return e.scrollTop<e.scrollHeight-e.clientHeight;});
+ passed('Wheel over the result point scrolls the open tooltip in both directions, including line-mode deltas, without scrolling the page at list boundaries');
  await page.mouse.move(tooltipBox.x+40,tooltipBox.y+60,{steps:4});await page.mouse.wheel(0,250);
  await page.waitForFunction(()=>document.querySelector('.chart-scroll-tooltip')?.scrollTop>0);
  await page.waitForTimeout(230);assert.equal(await tooltip.count(),1);
  await page.screenshot({path:path.join(output,'scrollable-tooltip.png'),fullPage:true});
- passed('Large tooltip opens below the pointer in a compact window; all data remain available through native vertical scrolling');
+ passed('Large tooltip also scrolls with the pointer inside its compact window');
+ await page.mouse.move(1000,800);await tooltip.waitFor({state:'hidden'});
+ const wheelBlocked=options=>page.locator('canvas').evaluate((canvas,options)=>!canvas.dispatchEvent(new WheelEvent('wheel',{deltaY:60,bubbles:true,cancelable:true,...options})),options);
+ assert.equal(await wheelBlocked({}),false);
+ await page.evaluate(()=>__tooltip.setShort(true));await hoverTooltip();
+ assert.ok(await tooltip.evaluate(e=>e.scrollHeight<=e.clientHeight));
+ assert.equal(await wheelBlocked({}),false);
+ await page.evaluate(()=>__tooltip.setShort(false));await hoverTooltip();
+ assert.equal(await wheelBlocked({ctrlKey:true}),false);
+ assert.equal(await wheelBlocked({deltaY:0,deltaX:60}),false);
+ passed('Hidden or short tooltips leave the wheel untouched; browser Ctrl+wheel and horizontal-only gestures are preserved');
  await page.mouse.move(1000,800);await tooltip.waitFor({state:'hidden'});
  await page.evaluate(()=>__tooltip.modal());await page.waitForTimeout(100);await hoverTooltip();
  assert.ok(await tooltip.evaluate(e=>{const r=e.getBoundingClientRect();return !!document.elementFromPoint(r.left+30,r.top+30)?.closest('.chart-scroll-tooltip');}));

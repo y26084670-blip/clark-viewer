@@ -149,7 +149,7 @@ export async function readPlotCurves(task, curves) {
       const profile = await readElementLineProfile(yTask, curve.yChannel, curve.x, curve.y, request => readFrame(yTask, request));
       const yLabel = plotCurveLabel(curve, "y");
       return { key: curve.id, label: `${yLabel} / ${profile.label}`, points: profile.points,
-        profile, annotations: profile.annotations.map((line, i) => i === 0 && curve.taskLabel ? `${curve.taskLabel} · ${line}` : line),
+        profile,
         tooltip: point => [...profile.tooltip(point), yLabel] };
     }
     let points;

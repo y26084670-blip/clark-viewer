@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, untrack } from "solid-js";
 import { LineChart } from "../components/LineChart.jsx";
 import { ProtocolCheck } from "../components/protocol/ProtocolCheck.jsx";
 import { captureProtocolRenderer } from "../services/protocol/protocolCapture.js";
@@ -9,7 +9,8 @@ import { loadLatestOMChannels, readChannelSource } from "../services/results/omR
 import { useAsyncResult } from "../services/results/resultRequests.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import { ELEMENT_LINE_CHANNEL, supportsElementLine, elementLineObjects, elementLineLayout,
-  defaultElementLine, elementLineRequest } from "../services/results/elementLinePlots.js";
+  defaultElementLine, elementLineRequest, readElementLineEndpoints } from "../services/results/elementLinePlots.js";
+import { chartTooltipBounds } from "../services/visualization/chartTooltip.js";
 import "./PlotConstructor.css";
 
 export function PlotConstructor(props) {
@@ -152,6 +153,37 @@ export function PlotConstructor(props) {
     props.setProtocolEntry?.(`plot:${id}`, null);
     props.setPlotRecipes(recipes().filter(recipe => recipe.id !== id));
   }
+  function LineCoordinates() {
+    const [open, setOpen] = createSignal(false), [bounds, setBounds] = createSignal({});
+    const id = `line-coordinates-${createUniqueId()}`;
+    let anchor;
+    const preview = useAsyncResult(() => open() && sourceReady() ? {
+      task: selectedTask(), channel: byKey(y().key, "y"), step: lineStep(),
+      spec: { ...line(), indices: [...line().indices], copies: [...line().copies] },
+    } : null, readElementLineEndpoints);
+    function show() {
+      const rect = anchor.getBoundingClientRect();
+      const box = chartTooltipBounds({ x: rect.left - 12, y: rect.bottom - 6 },
+        { width: innerWidth, height: innerHeight }, 180);
+      setBounds({ left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, maxHeight: `${box.maxHeight}px` });
+      setOpen(true);
+    }
+    const closeOutside = event => { if (event.target === window || !anchor.contains(event.target)) setOpen(false); };
+    onMount(() => {
+      window.addEventListener("scroll", closeOutside, true); window.addEventListener("resize", closeOutside);
+      onCleanup(() => { window.removeEventListener("scroll", closeOutside, true); window.removeEventListener("resize", closeOutside); });
+    });
+    return <span ref={anchor} class="constructor-line-coordinates" tabIndex="0" aria-label="Координаты отрезка"
+      aria-describedby={open() ? id : undefined} onPointerEnter={show} onFocus={show}
+      onPointerLeave={() => { if (!anchor.matches(":focus-within")) setOpen(false); }}
+      onBlur={() => { if (!anchor.matches(":hover")) setOpen(false); }}
+      onKeyDown={event => { if (event.key === "Escape") setOpen(false); }}>
+      Координаты
+      <Show when={open()}><span id={id} role="tooltip" class="constructor-coordinate-tooltip" style={bounds()}>
+        {preview.loading() ? "Чтение координат…" : preview.error() || preview.value()?.text || "Выберите элемент и момент времени."}
+      </span></Show>
+    </span>;
+  }
   function LinePicker() {
     const changeIndex = (axis, value, key = "indices") => {
       setError(""); setLine(previous => ({ ...previous, [key]: previous[key].map((n, i) => i === axis ? value : n) }));
@@ -176,8 +208,7 @@ export function PlotConstructor(props) {
             min="1" max={grid().dimensions[axis]} disabled={grid().dimensions[axis] === 1} value={line().indices[axis]}
             title={`Поперечный индекс i${axis + 1}: от 1 до ${grid().dimensions[axis]}`}
             onInput={e => changeIndex(axis, e.currentTarget.value)} /><small>1…{grid().dimensions[axis]}</small></label>
-        }</For><button type="button" title="Ближайший к середине ряд ЭО; при чётном числе выбирается меньший из двух центральных индексов"
-          onClick={() => { setError(""); setLine(previous => ({ ...previous, indices: grid().dimensions.map(n => Math.ceil(n / 2)) })); }}>Середина</button></div>
+        }</For><LineCoordinates /></div>
         <span class="constructor-hint">i{line().direction + 1}: 1…{grid().dimensions[line().direction]} · от первого до последнего центра ЭО</span>
         <Show when={grid().copies.some(n => n > 1)}><details class="constructor-line-images"><summary>Сохранённый образ: {grid().copies.flatMap((n, axis) => n > 1 ? [`${["LS", "AS", "PS"][axis]}=${line().copies[axis]}`] : []).join(", ")}</summary>
           <For each={[0, 1, 2].filter(axis => grid().copies[axis] > 1)}>{axis => <label>{["LS", "AS", "PS"][axis]}
@@ -279,7 +310,6 @@ export function PlotConstructor(props) {
     const failure = () => data.error() || data.value()?.error || "";
     const singleTime = createMemo(() => isSingleTimePlot(props.task, recipe().curves));
     const spatialPlot = createMemo(() => recipe().curves[0]?.xChannel.kind === "distance");
-    const annotations = createMemo(() => [...new Set(series().filter(s => s.annotations).map(s => s.annotations.join("\n")))].flatMap(s => s.split("\n")));
     const distanceRange = createMemo(() => spatialPlot() && series().length
       ? { minimum: 0, maximum: Math.max(...series().map(s => s.profile?.length ?? 0)) } : null);
     const valueTable = createMemo(() => !data.loading() && !failure() ? singleTimePlotTable(recipe().curves, series()) : null);
@@ -322,7 +352,7 @@ export function PlotConstructor(props) {
       <Show when={singleTime()} fallback={
       <LineChart series={series()} autoScaleToggle={true} legendMode="overlay"
         marker={spatialPlot() ? null : { points: series().flatMap(item => item.points.filter(point => plotPointAtStep(point, props.task, props.time))) }}
-        annotations={annotations()} autoXRange={distanceRange()}
+        autoXRange={distanceRange()}
         captureFrameKey={frameKey()} onCaptureReady={target => setRenderer(() => target)} captureError={failure()}
         tableUnavailableReason={data.loading() ? "Дождитесь загрузки всех кривых графика" : failure()}
         xLabel={axisLabel("x")} yLabel={axisLabel("y")}
@@ -375,7 +405,7 @@ export function PlotConstructor(props) {
       По отрезку доступны локальные величины в ЭО; результаты областей и суммарные параметры имеют другую сетку или не зависят от положения.
     </Show></p>
     <div class="constructor-plots"><For each={recipes().map(recipe => recipe.id)} fallback={<p>Выберите величины для осей и добавьте график.</p>}>{id => <Plot id={id} />}</For></div>
-    <Show when={activeRecipe()?.curves[0]?.xChannel.kind !== "distance"} fallback={<p class="constructor-hint">На активном графике показаны фиксированные моменты времени, указанные у кривых. Координаты концов входят в снимок протокола.</p>}>
+    <Show when={activeRecipe()?.curves[0]?.xChannel.kind !== "distance"} fallback={<p class="constructor-hint">На активном графике показаны фиксированные моменты времени, указанные у кривых. Координаты выбранного ряда доступны при наведении на «Координаты» в области оси X.</p>}>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
     </Show>
     <dialog ref={sourceDialog} class="constructor-source-dialog" aria-label="Добавление параметров ОМ"

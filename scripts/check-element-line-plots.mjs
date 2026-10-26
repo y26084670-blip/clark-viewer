@@ -47,7 +47,7 @@ try {
     window.__lineElements = elements; window.__lineText = [];
     const draw = CanvasRenderingContext2D.prototype.fillText;
     CanvasRenderingContext2D.prototype.fillText = function(text, ...args) {
-      if (/начало|Конец|График 1 · №/.test(text)) window.__lineText.push({ text, font: this.font });
+      if (/начало|конец|График 1 · №/i.test(text)) window.__lineText.push({ text, font: this.font });
       return draw.call(this, text, ...args);
     };
   }, elements);
@@ -72,16 +72,26 @@ try {
   await x.locator("summary").click();
   for (const kind of ["LS", "AS", "PS"]) await x.getByLabel(`Образ ${kind}`).fill("2");
   await y.getByLabel("Момент времени профиля").selectOption("2");
+  assert.equal(await x.getByRole("button", { name: "Середина", exact: true }).count(), 0);
+  const coordinates = x.getByLabel("Координаты отрезка"), coordinateTip = page.locator(".constructor-coordinate-tooltip");
+  await coordinates.hover();
+  await page.waitForFunction(() => document.querySelector('.constructor-coordinate-tooltip')?.textContent.includes('Конец (i1=4)'));
+  assert.match(await coordinateTip.innerText(), /Начало \(i1=1\).*114.8; 98.9; 115.2/);
+  assert.match(await coordinateTip.innerText(), /Конец \(i1=4\).*124.1; 111.3; 115.2/);
+  assert.match(await coordinateTip.innerText(), /момент №2, t = 0.5 с/);
+  assert.equal((await snapshot()).plots.length, 0);
+  assert.ok(await page.evaluate(() => __line.reads.length === 1 && __line.reads[0].every === __line.reads[0].count - 1));
+  await page.screenshot({ path: path.join(output, "coordinate-preview.png"), fullPage: true });
+  passed("Coordinates replace the Middle button and read only two saved endpoints before plotting, for the selected direction, transverse indices, image and time");
   await add.click(); await waitSeries(0, 3);
   let state = await snapshot(), plot = state.plots[0];
   assert.deepEqual(plot.series[0].map(p => p.y), [2568, 2668, 2768, 2868]);
   plot.series[0].forEach((p, i) => assert.ok(Math.abs(p.x - [0, 1, 7, 15.5][i]) < 1e-10));
   assert.equal(plot.xmin, 0); assert.ok(Math.abs(plot.xmax - 15.5) < 1e-10);
-  assert.match(plot.xLabel, /Расстояние.*мм/); assert.equal(await page.evaluate(() => __line.reads.length), 1);
+  assert.match(plot.xLabel, /Расстояние.*мм/); assert.equal(await page.evaluate(() => __line.reads.length), 2);
   const notes = await page.evaluate(() => __lineText);
-  assert.ok(notes.some(n => /начало.*114.8; 98.9; 115.2/.test(n.text) && n.font.startsWith("10px")));
-  assert.ok(notes.some(n => /Конец.*124.1; 111.3; 115.2/.test(n.text)));
-  passed("Real HDF5 worker reads one strided slice for three signed components; rotated nonuniform distances span exactly 0…L with canvas endpoint labels");
+  assert.ok(!notes.some(n => /начало|конец/i.test(n.text)));
+  passed("Three signed components share one strided slice; distances span exactly 0…L and no endpoint text is drawn on the canvas");
 
   await y.getByRole("button", { name: "Следующий сохранённый момент" }).click();
   await append.click(); await waitSeries(0, 6);
@@ -105,12 +115,16 @@ try {
   const entry = await page.evaluate(() => Object.values(__line.entries()).find(e => e?.dataUrl));
   assert.match(entry.comment, /^№2: t=0.5 с; №5: t=1.25 с/); assert.doesNotMatch(entry.comment, /Шаг 0/);
   await writeFile(path.join(output, "profile-protocol.png"), Buffer.from(entry.dataUrl.split(",")[1], "base64"));
-  passed("Copied data retain distances and all curves; the real protocol PNG contains endpoint labels and the profiles' fixed times");
+  assert.ok(!await page.evaluate(() => __lineText.some(n => /начало|конец/i.test(n.text))));
+  passed("Copied data retain distances and all curves; the protocol PNG preserves fixed times and no longer contains endpoint text");
 
   await x.getByLabel("Поперечный индекс i2").fill("0"); await append.click();
   assert.match(await page.locator(".constructor-error").first().innerText(), /Индекс i2.*1.*2/);
   assert.equal((await snapshot()).plots[0].series.length, 6);
-  await x.getByRole("button", { name: "Середина", exact: true }).click();
+  await coordinates.hover();
+  await page.waitForFunction(() => document.querySelector('.constructor-coordinate-tooltip')?.textContent.includes('Индекс i2'));
+  assert.doesNotMatch(await coordinateTip.innerText(), /114.8/);
+  await x.getByLabel("Поперечный индекс i2").fill("1"); await x.getByLabel("Поперечный индекс i3").fill("3");
   assert.equal(await x.getByLabel("Поперечный индекс i2").inputValue(), "1");
   assert.equal(await x.getByLabel("Поперечный индекс i3").inputValue(), "3");
   await element.selectOption("2"); await direction.selectOption("0");
@@ -120,7 +134,26 @@ try {
   assert.equal(await direction.locator('option[value="1"]').evaluate(e => e.disabled), true,
     await direction.evaluate(e => e.outerHTML));
   assert.equal(await x.locator("summary").count(), 0);
-  passed("Invalid indices leave existing curves intact; middle/reset, direction changes and single-layer limits remain consistent");
+  await coordinates.hover();
+  await page.waitForFunction(() => document.querySelector('.constructor-coordinate-tooltip')?.textContent.includes('(20; -5; 13)'));
+  assert.match(await coordinateTip.innerText(), /Конец \(i1=4\).*29.3; 7.4; 13/);
+  passed("Invalid indices replace coordinate text with a clear error; changing the element updates endpoints and single-layer limits");
+
+  await page.mouse.move(1, 1); await coordinateTip.waitFor({ state: "hidden" });
+  await direction.selectOption("2");
+  await page.evaluate(() => { window.__lineReadGate = new Promise(resolve => { window.__releaseLineRead = resolve; }); });
+  await coordinates.focus();
+  await page.waitForFunction(() => document.querySelector('.constructor-coordinate-tooltip')?.textContent.includes('Чтение координат'));
+  await x.getByLabel("Поперечный индекс i1").fill("4");
+  await coordinates.hover();
+  await page.evaluate(() => { window.__releaseLineRead(); delete window.__lineReadGate; });
+  await page.waitForFunction(() => document.querySelector('.constructor-coordinate-tooltip')?.textContent.includes('Конец (i3=5)'));
+  assert.match(await coordinateTip.innerText(), /Начало \(i3=1\).*29.3; 7.4; 10/);
+  assert.match(await coordinateTip.innerText(), /Конец \(i3=5\).*29.3; 7.4; 18.4/);
+  assert.match(await coordinateTip.innerText(), /момент №5, t = 1.25 с/);
+  await coordinates.focus(); await page.keyboard.press("Escape");
+  assert.equal(await coordinateTip.count(), 0);
+  passed("Direction/index changes supersede delayed endpoint reads; keyboard focus opens the same preview and Escape closes it");
 
   await page.evaluate(() => __line.setShown(false)); await page.evaluate(() => __line.setShown(true));
   await waitSeries(0, 6);
@@ -139,7 +172,11 @@ try {
   await x.getByLabel("Величина").selectOption("element-distance");
   await page.screenshot({ path: path.join(output, "profile-controls.png"), fullPage: true });
   await page.setViewportSize({ width: 760, height: 1000 });
+  await coordinates.hover();
+  await page.waitForFunction(() => document.querySelector('.constructor-coordinate-tooltip')?.textContent.includes('Начало'));
   await page.screenshot({ path: path.join(output, "profile-narrow.png"), fullPage: true });
+  const coordinateBox = await coordinateTip.boundingBox();
+  assert.ok(coordinateBox.x >= 0 && coordinateBox.x + coordinateBox.width <= 760);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   assert.deepEqual(errors, []); await page.evaluate(() => __line.close());
   passed("Narrow layout has no page overflow or browser errors");

@@ -67,7 +67,6 @@ function drawOverlayLegend(chart, series, position) {
 export function LineChart(props) {
   let canvas, chart, drag, tooltipWindow, skipContextMenu = false, legendHitBoxes = [];
   let currentSeries = [], autoPending = true;
-  let currentAnnotations = [];
   let legendBounds = null, legendPosition = { x: 1, y: 0 };
   let movieState = null, renderedFrameKey = null, currentMovieCursor = null, disposed = false;
   let pendingVisibility = null, drawingFailure = null;
@@ -94,32 +93,6 @@ export function LineChart(props) {
     const bounds = props.autoXRange;
     return bounds && Number.isFinite(bounds.minimum) && Number.isFinite(bounds.maximum)
       && bounds.minimum < bounds.maximum ? { xMin: bounds.minimum, xMax: bounds.maximum } : {};
-  }
-  function drawAnnotations(current) {
-    const area = current.chartArea;
-    if (!area || !currentAnnotations.length || area.width < 30) return;
-    const ctx = current.ctx, padding = 5, lineHeight = 13, width = area.width - 12;
-    ctx.save();
-    try {
-      ctx.font = "10px Arial, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-      const lines = [];
-      for (const text of currentAnnotations) {
-        let line = "";
-        for (const word of text.split(" ")) {
-          const next = line ? `${line} ${word}` : word;
-          if (line && ctx.measureText(next).width > width - 2 * padding) { lines.push(line); line = word; }
-          else line = next;
-        }
-        if (line) lines.push(line);
-      }
-      const height = Math.min(area.height - 12, lines.length * lineHeight + 2 * padding);
-      if (height <= 0) return;
-      const left = area.left + 6, top = area.bottom - height - 6;
-      ctx.beginPath(); ctx.rect(left, top, width, height); ctx.clip();
-      ctx.fillStyle = "rgba(255,255,255,0.88)"; ctx.fillRect(left, top, width, height);
-      ctx.fillStyle = "#526273";
-      lines.forEach((line, i) => ctx.fillText(line, left + padding, top + padding + i * lineHeight));
-    } finally { ctx.restore(); }
   }
   function applyChartLimits(range) {
     if (!chart) return;
@@ -202,7 +175,6 @@ export function LineChart(props) {
     currentMovieCursor = props.movieCursor ?? null;
     renderedFrameKey = null;
     currentSeries = series;
-    currentAnnotations = props.annotations ?? [];
     // Track bounds even when manual limits temporarily take precedence.
     props.autoXRange;
     const xLabel = props.xLabel, yLabel = props.yLabel, integerX = props.integerX;
@@ -225,7 +197,6 @@ export function LineChart(props) {
           }
         } },
           { id: "movieTimeCursor", afterDatasetsDraw: drawMovieCursor },
-          { id: "segmentCoordinates", afterDatasetsDraw: drawAnnotations },
           { id: "overlayLegend", afterDatasetsDraw: current => {
             const legend = untrack(showLegend) ? drawOverlayLegend(current, currentSeries, legendPosition) : { hitBoxes: [], bounds: null };
             legendHitBoxes = legend.hitBoxes; legendBounds = legend.bounds;

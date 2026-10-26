@@ -99,6 +99,26 @@ export function elementLineDistances(positions, coordinateBytes = 8) {
   return { distances, start, end, length };
 }
 
+// Preview only the two endpoint rows of the selected saved image/time. This
+// needs neither a plotted curve nor the material values of the intermediate EOs.
+export async function readElementLineEndpoints({ task, channel, spec, step }) {
+  const selection = elementLineRequest(task, channel, spec, step);
+  const request = { ...selection.request, every: selection.request.count - 1 };
+  const frame = await task.reader.read(request);
+  if (frame.count !== 2 || frame.stride !== task.metadata[channel.file].header.stride
+    || frame.values.length !== 2 * frame.stride || frame.stride < 4) {
+    throw new Error("Срез результата не содержит двух концов выбранного ряда ЭО.");
+  }
+  const start = pointAt(frame, 0), end = pointAt(frame, 1);
+  if (![...start, ...end].every(Number.isFinite)) throw new Error("Некорректные координаты концов ряда ЭО.");
+  const length = Math.hypot(...end.map((value, i) => value - start[i]));
+  const time = request.step * task.general.timeStep;
+  if (![length, time].every(Number.isFinite)) throw new Error("Некорректная длина или время выбранного ряда ЭО.");
+  const direction = `i${selection.direction + 1}`;
+  return { start, end, length, step: request.step, time,
+    text: `Начало (${direction}=1): XYZ = ${coordinates(start)}\nКонец (${direction}=${selection.length}): XYZ = ${coordinates(end)}\nL = ${number(length)} мм; момент №${request.step}, t = ${number(time)} с` };
+}
+
 export async function readElementLineProfile(task, channel, spec, y, readFrame = request => task.reader.read(request)) {
   const selection = elementLineRequest(task, channel, spec, y.step);
   const { request, object } = selection;
@@ -122,10 +142,7 @@ export async function readElementLineProfile(task, channel, spec, y, readFrame =
     return { x, y: undefinedSigma ? null : value, step: request.step, time,
       position: positions[row], node: row + 1, volumeNumber: request.start + row * request.every + 1 };
   });
-  const prefix = `${selection.label} · №${request.step}, t=${number(time)} с`;
   return { points, length: segment.length, label: selection.label,
-    annotations: [`${prefix}: начало ${coordinates(segment.start)}`,
-      `Конец ${coordinates(segment.end)}; L=${number(segment.length)} мм`],
     tooltip: point => [`${selection.label}; i${selection.direction + 1}=${point.node}; узел файла №${point.volumeNumber}`,
       `s=${number(point.x)} мм; XYZ=${coordinates(point.position)}`, `Момент №${request.step}; t=${number(time)} с`,
       point.y === null ? "При |E| = 0 значение σ/j_gmin не определено" : `${channel.label}=${number(point.y)} ${channel.unit}`] };

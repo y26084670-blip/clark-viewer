@@ -6,7 +6,7 @@ import { join } from "node:path";
 import h5wasm from "h5wasm/node";
 import { Hdf5ResultFile } from "../src/services/results/hdf5ResultFile.js";
 import { ELEMENT_LINE_CHANNEL, defaultElementLine, elementLineObjects, elementLineRequest,
-  elementLineDistances, readElementLineProfile } from "../src/services/results/elementLinePlots.js";
+  elementLineDistances, readElementLineProfile, readElementLineEndpoints } from "../src/services/results/elementLinePlots.js";
 import { plotChannels, expandPlotComponents, readPlotCurves, validatePlotCurve, isSingleTimePlot } from "../src/services/results/plotConstructor.js";
 import { QUANTITIES, elementLayout } from "../src/services/results/resultMappings.js";
 import { chartTableText } from "../src/services/visualization/chartTable.js";
@@ -66,10 +66,40 @@ test("real HDF5: every direction reads only its row, preserving all three saved 
     profile.points.forEach((p, i) => close(p.x, distances[i]));
     assert.equal(profile.points[0].x, 0); close(profile.length, distances.at(-1));
     assert.ok(profile.points.every(p => p.step === 2 && p.time === .5));
-    assert.match(profile.annotations.join(" "), /начало.*Конец.*L=/);
     assert.equal(reads.at(-1).count, (expected.length - 1) * reads.at(-1).every + 1);
   }
   assert.equal(reads.length, 3);
+}));
+
+test("endpoint preview reads only the first and last saved centre for every direction and image", async () => fixture(async (task, reads, rows) => {
+  const indices = [3, 2, 4], copies = [2, 3, 2];
+  for (let direction = 0; direction < 3; direction++) {
+    const result = await readElementLineEndpoints({ task, channel: channel("J"),
+      spec: { element: 7, direction, indices, copies }, step: 2 });
+    const expected = rows.filter(row => [row.i, row.j, row.k].every((v, a) => a === direction || v === indices[a] - 1)
+      && row.ls === 1 && row.az === 2 && row.ps === 1);
+    assert.deepEqual(result.start, expected[0].point); assert.deepEqual(result.end, expected.at(-1).point);
+    assert.equal(result.step, 2); assert.equal(result.time, .5);
+    assert.ok(result.text.includes(`Начало (i${direction + 1}=1)`));
+    assert.ok(result.text.includes(`Конец (i${direction + 1}=${axes[direction].length})`));
+    assert.equal(reads.at(-1).count, reads.at(-1).every + 1);
+    close(result.length, axes[direction].at(-1) * (direction === 2 ? 2 : 5));
+  }
+  assert.equal(reads.length, 3);
+}));
+
+test("endpoint preview rejects missing steps and malformed or nonfinite coordinates instead of showing old values", async () => fixture(async (task, reads) => {
+  const request = { task, channel: channel("J"), spec: { element: 7, direction: 0, indices: [1, 1, 1] }, step: 1 };
+  await assert.rejects(readElementLineEndpoints(request), /сохранённого/); assert.equal(reads.length, 0);
+  const reader = task.reader;
+  for (const malformed of [true, false]) {
+    const invalidTask = { ...task, reader: { read: async request => {
+      const frame = await reader.read(request);
+      if (malformed) frame.count = 1; else frame.values[0] = NaN;
+      return frame;
+    } } };
+    await assert.rejects(readElementLineEndpoints({ ...request, task: invalidTask, step: 2 }), /двух концов|координаты/);
+  }
 }));
 
 test("components share one slice; fixed-time and cross-task profiles retain distances in table export", async () => fixture(async (task, reads) => {

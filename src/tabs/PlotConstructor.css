@@ -36,3 +36,13 @@ dialog.constructor-plot { position: static; width: 100%; max-width: none; max-he
 dialog.constructor-expanded { position: fixed; box-sizing: border-box; }
 dialog.constructor-expanded::backdrop { background: #182c4059; }
 .constructor-values .constructor-value-comment { text-align: left; overflow-wrap: anywhere; }
+.constructor-line-picker { display: flex; flex-direction: column; gap: 8px; }
+.constructor-line-indices { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.constructor-line-indices input { width: 68px; }
+.constructor-line-indices small { color: #526273; }
+.constructor-line-images { font-size: 12px; }
+.constructor-line-images summary { cursor: pointer; }
+.constructor-line-images label { margin-top: 6px; }
+.constructor-line-time { display: flex; align-items: center; gap: 6px; }
+.constructor-line-time label { flex: 1; min-width: 0; }
+.constructor-line-time button { flex: 0 0 auto; }

@@ -14,12 +14,13 @@ export function ProtocolCheck(props) {
     setError("");
     if (!add) { props.context.setProtocolEntry(props.entryKey, null); return; }
     const task = props.context.task, time = props.context.time;
-    const title = props.title, comment = `${protocolMoment(task, time)}${props.comment ? ` · ${props.comment}` : ""}`;
+    const title = props.title, moment = props.momentLabel ?? protocolMoment(task, time);
+    const comment = `${moment}${props.comment ? ` · ${props.comment}` : ""}`;
     const controller = new AbortController(); abort = controller;
     const timer = setTimeout(() => controller.abort(new Error("График не готов к снимку. Дождитесь загрузки и повторите.")), 15000);
     props.context.setProtocolBusy?.(true);
     try {
-      const options = { signal: controller.signal, caption: `${title} · ${protocolMoment(task, time)}` };
+      const options = { signal: controller.signal, caption: `${title} · ${moment}` };
       const image = props.capture ? await props.capture(options) : await captureProtocolMovie(props.adapter, options);
       controller.signal.throwIfAborted();
       if (props.context.task === task) props.context.setProtocolEntry(props.entryKey,

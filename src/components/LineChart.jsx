@@ -67,6 +67,7 @@ function drawOverlayLegend(chart, series, position) {
 export function LineChart(props) {
   let canvas, chart, drag, tooltipWindow, skipContextMenu = false, legendHitBoxes = [];
   let currentSeries = [], autoPending = true;
+  let currentAnnotations = [];
   let legendBounds = null, legendPosition = { x: 1, y: 0 };
   let movieState = null, renderedFrameKey = null, currentMovieCursor = null, disposed = false;
   let pendingVisibility = null, drawingFailure = null;
@@ -89,10 +90,41 @@ export function LineChart(props) {
     return bounds && Number.isFinite(bounds.minimum) && Number.isFinite(bounds.maximum)
       && bounds.minimum < bounds.maximum ? { yMin: bounds.minimum, yMax: bounds.maximum } : {};
   }
+  function automaticXRange() {
+    const bounds = props.autoXRange;
+    return bounds && Number.isFinite(bounds.minimum) && Number.isFinite(bounds.maximum)
+      && bounds.minimum < bounds.maximum ? { xMin: bounds.minimum, xMax: bounds.maximum } : {};
+  }
+  function drawAnnotations(current) {
+    const area = current.chartArea;
+    if (!area || !currentAnnotations.length || area.width < 30) return;
+    const ctx = current.ctx, padding = 5, lineHeight = 13, width = area.width - 12;
+    ctx.save();
+    try {
+      ctx.font = "10px Arial, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+      const lines = [];
+      for (const text of currentAnnotations) {
+        let line = "";
+        for (const word of text.split(" ")) {
+          const next = line ? `${line} ${word}` : word;
+          if (line && ctx.measureText(next).width > width - 2 * padding) { lines.push(line); line = word; }
+          else line = next;
+        }
+        if (line) lines.push(line);
+      }
+      const height = Math.min(area.height - 12, lines.length * lineHeight + 2 * padding);
+      if (height <= 0) return;
+      const left = area.left + 6, top = area.bottom - height - 6;
+      ctx.beginPath(); ctx.rect(left, top, width, height); ctx.clip();
+      ctx.fillStyle = "rgba(255,255,255,0.88)"; ctx.fillRect(left, top, width, height);
+      ctx.fillStyle = "#526273";
+      lines.forEach((line, i) => ctx.fillText(line, left + padding, top + padding + i * lineHeight));
+    } finally { ctx.restore(); }
+  }
   function applyChartLimits(range) {
     if (!chart) return;
     range = movieState?.range ?? (props.autoScaleToggle && untrack(autoScale)
-      ? { ...range, ...automaticYRange() } : range);
+      ? { ...range, ...automaticXRange(), ...automaticYRange() } : range);
     Object.assign(chart.options.scales.x, { min: range.xMin, max: range.xMax });
     Object.assign(chart.options.scales.y, { min: range.yMin, max: range.yMax });
     try {
@@ -170,6 +202,9 @@ export function LineChart(props) {
     currentMovieCursor = props.movieCursor ?? null;
     renderedFrameKey = null;
     currentSeries = series;
+    currentAnnotations = props.annotations ?? [];
+    // Track bounds even when manual limits temporarily take precedence.
+    props.autoXRange;
     const xLabel = props.xLabel, yLabel = props.yLabel, integerX = props.integerX;
     if (!ready()) return;
     try {
@@ -190,6 +225,7 @@ export function LineChart(props) {
           }
         } },
           { id: "movieTimeCursor", afterDatasetsDraw: drawMovieCursor },
+          { id: "segmentCoordinates", afterDatasetsDraw: drawAnnotations },
           { id: "overlayLegend", afterDatasetsDraw: current => {
             const legend = untrack(showLegend) ? drawOverlayLegend(current, currentSeries, legendPosition) : { hitBoxes: [], bounds: null };
             legendHitBoxes = legend.hitBoxes; legendBounds = legend.bounds;
@@ -327,7 +363,7 @@ export function LineChart(props) {
       // Keep the user's scale mode throughout the movie. Empty limits let
       // Chart.js fit every frame just as it does during ordinary Auto viewing;
       // manual limits and Auto-off retain the exact displayed axes.
-      movieState = { range: automatic ? automaticYRange() : range, width: canvas.width, height: canvas.height,
+      movieState = { range: automatic ? { ...automaticXRange(), ...automaticYRange() } : range, width: canvas.width, height: canvas.height,
         logicalWidth: chart.width, logicalHeight: chart.height,
         responsive: chart.options.responsive,
         devicePixelRatio: (chart.config?.options ?? chart.options).devicePixelRatio,

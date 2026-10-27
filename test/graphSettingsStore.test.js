@@ -19,7 +19,7 @@ function disk(initial) {
 const settings = { only: true, areas: true, showSlices: true, active: 4,
   slices: [{ id: 4, recordIndex: 0, direction: 2, discrete: 2, component: 1 }],
   profiles: [{ id: 8, graphId: 4, instanceKey: "elements:0:0:0:1:0:0", direction: 0, index: 2,
-    view: { autoScale: false, showLegend: false, hidden: ["Y"], limits: { xMin: 2, xMax: 17, yMin: -9, yMax: 28 }, legendPosition: { x: .3, y: .8 } } }],
+    view: { autoScale: false, showLegend: false, hidden: ["Y"], limits: { xMin: 2, xMax: 17, yMin: -9, yMax: 28 }, legendPosition: { x: .3, y: .8 }, windowSize: { width: 1180, height: 720 } } }],
   activeProfile: 8, expandedProfile: 8, view: { resultVectorScale: 3.25, resultPalette: "Turbo", resultElementsQuantity: "J", showPeriodicSymmetry: true }, selections: { elements: [1], regions: [1] } };
 
 test("settings, collection, selected image and chart view survive a fresh task object and directory reopen", async () => {

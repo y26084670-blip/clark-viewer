@@ -14,7 +14,14 @@
 .graph-1d-preview svg text { fill: #617386; font: 11px sans-serif; }
 .graph-1d-preview span, .graph-1d-preview small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .graph-1d-preview small { color: #617386; font-size: 11px; }
-dialog.graph-1d-expanded { position: fixed; inset: 18px; margin: auto; width: calc(100vw - 36px); height: calc(100dvh - 36px); max-width: none; max-height: none; padding: 0; box-sizing: border-box; border: 1px solid #71859a; border-radius: 7px; background: white; color: #23364b; }
+dialog.graph-1d-expanded {
+  position: fixed; inset: 18px auto auto 18px; margin: 0;
+  width: calc(100vw - 36px); height: calc(100dvh - 36px);
+  min-width: min(420px, calc(100vw - 36px)); min-height: min(260px, calc(100dvh - 36px));
+  max-width: calc(100vw - 36px); max-height: calc(100dvh - 36px);
+  resize: both; overflow: hidden; padding: 0 0 12px; box-sizing: border-box;
+  border: 1px solid #71859a; border-radius: 7px; background: white; color: #23364b;
+}
 dialog.graph-1d-expanded[open] { display: flex; flex-direction: column; }
 .graph-1d-expanded::backdrop { background: #182c4070; }
 .graph-1d-expanded > header { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #edf1f5; border-bottom: 1px solid #bcc7d2; font-size: .85rem; }

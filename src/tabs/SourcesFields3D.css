@@ -1,4 +1,5 @@
 .plot-toolbar.sources-fields-toolbar {
+  --source-toolbar-menu-width: 11em;
   position: relative;
   display: flex;
   flex-wrap: wrap;
@@ -13,14 +14,22 @@
 .sources-fields-toolbar-controls {
   display: contents;
 }
+.sources-fields-toolbar-controls > .source-toolbar-menu {
+  width: var(--source-toolbar-menu-width);
+  flex: 0 0 var(--source-toolbar-menu-width);
+}
 
 .source-geometry-controls, .source-geometry-controls > div,
 .source-geometry-controls .geometry-viewer-toolbar,
 .source-geometry-controls .geometry-viewer-toolbar-controls { display: contents; }
-.source-geometry-controls .geometry-viewer-menu-button { width: auto; height: 27px; font: inherit; }
+.source-geometry-controls .geometry-viewer-menu-button {
+  width: var(--source-toolbar-menu-width); min-width: var(--source-toolbar-menu-width);
+  flex: 0 0 var(--source-toolbar-menu-width); height: 27px; font: inherit;
+}
 .sources-fields-toolbar .geometry-viewer-transparency {
   display: flex; flex-direction: column; align-items: stretch; gap: 2px;
-  width: 128px; min-width: 128px; flex: 0 0 128px; color: #263b4d; font-size: 11px;
+  width: 150px; min-width: 150px; flex: 0 0 150px; margin-inline: 12px;
+  color: #263b4d; font-size: 11px;
 }
 .sources-fields-toolbar .geometry-viewer-transparency input[type="range"] { width: 100%; }
 .sources-fields-toolbar .geometry-size-range > i { border-top-color: #344b60; }

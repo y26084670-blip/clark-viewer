@@ -4,15 +4,31 @@ import { graphProfileDescription, graphProfileSeries, graphProfileThumbnail } fr
 import "./Graph1DCollection.css";
 
 function ExpandedProfile(props) {
-  let dialog;
+  let dialog, resizeObserver;
   const series = createMemo(() => graphProfileSeries(props.result));
   const description = () => graphProfileDescription(props.result);
   const yLabel = createMemo(() => props.result ? `${props.result.label}, ${props.result.unit}` : "Значение");
   const autoXRange = createMemo(() => props.result?.length > 0 ? { minimum: 0, maximum: props.result.length } : undefined);
   const status = createMemo(() => props.loading ? "Обновление…" : props.result ? `t = ${props.result.time} с · ${props.result.distances.length} узлов` : props.error || "Для сечения нет данных выбранной величины");
   const initialView = props.entry.view;
-  onMount(() => { dialog.showModal(); });
-  onCleanup(() => dialog.close());
+  onMount(() => {
+    const savedSize = initialView?.windowSize;
+    if (savedSize) {
+      dialog.style.width = `${savedSize.width}px`;
+      dialog.style.height = `${savedSize.height}px`;
+    }
+    dialog.showModal();
+    const size = () => ({ width: Math.round(dialog.getBoundingClientRect().width), height: Math.round(dialog.getBoundingClientRect().height) });
+    let previous = size();
+    resizeObserver = new ResizeObserver(() => {
+      const current = size();
+      if (current.width === previous.width && current.height === previous.height) return;
+      previous = current;
+      props.onViewChange({ windowSize: current });
+    });
+    resizeObserver.observe(dialog);
+  });
+  onCleanup(() => { resizeObserver?.disconnect(); dialog.close(); });
   return <dialog ref={dialog} class="graph-1d-expanded" aria-label={`1D график №${props.entry.id}`}
     onCancel={event => { event.preventDefault(); props.onCollapse(); }}>
     <header><strong>1D №{props.entry.id}</strong><span title={description()}>{description()}</span>

@@ -141,7 +141,7 @@ export function SourcesFields3D(props) {
   }
   function changeProfileView(id, view) {
     if (graphBlocked()) return;
-    setGraphProfiles(previous => previous.map(p => p.id === id ? { ...p, view } : p));
+    setGraphProfiles(previous => previous.map(p => p.id === id ? { ...p, view: { ...p.view, ...view } } : p));
   }
   function DirectionChoices(p) {
     return <div class="source-slice-directions" role="menu" aria-label="Направление среза"

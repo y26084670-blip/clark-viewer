@@ -59,14 +59,18 @@ try {
   assert.equal(await page.locator(".geometry-viewer-window .geometry-viewer-toolbar").count(), 0);
   for (const width of [1920,1440,960]) {
     await page.setViewportSize({ width, height: 1080 });
+    const buttonSizes = await topButtons.evaluateAll(els=>els.map(el=>({width:el.getBoundingClientRect().width,clipped:el.scrollWidth>el.clientWidth})));
+    assert.ok(buttonSizes.every(b=>Math.abs(b.width-buttonSizes[0].width)<1 && !b.clipped),JSON.stringify(buttonSizes));
+    const spacing = await toolbar.locator(".geometry-viewer-transparency").evaluateAll(els=>els.map(el=>{const s=getComputedStyle(el);return [parseFloat(s.marginLeft),parseFloat(s.marginRight),el.getBoundingClientRect().width];}));
+    assert.deepEqual(spacing,[[12,12,150],[12,12,150]]);
     const boxes = await toolbar.locator(".source-toolbar-menu > button, .source-geometry-controls button, .geometry-viewer-transparency, .protocol-check-wrap").evaluateAll(els => els.map(el => { const r=el.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom}; }));
     assert.ok(boxes.every(box => box.x>=0 && box.right<=width), JSON.stringify({width,boxes}));
     for (let i=1;i<boxes.length;i++) assert.ok(boxes[i].y>=boxes[i-1].bottom || boxes[i].x>=boxes[i-1].right, JSON.stringify({width,boxes}));
-    if(width>=1440) assert.ok(Math.max(...boxes.map(b=>b.y))-Math.min(...boxes.map(b=>b.y))<12, JSON.stringify({width,boxes}));
+    if(width>=1920) assert.ok(Math.max(...boxes.map(b=>b.y))-Math.min(...boxes.map(b=>b.y))<12, JSON.stringify({width,boxes}));
   }
   await page.screenshot({path:path.join(out,"toolbar-960.png"),fullPage:true});
   await page.setViewportSize({width:1920,height:1080});
-  pass("Unified toolbar has six buttons and Size/Transparency before Protocol; no duplicate inner toolbar, no overlaps at 960/1440/1920px");
+  pass("Unified toolbar has six equal-width buttons and wider, spaced Size/Transparency before Protocol; no duplicate inner toolbar, no overlaps at 960/1440/1920px");
 
   const sourceMenu = page.locator(".source-toolbar-menu-panel");
   const geometryCount = (await scene()).geometryCount;
@@ -308,9 +312,36 @@ try {
   await page.waitForFunction(()=>copiedGraph.image?.size>1000);
   assert.ok((await page.evaluate(()=>copiedGraph.image)).width>1000);
   await page.screenshot({path:path.join(out,"expanded-profile.png"),fullPage:true});
+  const resizeProfile = async (dialog, width, height) => {
+    const box=await dialog.boundingBox();
+    await page.mouse.move(box.x+box.width-4,box.y+box.height-4);await page.mouse.down();
+    await page.mouse.move(box.x+width-4,box.y+height-4,{steps:8});await page.mouse.up();
+    await page.waitForFunction(({width,height})=>{
+      const rect=document.querySelector("dialog.graph-1d-expanded").getBoundingClientRect();
+      return Math.abs(rect.width-width)<2 && Math.abs(rect.height-height)<2;
+    },{width,height});
+    await page.waitForFunction(()=>{
+      const chart=profileChart.chart(), box=document.querySelector(".graph-1d-expanded .line-chart-canvas").getBoundingClientRect();
+      return Math.abs(chart.width-box.width)<2 && Math.abs(chart.height-box.height)<2;
+    });
+  };
+  await page.evaluate(()=>window.chartBeforeResize=profileChart.chart());
+  const originalWindow=await expanded.boundingBox();
+  await resizeProfile(expanded,1120,660);
+  assert.equal(await page.evaluate(()=>profileChart.chart()===chartBeforeResize),true);
+  assert.deepEqual(await page.evaluate(()=>profileChart.view().limits),frozen);
+  assert.equal(await page.evaluate(()=>profileChart.chart().isDatasetVisible(1)),false);
+  const resizedWindow=await expanded.boundingBox();
+  assert.equal(resizedWindow.x,originalWindow.x);assert.equal(resizedWindow.y,originalWindow.y);
+  await page.mouse.move(500,400);assert.deepEqual(await expanded.boundingBox(),resizedWindow);
+  await resizeProfile(expanded,1260,740);
+  await page.waitForFunction(()=>graphFixture.saved()?.settings.profiles.find(p=>p.id===2)?.view?.windowSize?.width===1260);
+  await page.screenshot({path:path.join(out,"resized-profile.png"),fullPage:true});
+  pass("Expanded graphs resize in both directions from the corner; the canvas follows without chart recreation, lost axes, hidden curves or sticky pointer");
   await expanded.getByRole("button",{name:"Свернуть",exact:true}).click(); await expandProfile(2);
   await page.waitForFunction(()=>profileChart.chart()?.data.datasets.length===3);
   assert.equal(await page.evaluate(()=>profileChart.chart().isDatasetVisible(1)),false);assert.deepEqual(await page.evaluate(()=>profileChart.view().limits),frozen);
+  assert.equal(Math.round((await expanded.boundingBox()).width),1260);assert.equal(Math.round((await expanded.boundingBox()).height),740);
   await expanded.getByRole("button",{name:"Свернуть",exact:true}).click();
   pass("Copy table includes hidden components; copy image produces PNG with the full plot; collapse/expand retains visibility and axes");
   await open();
@@ -419,6 +450,7 @@ try {
   await page.getByRole("combobox", { name: "Палитра результатов", exact: true }).selectOption("Turbo");
   await expandProfile(1); const persistedDialog=page.getByRole("dialog",{name:"1D график №1",exact:true});
   await page.waitForFunction(()=>profileChart.chart()?.data.datasets.length===3);
+  await resizeProfile(persistedDialog,1040,680);
   const persistedBox=await persistedDialog.locator("canvas").boundingBox(), persistedLegend=await page.evaluate(()=>profileChart.legend()[2]);
   await page.mouse.click(persistedBox.x+(persistedLegend.left+persistedLegend.right)/2,persistedBox.y+(persistedLegend.top+persistedLegend.bottom)/2);
   await persistedDialog.getByRole("button",{name:"Авто",exact:true}).click();
@@ -430,6 +462,10 @@ try {
   assert.deepEqual(await page.evaluate(()=>graphUI.slices()),savedSettings.slices);
   assert.equal(await page.evaluate(()=>profileChart.chart().isDatasetVisible(2)),false);
   assert.equal(await page.evaluate(()=>profileChart.view().auto),false);
+  assert.equal(Math.round((await persistedDialog.boundingBox()).width),1040);assert.equal(Math.round((await persistedDialog.boundingBox()).height),680);
+  await page.setViewportSize({width:800,height:600});
+  const clampedWindow=await persistedDialog.boundingBox();assert.ok(clampedWindow.x>=0 && clampedWindow.y>=0 && clampedWindow.x+clampedWindow.width<=800 && clampedWindow.y+clampedWindow.height<=600);
+  await page.setViewportSize({width:1440,height:900});
   assert.equal(await size.inputValue(),"0.5");
   await page.screenshot({path:path.join(out,"restored-profile.png"),fullPage:true});
   await persistedDialog.getByRole("button",{name:"Свернуть",exact:true}).click();
@@ -439,7 +475,7 @@ try {
   for(const id of storedIds) await page.getByRole("button",{name:`Удалить 1D график №${id}`,exact:true}).click();
   await page.waitForFunction(()=>graphUI.profiles().length===0 && graphScene.snapshot().contours.length===0 && graphFixture.saved()?.settings.profiles.length===0);
   assert.equal(await collection.count(),0); assert.equal(await page.evaluate(()=>graphUI.slices().length),savedSettings.slices.length);
-  pass("Full page reload restores task-owned slices, collection, size, palette, expanded state, hidden components and manual axes; deleting thumbnails clears only 1D sections and saves automatically");
+  pass("Full page reload restores task-owned slices, collection, size, palette, expanded state/window size, hidden components and manual axes; deleting thumbnails clears only 1D sections and saves automatically");
 
   await page.evaluate(()=>{
     graphFixture.buffers.JE[0].fill(0,3,6); graphFixture.buffers.JE[0].fill(0,15,18);

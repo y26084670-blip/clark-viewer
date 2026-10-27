@@ -15,6 +15,9 @@ export function normalizeGraphChartView(view = {}) {
   for (const axis of ["x", "y"]) if (!(limits[`${axis}Min`] < limits[`${axis}Max`])) { delete limits[`${axis}Min`]; delete limits[`${axis}Max`]; }
   const fraction = v => Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0;
   return { autoScale: view.autoScale !== false, showLegend: view.showLegend !== false, limits,
+    ...(Number.isFinite(view.windowSize?.width) && view.windowSize.width > 0
+      && Number.isFinite(view.windowSize?.height) && view.windowSize.height > 0
+      ? { windowSize: { width: view.windowSize.width, height: view.windowSize.height } } : {}),
     legendPosition: view.legendPosition ? { x: fraction(view.legendPosition.x), y: fraction(view.legendPosition.y) } : { x: 1, y: 0 },
     hidden: Array.isArray(view.hidden) ? view.hidden.filter(k => ["X", "Y", "Z", "scalar"].includes(k)) : [] };
 }

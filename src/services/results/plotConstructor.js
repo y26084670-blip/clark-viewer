@@ -3,7 +3,6 @@ import { scalarAt } from "./resultPlots.js";
 import { measurementCoils, readFluxHistories, fluxHistorySeries, readForceMomentHistory,
   forceMomentHistorySeries, readLossHistory, lossHistorySeries } from "./resultHistories.js";
 import { checkReadRange } from "./resultLayout.js";
-import { supportsElementLine, readElementLineProfile } from "./elementLinePlots.js";
 
 export function plotChannels(task, extra = []) {
   const channels = [{ key: "time", label: "Время", unit: "с", kind: "time" }];
@@ -90,24 +89,20 @@ export function plotChannelLabel(channel, spec = {}) {
   if (!channel) return "";
   const component = channel.components === 3 && !channel.productOffsets
     ? ` · ${spec.component === "norm" || spec.component == null ? "модуль" : "XYZ"[Number(spec.component)]}` : "";
-  const point = channel.kind === "field" && !spec.profile ? ` · точка ${spec.point ?? 1}` : "";
+  const point = channel.kind === "field" ? ` · точка ${spec.point ?? 1}` : "";
   return `${channel.label}${component}${point}${channel.unit ? `, ${channel.unit}` : ""}`;
 }
 
 export function plotCurveLabel(curve, axis) {
   let label = plotChannelLabel(curve[`${axis}Channel`], curve[axis]);
-  if (curve.xChannel.kind === "distance") label += axis === "x" ? ` · ${curve.x.lineLabel}`
-    : ` · момент №${curve.y.step}, t=${curve.y.time} с`;
   return axis === "y" && curve.taskLabel ? `${curve.taskLabel} · ${label}` : label;
 }
 
 export function validatePlotCurve(curve, existing) {
-  const spatial = curve.xChannel?.kind === "distance";
-  if (spatial && !supportsElementLine(curve.yChannel)) throw new Error("Для отрезка выберите локальную величину в ЭО элемента.");
   for (const axis of ["x", "y"]) {
     const channel = curve[`${axis}Channel`], spec = curve[axis];
     if (!channel) throw new Error("Выберите X и Y.");
-    if (!(spatial && axis === "y") && channel.kind === "field" && (!Number.isSafeInteger(Number(spec.point))
+    if (channel.kind === "field" && (!Number.isSafeInteger(Number(spec.point))
       || Number(spec.point) < 1 || Number(spec.point) > channel.points)) {
       throw new Error(`Ось ${axis.toUpperCase()}: номер точки должен быть от 1 до ${channel.points}.`);
     }
@@ -125,14 +120,6 @@ export function validatePlotCurve(curve, existing) {
 // combined diagnostic to stop movie capture of an incomplete plot.
 export async function readPlotCurves(task, curves) {
   const cache = new Map();
-  const frames = new Map();
-  const readFrame = (sourceTask, request) => {
-    let entries = frames.get(sourceTask);
-    if (!entries) frames.set(sourceTask, entries = new Map());
-    const key = JSON.stringify(request);
-    if (!entries.has(key)) entries.set(key, sourceTask.reader.read(request));
-    return entries.get(key);
-  };
   const read = (sourceTask, channel, spec) => {
     let channels = cache.get(sourceTask);
     if (!channels) cache.set(sourceTask, channels = new Map());
@@ -145,13 +132,6 @@ export async function readPlotCurves(task, curves) {
   const results = await Promise.allSettled(curves.map(async curve => {
     const yTask = curve.yTask ?? task;
     const crossTask = yTask !== task;
-    if (curve.xChannel.kind === "distance") {
-      const profile = await readElementLineProfile(yTask, curve.yChannel, curve.x, curve.y, request => readFrame(yTask, request));
-      const yLabel = plotCurveLabel(curve, "y");
-      return { key: curve.id, label: `${yLabel} / ${profile.label}`, points: profile.points,
-        profile,
-        tooltip: point => [...profile.tooltip(point), yLabel] };
-    }
     let points;
     if (crossTask && curve.xChannel.kind === "time") {
       const y = await read(yTask, curve.yChannel, curve.y);

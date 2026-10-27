@@ -15,12 +15,12 @@ import { applyResultGlobalRange, resultGlobalScale } from "../services/results/r
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import { movie3DFilenamePrefix } from "../services/movie/movieFilename.js";
 import { STREAMLINE_METHODS, STREAMLINE_DEFAULT_TOLERANCE } from "../services/visualization/resultStreamlineField.js";
-import { createGraphAxesController, graphAxisKey } from "../services/visualization/graphAxes.js";
-import { createResultGraphReader, graphQuantityKey, graphResultSignature } from "../services/results/resultGraphRequests.js";
+import { GRAPH_SLICE_DIRECTIONS } from "../services/visualization/resultGraphField.js";
+import { createResultGraphReader, graphQuantityKey, graphRequestKey } from "../services/results/resultGraphRequests.js";
 import "./SourcesFields3D.css";
 
-// Switching tabs unmounts this component. Retain descriptors and sampled curves,
-// not source HDF5 buffers or worker/GPU resources, for the loaded task's lifetime.
+// Switching tabs unmounts this component. Retain task-owned choices,
+// not HDF5 buffers or worker/GPU resources.
 const streamlineSessions = new WeakMap();
 const cameraSessions = new WeakMap();
 const graphSessions = new WeakMap();
@@ -33,11 +33,10 @@ export function SourcesFields3D(props) {
   const flightBusy = () => flightState() !== "idle";
   const changeTime = index => { if (!flightBusy()) props.setTime(index); };
   onMount(()=>{
-    const remove=installSourcesFieldsKeyboard(window,{blocked:()=>props.movieBusy || Boolean(graphState().mode),flightBusy,
+    const remove=installSourcesFieldsKeyboard(window,{blocked:()=>props.movieBusy,flightBusy,
       time:()=>props.time,maxTime:()=>props.task?.general.countTimeSteps??0,setTime:changeTime,
       view:command=>setCameraRequest(previous=>({command,sequence:(previous?.sequence??0)+1}))});
     const closeMenus = event => {
-      if (openSourceMenu() === "graphs" && graphState().mode && event.target?.closest?.(".geometry-viewer-canvas-region")) return;
       if (!event.target?.closest?.(".source-toolbar-menu")) setOpenSourceMenu(null);
     };
     window.addEventListener("pointerdown", closeMenus, true);
@@ -50,122 +49,66 @@ export function SourcesFields3D(props) {
   const [streamlineNotice, setStreamlineNotice] = createSignal("");
   const [openSourceMenu, setOpenSourceMenu] = createSignal(null);
   const savedGraphs = props.task && graphSessions.get(props.task);
-  const [graphsOnly, setGraphsOnly] = createSignal(savedGraphs?.only ?? true);
-  const [showGraphs, setShowGraphs] = createSignal(savedGraphs?.show ?? true);
-  const [graphComponents, setGraphComponents] = createSignal(savedGraphs?.components ?? { X: true, Y: true, Z: true });
-  const [graphBackground, setGraphBackground] = createSignal(savedGraphs?.background ?? "#ffffff");
-  const [graphState, setGraphState] = createSignal(null);
-  const graphController = createGraphAxesController(setGraphState, savedGraphs?.axes ?? []);
-  setGraphState(graphController.state);
-  const [graphResults, setGraphResults] = createSignal(savedGraphs?.results ?? []);
-  const [graphBusy, setGraphBusy] = createSignal(false), [graphError, setGraphError] = createSignal("");
-  const [graphViewRequest, setGraphViewRequest] = createSignal(null);
-  let graphReader = createResultGraphReader({ initialTask: props.task, initialResults: savedGraphs?.results }), graphTask = props.task;
-  let graphRevision = 0, graphTime = props.time, deleteAxisDialog;
-  let graphPending = null, graphBuildPromise = null, graphAlive = true, graphAutoTask, graphAutoTime;
-  let graphRequestedIds = new Set(savedGraphs?.requestedIds ?? savedGraphs?.results?.map(g => g.id) ?? []);
-  const graphBlocked = () => props.movieBusy || flightBusy() || graphBusy();
+  const [graphsOnly, setGraphsOnly] = createSignal(savedGraphs?.only ?? false);
+  const [areaGraphs, setAreaGraphs] = createSignal(savedGraphs?.areas ?? false);
+  const [sliceGraphs, setSliceGraphs] = createSignal(savedGraphs?.showSlices ?? false);
+  const [graphSlices, setGraphSlices] = createSignal(savedGraphs?.slices ?? []);
+  const [activeSlice, setActiveSlice] = createSignal(savedGraphs?.active ?? null);
+  const [addingSlice, setAddingSlice] = createSignal(false), [addElement, setAddElement] = createSignal(0);
+  const [directionMenu, setDirectionMenu] = createSignal(null), [previewSlice, setPreviewSlice] = createSignal(null);
+  let graphTask = props.task, nextSliceId = Math.max(0, ...graphSlices().map(s => s.id)) + 1;
+  const graphSession = () => ({ only: graphsOnly(), areas: areaGraphs(), showSlices: sliceGraphs(), slices: graphSlices(), active: activeSlice() });
+  const graphBlocked = () => props.movieBusy || flightBusy();
+  const selectedSlice = () => graphSlices().find(s => s.id === activeSlice());
   const graphQuantities = () => ({ elements: elementsQuantity(), regions: regionsQuantity(), virtual: virtualQuantity() });
-  const activeGraphAxis = () => graphState().axes.find(a => a.id === graphState().active);
-  const scalarGraph = () => {
-    const axis = activeGraphAxis();
-    return axis ? QUANTITIES[graphQuantityKey(props.task, axis, graphQuantities())]?.components === 1 : !hasVectors() && hasScalars();
-  };
-  const currentGraphResults = () => graphResults().filter(result => {
-    const axis = graphState().axes.find(a => a.id === result.id);
-    // Keep the last complete curve, with its own time label, until its replacement
-    // is ready. Geometry/quantity/method changes still invalidate incompatible data.
-    return axis && result.signature === graphResultSignature(axis, result.timeIndex ?? props.time, graphQuantityKey(props.task, axis, graphQuantities()), streamlineMethod());
-  });
-  const builtGraphAxes = () => graphState().axes.filter(a => graphRequestedIds.has(a.id));
-  const graphSession = () => ({ axes: graphState().axes, results: graphResults(), requestedIds: builtGraphAxes().map(a => a.id),
-    only: graphsOnly(), show: showGraphs(), components: graphComponents(), background: graphBackground() });
+  const sliceScalar = slice => QUANTITIES[graphQuantityKey(props.task, slice, graphQuantities())]?.components !== 3;
+  const closeGraphChoice = () => { setAddingSlice(false); setDirectionMenu(null); setPreviewSlice(null); };
   createEffect(() => {
-    const task = props.task, time = props.time;
+    const task = props.task;
     untrack(() => {
-      if (task !== graphTask) {
-        if (graphTask) graphSessions.set(graphTask, graphSession());
-        graphRevision++; graphPending = null; graphReader.close(); graphTask = task;
-        const saved = graphTask && graphSessions.get(graphTask);
-        graphRequestedIds = new Set(saved?.requestedIds ?? saved?.results?.map(g => g.id) ?? []);
-        graphController.reset(saved?.axes ?? []); setGraphResults(saved?.results ?? []);
-        setGraphsOnly(saved?.only ?? true); setShowGraphs(saved?.show ?? true);
-        setGraphComponents(saved?.components ?? { X: true, Y: true, Z: true }); setGraphBackground(saved?.background ?? "#ffffff");
-        graphReader = createResultGraphReader({ initialTask: graphTask, initialResults: saved?.results });
-        setGraphBusy(false); setGraphError(""); setGraphViewRequest(null);
-      }
-      if (time !== graphTime) { graphTime = time; graphController.cancel(); }
+      if (task === graphTask) return;
+      if (graphTask) graphSessions.set(graphTask, graphSession());
+      graphTask = task;
+      const saved = task && graphSessions.get(task);
+      setGraphsOnly(saved?.only ?? false); setAreaGraphs(saved?.areas ?? false); setSliceGraphs(saved?.showSlices ?? false);
+      setGraphSlices(saved?.slices ?? []); setActiveSlice(saved?.active ?? null);
+      nextSliceId = Math.max(0, ...graphSlices().map(s => s.id)) + 1; closeGraphChoice();
     });
   });
-  onCleanup(() => {
-    graphAlive = false; graphRevision++; graphPending = null; graphReader.close();
-    if (graphTask) graphSessions.set(graphTask, graphSession());
-  });
-  createEffect(() => {
-    const deleting = graphState().deleting;
-    if (!deleteAxisDialog) return;
-    if (deleting != null && !deleteAxisDialog.open) deleteAxisDialog.showModal();
-    else if (deleting == null && deleteAxisDialog.open) deleteAxisDialog.close();
-  });
-  async function buildGraphs() {
-    if (graphBlocked() || !graphState().axes.length) return graphBuildPromise;
-    graphController.cancel();
-    graphState().axes.forEach(a => graphRequestedIds.add(a.id));
-    return requestGraphBuild(graphState().axes);
-  }
-  function requestGraphBuild(axes) {
-    if (!axes.length || !graphAlive) return;
-    graphPending = { version: ++graphRevision, reader: graphReader, task: props.task, time: props.time,
-      method: streamlineMethod(), quantities: graphQuantities(), axes };
-    setGraphError(""); setGraphBusy(true);
-    // One running read plus one replaceable request: fast time changes do not
-    // queue every intermediate step or invoke the reader concurrently.
-    graphBuildPromise ??= drainGraphBuilds().finally(() => { graphBuildPromise = null; });
-    return graphBuildPromise;
-  }
-  async function drainGraphBuilds() {
-    while (graphPending && graphAlive) {
-      const request = graphPending; graphPending = null;
-      const { version, reader, task, time, method, quantities, axes } = request;
-      try {
-        const results = await reader.read(request);
-        if (!graphAlive || version !== graphRevision) continue;
-        const axesChanged = axes.some(axis => {
-          const current = graphState().axes.find(a => a.id === axis.id);
-          return !current || graphAxisKey(axis) !== graphAxisKey(current);
-        });
-        if (task !== props.task || time !== props.time || method !== streamlineMethod()
-          || JSON.stringify(quantities) !== JSON.stringify(graphQuantities())
-          || axesChanged) {
-          setGraphError("Параметры изменились. Нажмите «Построить» ещё раз."); continue;
-        }
-        const previous = currentGraphResults();
-        setGraphResults(results.map(result => result.error ? previous.find(g => g.id === result.id && !g.error) ?? result : result));
-        setGraphError(results.filter(g => g.error).map(g => `Ось №${g.id}: ${g.error}`).join(" · "));
-      } catch (error) { if (graphAlive && version === graphRevision && error.name !== "AbortError") setGraphError(error.message); }
+  createEffect(() => { if (openSourceMenu() !== "graphs" || props.movieBusy) closeGraphChoice(); });
+  onCleanup(() => { if (graphTask) graphSessions.set(graphTask, graphSession()); });
+  function addSlice(direction) {
+    if (graphBlocked()) return;
+    const record = props.task.elements[addElement()];
+    if (!record) return;
+    const group = record.targ === 3 ? "virtual" : "elements";
+    if (quantities[group].read() === "none") quantities[group].write(group === "virtual" ? (props.task.metadata.HV ? "Bv" : "Av") : (props.task.metadata.MH ? "M" : "J"));
+    const existing = graphSlices().find(s => s.recordIndex === addElement() && s.direction === direction && s.component === 0);
+    if (existing) setActiveSlice(existing.id);
+    else {
+      const slice = { id: nextSliceId++, recordIndex: addElement(), direction, component: 0 };
+      setGraphSlices(previous => [...previous, slice]); setActiveSlice(slice.id);
     }
-    if (graphAlive) setGraphBusy(false);
+    setSliceGraphs(true); closeGraphChoice();
   }
-  function refreshTimedGraphs(task, time) {
-    if (task !== graphTask || (task === graphAutoTask && time === graphAutoTime)) return;
-    graphAutoTask = task; graphAutoTime = time;
-    const axes = builtGraphAxes();
-    if (graphBuildPromise || axes.some(axis => !graphResults().some(g => g.id === axis.id
-      && g.signature === graphResultSignature(axis, time, graphQuantityKey(task, axis, graphQuantities()), streamlineMethod())))) {
-      requestGraphBuild(axes);
-    }
+  function changeSlice(id, update) {
+    if (graphBlocked()) return;
+    setGraphSlices(previous => previous.map(s => s.id === id ? { ...s, ...update } : s));
+    setActiveSlice(id);
   }
-  function graphCaptureStatus(index) {
-    const axes = builtGraphAxes();
-    if (showGraphs() && axes.length) {
-      if (graphBusy() || graphAutoTime !== index) return { ready: false };
-      if (graphError()) return { error: graphError() };
-      if (axes.some(axis => !graphResults().some(g => !g.error && g.id === axis.id
-        && g.signature === graphResultSignature(axis, index, graphQuantityKey(props.task, axis, graphQuantities()), streamlineMethod())))) {
-        return { error: "Сначала постройте графики для выбранных параметров." };
-      }
-    }
-    return { ready: true };
+  function deleteSlice() {
+    if (graphBlocked()) return;
+    const remaining = graphSlices().filter(s => s.id !== activeSlice());
+    setGraphSlices(remaining); setActiveSlice(remaining.at(-1)?.id ?? null); closeGraphChoice();
+  }
+  function DirectionChoices(p) {
+    return <div class="source-slice-directions" role="menu" aria-label="Направление среза"
+      onPointerLeave={() => setPreviewSlice(null)}>
+      <For each={GRAPH_SLICE_DIRECTIONS}>{option => <button type="button" role="menuitem"
+        onPointerEnter={() => setPreviewSlice({ recordIndex: p.recordIndex, direction: option.value })}
+        onFocus={() => setPreviewSlice({ recordIndex: p.recordIndex, direction: option.value })}
+        onClick={() => { p.choose(option.value); setDirectionMenu(null); setPreviewSlice(null); }}>{option.label}</button>}</For>
+    </div>;
   }
   let nextStreamlineId = savedStreamlines?.nextId ?? 1, streamlineTask = props.task;
   createEffect(() => {
@@ -201,10 +144,6 @@ export function SourcesFields3D(props) {
   const [elementsQuantity, setElementsQuantity] = createGeometryViewSetting("resultElementsQuantity", "M");
   const [regionsQuantity, setRegionsQuantity] = createGeometryViewSetting("resultRegionsQuantity", "none");
   const [virtualQuantity, setVirtualQuantity] = createGeometryViewSetting("resultVirtualQuantity", "none");
-  createEffect(() => {
-    const task = props.task, time = props.time;
-    untrack(() => refreshTimedGraphs(task, time));
-  });
   const [scale, setScale] = createGeometryViewSetting("resultVectorScale", 1);
   const [colorMap, setColorMap] = createGeometryViewSetting("resultVectorColorMap", false);
   const [normalizeVectors, setNormalizeVectors] = createGeometryViewSetting("resultNormalizeVectors", false);
@@ -263,6 +202,19 @@ export function SourcesFields3D(props) {
       volumeMode: quantityKey !== "none" && volumeMode()
         && (QUANTITIES[quantityKey]?.components === 1 || !normalizeVectors()) };
   }));
+  const graphReader = createResultGraphReader();
+  onCleanup(() => graphReader.close());
+  const graphRequest = createMemo(() => {
+    const request = { task: props.task, time: props.time, quantities: graphQuantities(),
+      slices: sliceGraphs() ? graphSlices() : [],
+      regions: areaGraphs() && regionsQuantity() !== "none" ? (props.task?.regions ?? [])
+        .filter(r => r.geoType !== 2 && requestedLayers().find(g => g.key === "regions").selected.includes(r.id)).map(r => r.recordIndex) : [] };
+    return { ...request, quantityKey: graphRequestKey(request) };
+  });
+  const graphResult = useResultFrame(graphRequest, request => graphReader.read(request));
+  const graphResults = () => graphResult().frame?.value.graphs ?? [];
+  const graphBusy = () => graphResult().loading;
+  const graphError = () => [graphResult().error, ...(graphResult().frame?.value.errors ?? []).map(e => e.message)].filter(Boolean).join(" · ");
   const globalRanges = createMemo(() => resultGlobalScale(props.task, requestedLayers(), streamlineSeeds()));
   const effectiveGlobalMinMax = createMemo(() => globalMinMax() && globalRanges().available);
   const hasRequestedResults = createMemo(() => !graphsOnly() && requestedLayers().some(layer => layer.quantityKey !== "none" && layer.selected.length > 0));
@@ -293,17 +245,14 @@ export function SourcesFields3D(props) {
   const selections = createMemo(() => ({
     elements: props.elements.map(id => id - 1), regions: props.regions.map(id => id - 1),
   }));
-  const captureFrameKey = createMemo(() => {
-    const frame = displayed(), graphs = showGraphs() ? currentGraphResults().filter(g => !g.error) : [];
-    return graphs.length ? { frame, graphs } : frame;
-  });
+  const captureFrameKey = createMemo(() => ({ frame: displayed(), graphs: graphResult().frame }));
   const movie = createMovieTabAdapter(props, { title: "Источники / Поле 3D",
     filenamePrefix: () => movie3DFilenamePrefix(requestedLayers(), streamlines()), readFrame: index => {
     const status = completedMovieFrame(result(), { task: props.task, index });
     if (!status.ready) return status;
-    const graphs = graphCaptureStatus(index);
+    const graphs = completedMovieFrame(graphResult(), { task: props.task, index });
     if (!graphs.ready) return graphs;
-    const errors = status.value.value.errors ?? [];
+    const errors = [...(status.value.value.errors ?? []), ...(graphs.value.value.errors ?? [])];
     return errors.length ? { error: errors.map(item => item.message).join(" · ") } : { ready: true, value: captureFrameKey() };
   } });
   const quantityText = key => key === "none"
@@ -356,15 +305,10 @@ export function SourcesFields3D(props) {
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
             aria-expanded={openSourceMenu() === "presentation"} aria-label="Представление"
-            title="Настроить размер, карту, нормализацию и минимакс"
+            title="Настроить карту, нормализацию и минимакс"
             onClick={() => toggleSourceMenu("presentation")}>Представление</button>
           <Show when={openSourceMenu() === "presentation"}>
             <div class="source-toolbar-menu-panel source-presentation-panel">
-              <label class="source-presentation-slider">Размер
-                <input type="range" min="-1" max="1" step="0.05"
-                  value={Math.log10(scale())} aria-label="Размер представления"
-                  onInput={event => setScale(10 ** event.currentTarget.valueAsNumber)} />
-              </label>
               <label><input type="checkbox" aria-label="Карта" checked={effectiveColorMap()} disabled={hasScalars()}
                 onChange={event => changeColorMap(event.currentTarget.checked)} /> Карта</label>
               <label title="Одинаковая длина векторов; цвет соответствует исходному модулю">
@@ -429,79 +373,88 @@ export function SourcesFields3D(props) {
             title="Открыть панель графиков"
             onClick={() => toggleSourceMenu("graphs")}>Графики</button>
           <Show when={openSourceMenu() === "graphs"}>
-            <div class="source-toolbar-menu-panel source-graphs-panel">
-              <label class="source-toolbar-option"><input type="checkbox" checked={graphsOnly()}
-                onChange={event => setGraphsOnly(event.currentTarget.checked)} /> только графики</label>
-              <label class="source-toolbar-option"><input type="checkbox" checked={showGraphs()}
-                onChange={event => setShowGraphs(event.currentTarget.checked)} /> Показывать графики</label>
-              <div class="source-graph-axis-actions"><span>ось:</span>
-                <For each={[["add", "Добавить"], ["edit", "Изменить"], ["delete", "Удалить"]]}>{([mode, label]) =>
-                  <button type="button" aria-pressed={graphState().mode === mode} disabled={graphBlocked() || (mode !== "add" && !graphState().axes.length)}
-                    onClick={() => graphController.toggle(mode)}>{label}</button>}
-                </For>
+            <div class="source-toolbar-menu-panel source-graphs-panel" onKeyDown={event => {
+              if (event.key === "Escape") { event.stopPropagation(); closeGraphChoice(); }
+            }}>
+              <label class="source-toolbar-option"><input type="checkbox" checked={graphsOnly()} disabled={graphBlocked()}
+                onChange={event => setGraphsOnly(event.currentTarget.checked)} /> Только графики</label>
+              <label class="source-toolbar-option"><input type="checkbox" checked={areaGraphs()} disabled={graphBlocked()}
+                onChange={event => {
+                  if (event.currentTarget.checked && regionsQuantity() === "none") setRegionsQuantity(props.task.metadata.HS ? "Bs" : "As");
+                  setAreaGraphs(event.currentTarget.checked);
+                }} /> Графики над площадками</label>
+              <div class="source-slice-actions">
+                <label class="source-toolbar-option"><input type="checkbox" checked={sliceGraphs()} disabled={graphBlocked()}
+                  onChange={event => setSliceGraphs(event.currentTarget.checked)} /> Срезы в элементах</label>
+                <button type="button" aria-expanded={addingSlice()} disabled={graphBlocked() || !props.task?.elements?.length}
+                  onClick={() => { setAddingSlice(!addingSlice()); setDirectionMenu(null); setPreviewSlice(null);
+                    setAddElement(selectedSlice()?.recordIndex ?? Math.max(0, props.task.elements.findIndex(r => props.elements.includes(r.id)))); }}>Добавить</button>
+                <button type="button" disabled={graphBlocked() || !selectedSlice()} onClick={deleteSlice}>Удалить</button>
               </div>
-              <Show when={activeGraphAxis()}><span>Выбрана ось №{graphState().active}</span></Show>
-              <For each={["X", "Y", "Z"]}>{axis =>
-                <label class="source-toolbar-option"><input type="checkbox" checked={graphComponents()[axis]}
-                  disabled={scalarGraph()}
-                  onChange={event => setGraphComponents(previous => ({ ...previous, [axis]: event.currentTarget.checked }))} />
-                  {axis}-компонента
-                </label>}
-              </For>
-              <label class="source-graph-background"><input type="color" aria-label="фон" value={graphBackground()}
-                onInput={event => setGraphBackground(event.currentTarget.value)} /> фон</label>
-              <div class="source-graph-build-actions">
-                <button type="button" disabled={graphBlocked() || !graphState().axes.length} onClick={buildGraphs}>Построить</button>
-                <button type="button" disabled={graphBlocked() || !showGraphs() || !currentGraphResults().some(g => g.id === graphState().active && !g.error)}
-                  onClick={() => setGraphViewRequest(previous => ({ id: graphState().active, sequence: (previous?.sequence ?? 0) + 1 }))}>Повернуть</button>
+              <Show when={addingSlice()}>
+                <div class="source-slice-add">
+                  <label>Элемент <select aria-label="Элемент для среза" value={addElement()}
+                    onChange={event => { setAddElement(Number(event.currentTarget.value)); setPreviewSlice(null); }}>
+                    <For each={props.task.elements}>{record => <option value={record.recordIndex}>№{record.id} · {record.name}</option>}</For>
+                  </select></label>
+                  <DirectionChoices recordIndex={addElement()} choose={addSlice} />
+                </div>
+              </Show>
+              <div class="source-slice-scroll">
+                <table class="source-slice-table" aria-label="Графики срезов элементов">
+                  <thead><tr><th>Имя элемента</th><th>Номер</th><th>Направление среза</th><th>Компонента</th></tr></thead>
+                  <tbody><For each={graphSlices()}>{slice => <tr classList={{ selected: activeSlice() === slice.id }}
+                    aria-selected={activeSlice() === slice.id} tabIndex="0"
+                    onClick={event => { if (!graphBlocked()) { setActiveSlice(slice.id); if (!event.target.closest(".source-slice-direction")) setDirectionMenu(null); } }} onFocus={() => !graphBlocked() && setActiveSlice(slice.id)}>
+                    <td title={props.task.elements[slice.recordIndex]?.name}>{props.task.elements[slice.recordIndex]?.name}</td>
+                    <td>{props.task.elements[slice.recordIndex]?.id}</td>
+                    <td><button type="button" class="source-slice-direction" aria-haspopup="menu" aria-expanded={directionMenu() === slice.id}
+                      disabled={graphBlocked()} onClick={() => { setDirectionMenu(directionMenu() === slice.id ? null : slice.id); setAddingSlice(false); }}>
+                      {GRAPH_SLICE_DIRECTIONS[slice.direction].label}</button>
+                    </td>
+                    <td><select aria-label={`Компонента среза ${slice.id}`} value={slice.component} disabled={graphBlocked() || sliceScalar(slice)}
+                      onChange={event => changeSlice(slice.id, { component: Number(event.currentTarget.value) })}>
+                      <For each={["X", "Y", "Z"]}>{(name, index) => <option value={index()}>{name}</option>}</For>
+                    </select></td>
+                  </tr>}</For></tbody>
+                </table>
               </div>
-              <Show when={graphBusy()}><span role="status">Построение графиков…</span></Show>
+              <Show when={directionMenu() !== null && selectedSlice()}>
+                <DirectionChoices recordIndex={selectedSlice().recordIndex} choose={direction => changeSlice(directionMenu(), { direction })} />
+              </Show>
+              <Show when={graphBusy()}><span role="status">Построение поверхностей…</span></Show>
               <Show when={graphError()}><span class="source-graph-error" role="alert">{graphError()}</span></Show>
-              <For each={currentGraphResults().filter(g => g.error || g.notice)}>{graph => <span class="source-graph-error" role={graph.error ? "alert" : "status"}>Ось №{graph.id}: {graph.error || graph.notice}</span>}</For>
             </div>
           </Show>
         </div>
         </div>
         <ProtocolCheck context={props} entryKey="sources" title="Источники / Поле 3D" adapter={movie.adapter}
-          disabled={flightBusy() || result().loading}
+          disabled={flightBusy() || result().loading || graphBusy()}
           comment={requestedLayers().filter(layer => layer.quantityKey !== "none").map(layer =>
             `${QUANTITIES[layer.quantityKey]?.label}: объекты ${layer.selected.join(", ")}`).join("; ")} />
         <GeometryMaterialLegend buttonClass="source-toolbar-menu-button"
           onOpen={() => setOpenSourceMenu(null)} />
       </div>
       <div class="embedded-geometry">
-        <Show when={graphState().mode}><div class="source-graph-hint" role="status">
-          {graphState().notice || (graphState().mode === "add" ? graphState().pending ? "Укажите вторую точку того же объекта и образа. Esc — отмена." : "Укажите первый узел области или центр ЭО. Esc — отмена."
-            : graphState().mode === "edit" ? "Перетаскивайте концы осей между узлами. Отожмите «Изменить» для завершения."
-            : "Щёлкните по концу оси для удаления. Отожмите «Удалить» для завершения.")}
-        </div></Show>
         <ResultsGeometryViewport cameraState={cameraState()} onCameraStateChange={rememberCamera} open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
-          allowFlight={true} flightBlocked={props.movieBusy || graphBusy() || Boolean(graphState().mode)} flightDisabledReason={flightDisabledReason()}
+          allowFlight={true} flightBlocked={props.movieBusy || graphBusy()} flightDisabledReason={flightDisabledReason()}
           onFlightStateChange={setFlightState}
           cameraRequest={cameraRequest()}
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={timeIndex()}
           selections={selections()} resultLayers={graphsOnly() ? [] : resultLayers()}
           resultError={[result().error, ...(value()?.errors ?? []).map(error => error.message)].filter(Boolean).join(" · ")}
           resultStreamlines={graphsOnly() ? [] : streamlines()} selectedStreamline={selectedStreamline()}
-          graphController={graphController} graphState={graphState()} graphResults={currentGraphResults().filter(g => !g.error)}
-          graphComponents={graphComponents()} graphBackground={graphBackground()} showGraphs={showGraphs()}
-          graphViewRequest={graphViewRequest()} graphBlocked={graphBlocked()}
+          graphResults={graphResults()} activeGraph={activeSlice()} graphPreview={previewSlice()} graphSelection={selectedSlice()}
           streamlineWidth={streamlineWidth()} streamlineColorMap={true}
           onSelectStreamline={setSelectedStreamline} onResultNodeDoubleClick={addStreamline}
           captureFrameKey={captureFrameKey()} onCaptureReady={movie.onCaptureReady}
-          resultVectorScale={scale()} resultPickingOnly={!graphsOnly()}
+          resultVectorScale={scale()} onResultVectorScaleChange={setScale} resultPickingOnly={!graphsOnly()}
           resultVectorColorMap={effectiveColorMap()}
           resultNormalizeVectors={normalizeVectors()}
           performanceProfile={performanceProfile()} />
       </div>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep}
         disabled={flightBusy()} onChange={changeTime} />
-      <dialog ref={deleteAxisDialog} class="source-graph-delete-dialog" aria-label="Удаление оси графика"
-        onCancel={event => { event.preventDefault(); graphController.confirmDelete(false); }}>
-        <p>Удалить ось №{graphState().deleting} и её график?</p>
-        <div><button type="button" onClick={() => graphController.confirmDelete(true)}>Удалить ось</button>
-          <button type="button" autofocus onClick={() => graphController.confirmDelete(false)}>Отмена</button></div>
-      </dialog>
     </section>
   </div>;
 }

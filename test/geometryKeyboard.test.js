@@ -47,7 +47,7 @@ test("Camera shortcuts use the same physical key in Latin, Russian and other lay
 test("Ctrl reverses axis views and Ctrl+A restores the initial oblique frame in every layout", () => {
   for (const [code, characters, , reversed] of shortcuts) {
     for (const key of characters) {
-      assert.equal(cameraCommand({ code, key, ctrlKey: true }), code === "KeyA" ? reversed : null, `Ctrl+${code}: ${key}`);
+      assert.equal(cameraCommand({ code, key, ctrlKey: true }), reversed, `Ctrl+${code}: ${key}`);
     }
   }
 });
@@ -122,7 +122,7 @@ test("axis view shortcuts are ignored briefly after Alt is released",()=>{
   const press=(code,extra={})=>{const event={code,target:{tagName:"DIV"},preventDefault(){this.defaultPrevented=true;},...extra};
     handlers.get("keydown")(event);return event;};
   assert.equal(press("KeyX").defaultPrevented,true);
-  assert.equal(press("KeyY",{ctrlKey:true}).defaultPrevented,undefined);
+  assert.equal(press("KeyY",{ctrlKey:true}).defaultPrevented,true);
   assert.deepEqual(views,[]);
   press("KeyA");assert.deepEqual(views,[commands.FIT_ALL]);
   now+=699;press("KeyZ");assert.equal(views.length,1);

@@ -13,13 +13,12 @@ import { createMovieWebmEncoder } from "./services/movie/movieWebmEncoder.js";
 import { installBrowserDefaults } from "./services/browserDefaults.js";
 import { createPlotTaskStore } from "./services/results/plotTaskSources.js";
 
-const tabs = ["Выбор задания", "Источники / Поле 3D", "Рабочие точки", "Поле на линиях", "Поле в областях", "Графики"];
+const tabs = ["Выбор задания", "Источники / Поле 3D", "Рабочие точки", "Поле на линиях", "Графики"];
 
 const TAB_MODULE_LOADERS = Object.freeze({
   SourcesFields3D: () => import("./tabs/SourcesFields3D.jsx"),
   WorkingPoints: () => import("./tabs/WorkingPoints.jsx"),
   FieldLines: () => import("./tabs/FieldLines.jsx"),
-  FieldAreas: () => import("./tabs/FieldAreas.jsx"),
   PlotConstructor: () => import("./tabs/PlotConstructor.jsx"),
 });
 const tabModulePromises = new Map();
@@ -37,7 +36,6 @@ const tabComponent = (name, exportName = name) => lazy(() =>
 const SourcesFields3D = tabComponent("SourcesFields3D");
 const WorkingPoints = tabComponent("WorkingPoints");
 const FieldLines = tabComponent("FieldLines");
-const FieldAreas = tabComponent("FieldAreas");
 const PlotConstructor = tabComponent("PlotConstructor");
 export default function App() {
   onMount(() => {
@@ -130,7 +128,7 @@ export default function App() {
     if (!Number.isSafeInteger(task().general?.countTimeSteps) || task().general.countTimeSteps < 0
       || !Number.isFinite(task().general.timeStep) || task().general.timeStep < 0
       || (task().general.countTimeSteps > 0 && task().general.timeStep === 0)) return "Некорректное число интервалов или шаг времени задания.";
-    if (active() < 1 || active() > 5) return "Откройте вкладку с результатами.";
+    if (active() < 1 || active() > 4) return "Откройте вкладку с результатами.";
     if (!movieAdapter()) return "Дождитесь готовности текущего графика.";
     return "";
   };
@@ -184,8 +182,7 @@ export default function App() {
               <Match when={active() === 1}><SourcesFields3D {...shared} /></Match>
               <Match when={active() === 2}><WorkingPoints {...shared} /></Match>
               <Match when={active() === 3}><FieldLines {...shared} /></Match>
-              <Match when={active() === 4}><FieldAreas {...shared} /></Match>
-              <Match when={active() === 5}><PlotConstructor {...shared} /></Match>
+              <Match when={active() === 4}><PlotConstructor {...shared} /></Match>
             </Switch></Suspense>
           </ErrorBoundary>
         </Show>

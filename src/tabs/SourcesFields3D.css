@@ -55,7 +55,7 @@
   display: grid;
   gap: 6px;
   min-width: 230px;
-  max-width: min(420px, 70vw);
+  max-width: min(500px, 85vw);
   box-sizing: border-box;
   padding: 9px 10px;
   border: 1px solid #697683;
@@ -128,46 +128,29 @@
 .source-graphs-panel {
   left: auto;
   right: 0;
-  min-width: 330px;
+  min-width: min(500px, 85vw);
   max-height: min(560px, 70vh);
   overflow: auto;
 }
 
-.source-graph-axis-actions, .source-graph-build-actions { display: flex; align-items: center; gap: 6px; }
-.source-graph-axis-actions button, .source-graph-build-actions button { flex: 1; padding-inline: 7px; }
-.source-graphs-panel button[aria-pressed="true"] { background: #285b3a; border-color: #70bd85; }
+ .source-slice-actions { display: flex; align-items: center; gap: 6px; }
+.source-slice-actions button { padding: 4px 7px; }
 .source-graph-error { color: #ffd091; white-space: normal; }
-.embedded-geometry:has(.source-graph-hint) { position: relative; }
-.source-graph-hint { position: absolute; bottom: 12px; left: 130px; right: 12px; z-index: 12; width: fit-content; max-width: calc(100% - 142px); padding: 7px 10px; border: 1px solid #788c9d; border-radius: 4px; background: #1d3048ed; color: #f0f4f7; font: 13px/1.4 Arial,sans-serif; pointer-events: none; }
-.source-graph-delete-dialog { max-width: min(420px, 90vw); padding: 20px; background: #1d3048; color: #f0f4f7; color-scheme: dark; border: 1px solid #788c9d; border-radius: 6px; }
-.source-graph-delete-dialog::backdrop { background: #0007; }
-.source-graph-delete-dialog > div { display: flex; justify-content: flex-end; gap: 10px; }
-
-.source-graphs-panel button:hover {
-  background: #3b4651;
-}
-
-.source-graph-background {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.source-graph-background input[type="color"] {
-  box-sizing: border-box;
-  flex: 0 0 26px;
-  width: 26px;
-  height: 26px;
-  padding: 2px;
-  border: 1px solid #697683;
-  border-radius: 3px;
-  background: #303943;
-  cursor: pointer;
-}
-
-.source-graph-background input[type="color"]::-webkit-color-swatch-wrapper {
-  padding: 0;
-}
+.source-slice-scroll { max-height: 230px; overflow-y: auto; }
+.source-slice-table { color: #edf2f7; width: 100%; border-collapse: collapse; font-size: 12px; }
+.source-slice-table th { position: sticky; top: 0; background: #252d35; z-index: 1; text-align: left; font-weight: normal; }
+.source-slice-table th, .source-slice-table td { color: #edf2f7; padding: 5px 4px; border-bottom: 1px solid #56626e; }
+.source-slice-table td:first-child { max-width: 145px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-slice-table tr.selected { background: #285b3a; outline: 1px solid #70bd85; outline-offset: -1px; }
+.source-slice-table tr { cursor: pointer; }
+.source-slice-table select, .source-slice-add select { background: #303943; color: #edf2f7; color-scheme: dark; border: 1px solid #697683; border-radius: 3px; font: inherit; }
+.source-slice-add { display: grid; gap: 6px; padding: 7px; border: 1px solid #697683; }
+.source-slice-add label { display: flex; gap: 6px; align-items: center; }
+.source-slice-add select { flex: 1; min-width: 0; }
+.source-slice-directions { display: grid; gap: 4px; }
+.source-slice-directions button { padding: 5px 8px; text-align: left; }
+.source-graphs-panel button:hover, .source-slice-directions button:focus-visible { background: #3b5369; }
+.source-graphs-panel button:disabled { opacity: .45; }
 
 .source-line-row {
   display: grid;

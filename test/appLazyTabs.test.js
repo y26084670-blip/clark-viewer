@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 
 test("all result tabs share cached lazy loaders and are preloaded on mount", () => {
-  for (const name of ["SourcesFields3D","WorkingPoints","FieldLines","FieldAreas","PlotConstructor"]) {
+  for (const name of ["SourcesFields3D","WorkingPoints","FieldLines","PlotConstructor"]) {
     assert.ok(source.includes(`${name}: () => import`));
     assert.match(source, new RegExp(`const ${name} = tabComponent\\("${name}"\\)`));
   }

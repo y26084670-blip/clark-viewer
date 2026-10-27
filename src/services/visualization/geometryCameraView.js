@@ -40,28 +40,28 @@ export const INITIAL_GEOMETRY_CAMERA_FRAME = Object.freeze({
 const CAMERA_FRAMES = Object.freeze({
     [GEOMETRY_CAMERA_COMMANDS.RESET_OBLIQUE]: INITIAL_GEOMETRY_CAMERA_FRAME,
     [GEOMETRY_CAMERA_COMMANDS.VIEW_POSITIVE_X]: Object.freeze({
-        offset: Object.freeze([-1, 0, 0]),
-        up: Object.freeze([0, 0, 1]),
-    }),
-    [GEOMETRY_CAMERA_COMMANDS.VIEW_NEGATIVE_X]: Object.freeze({
         offset: Object.freeze([1, 0, 0]),
         up: Object.freeze([0, 0, 1]),
     }),
-    [GEOMETRY_CAMERA_COMMANDS.VIEW_POSITIVE_Y]: Object.freeze({
-        offset: Object.freeze([0, -1, 0]),
+    [GEOMETRY_CAMERA_COMMANDS.VIEW_NEGATIVE_X]: Object.freeze({
+        offset: Object.freeze([-1, 0, 0]),
         up: Object.freeze([0, 0, 1]),
     }),
-    [GEOMETRY_CAMERA_COMMANDS.VIEW_NEGATIVE_Y]: Object.freeze({
+    [GEOMETRY_CAMERA_COMMANDS.VIEW_POSITIVE_Y]: Object.freeze({
         offset: Object.freeze([0, 1, 0]),
         up: Object.freeze([0, 0, 1]),
     }),
-    [GEOMETRY_CAMERA_COMMANDS.VIEW_POSITIVE_Z]: Object.freeze({
-        offset: Object.freeze([0, 0, -1]),
-        up: Object.freeze([0, -1, 0]),
+    [GEOMETRY_CAMERA_COMMANDS.VIEW_NEGATIVE_Y]: Object.freeze({
+        offset: Object.freeze([0, -1, 0]),
+        up: Object.freeze([0, 0, 1]),
     }),
-    [GEOMETRY_CAMERA_COMMANDS.VIEW_NEGATIVE_Z]: Object.freeze({
+    [GEOMETRY_CAMERA_COMMANDS.VIEW_POSITIVE_Z]: Object.freeze({
         offset: Object.freeze([0, 0, 1]),
         up: Object.freeze([0, 1, 0]),
+    }),
+    [GEOMETRY_CAMERA_COMMANDS.VIEW_NEGATIVE_Z]: Object.freeze({
+        offset: Object.freeze([0, 0, -1]),
+        up: Object.freeze([0, -1, 0]),
     }),
 });
 
@@ -143,7 +143,7 @@ export function geometryCameraCommandFromKeyboardEvent(event, options) {
 
     const commands = KEYBOARD_COMMANDS[event.code];
     if (!commands) return null;
-    return event.ctrlKey ? null : commands.positive; // Ctrl+axis belongs to mouse rotation.
+    return event.ctrlKey ? commands.negative : commands.positive;
 }
 
 export function isGeometryCameraShortcutTarget(target, {allowControls=false}={}) {
@@ -160,7 +160,7 @@ function axisFromModifiedKeyboardEvent(event, modifier, options) {
         || event.metaKey
         || !isGeometryCameraShortcutTarget(event.target, options)) return null;
     const valid = modifier === "alt"
-        ? (event.ctrlKey || event.altKey) && !event.shiftKey && !(event.ctrlKey && event.altKey)
+        ? event.altKey && !event.shiftKey && !event.ctrlKey
         : event.shiftKey && !event.altKey && !event.ctrlKey;
     if (!valid) return null;
     if (event.code === "KeyX") return GEOMETRY_AXIS_ROTATION.X;
@@ -192,7 +192,7 @@ export function createGeometryAxisRotationController({
     const available = () => !disposed && !owner.hidden && !owner.querySelector("dialog[open]") && canStart();
     const modifierHeld = event => !event.metaKey && (pivot === "origin"
         ? event.shiftKey && !event.altKey && !event.ctrlKey
-        : (event.altKey || event.ctrlKey) && !event.shiftKey && !(event.altKey && event.ctrlKey));
+        : event.altKey && !event.shiftKey && !event.ctrlKey);
     function resetDirection() { dragAxis = null; motionX = motionY = 0; }
     function stop() {
         if (!axis) return;

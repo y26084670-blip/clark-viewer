@@ -411,6 +411,15 @@ export function ResultsGeometryViewport(props) {
               Общие опции
             </button>
 
+            <label class="geometry-viewer-transparency geometry-viewer-size"
+              title="Размер векторов и высота поверхностей графиков; середина — номинальный размер">
+              <span>Размер</span>
+              <span class="geometry-size-range"><i aria-hidden="true" title="Номинальный размер" />
+                <input type="range" min="-1" max="1" step="0.05" value={Math.log10(props.resultVectorScale ?? 1)}
+                  aria-label="Размер представления" disabled={props.flightBlocked}
+                  onInput={event => props.onResultVectorScaleChange?.(10 ** event.currentTarget.valueAsNumber)} />
+              </span>
+            </label>
             <label class="geometry-viewer-transparency"
               title="Прозрачность геометрии и рёбер: 0% — сплошные, 100% — невидимые">
               <span>Прозрачность <output>{geometryTransparency()}%</output></span>
@@ -420,19 +429,6 @@ export function ResultsGeometryViewport(props) {
                 aria-valuetext={`${geometryTransparency()}%`}
                 onInput={event => setGeometryTransparency(event.currentTarget.valueAsNumber)} />
             </label>
-
-            <button
-              type="button"
-              class="geometry-viewer-menu-button"
-              classList={{ active: openPanel() === "view" }}
-              aria-expanded={openPanel() === "view"}
-              aria-controls={OPTIONS_PANEL_ID}
-              aria-haspopup="dialog"
-              title="Вписать геометрию или выбрать направление взгляда"
-              onClick={(event) => togglePanel("view", event)}
-            >
-              Показ
-            </button>
           </div>
         </div>
 
@@ -444,13 +440,9 @@ export function ResultsGeometryViewport(props) {
             }}
             id={OPTIONS_PANEL_ID}
             class="geometry-viewer-options-panel"
-            classList={{ "is-view-panel": openPanel() === "view" }}
-            data-flight-option={props.allowFlight === true ? "true" : undefined}
             role="dialog"
             aria-modal="false"
-            aria-label={openPanel() === "view"
-              ? "Команды показа геометрии"
-              : openPanel() === "general"
+            aria-label={openPanel() === "general"
                 ? "Общие опции отображения"
                   : openPanel() === "symmetry"
                     ? "Показ симметрий"
@@ -461,106 +453,6 @@ export function ResultsGeometryViewport(props) {
               top: `${panelPosition().top}px`,
             }}
           >
-            <Show when={openPanel() === "view"}>
-              <Show when={props.allowFlight === true}>
-                <button type="button" class="geometry-viewer-view-command geometry-flight-command"
-                  disabled={!flightReady() || Boolean(props.flightDisabledReason) || props.flightBlocked}
-                  title={props.flightDisabledReason || GEOMETRY_FLIGHT_HELP}
-                  onClick={() => {
-                    setFlightNotice("");
-                    closePanel();
-                    flightControl?.start();
-                  }}>Полёт</button>
-              </Show>
-              <button
-                type="button"
-                class="geometry-viewer-view-command"
-                title="или нажмите A или Ctrl-A"
-                onClick={() => requestView(
-                  GEOMETRY_CAMERA_COMMANDS.FIT_ALL,
-                  true,
-                )}
-              >
-                Показать все
-              </button>
-              <button
-                type="button"
-                class="geometry-viewer-view-command"
-                title="или нажмите X"
-                onClick={() => requestView(
-                  GEOMETRY_CAMERA_COMMANDS.VIEW_POSITIVE_X,
-                  true,
-                )}
-              >
-                вид по X
-              </button>
-              <button
-                type="button"
-                class="geometry-viewer-view-command"
-                title="Направить взгляд против оси X"
-                onClick={() => requestView(
-                  GEOMETRY_CAMERA_COMMANDS.VIEW_NEGATIVE_X,
-                  true,
-                )}
-              >
-                вид против X
-              </button>
-              <button
-                type="button"
-                class="geometry-viewer-view-command"
-                title="или нажмите Y"
-                onClick={() => requestView(
-                  GEOMETRY_CAMERA_COMMANDS.VIEW_POSITIVE_Y,
-                  true,
-                )}
-              >
-                вид по Y
-              </button>
-              <button
-                type="button"
-                class="geometry-viewer-view-command"
-                title="Направить взгляд против оси Y"
-                onClick={() => requestView(
-                  GEOMETRY_CAMERA_COMMANDS.VIEW_NEGATIVE_Y,
-                  true,
-                )}
-              >
-                вид против Y
-              </button>
-              <button
-                type="button"
-                class="geometry-viewer-view-command"
-                title="или нажмите Z"
-                onClick={() => requestView(
-                  GEOMETRY_CAMERA_COMMANDS.VIEW_POSITIVE_Z,
-                  true,
-                )}
-              >
-                вид по Z
-              </button>
-              <button
-                type="button"
-                class="geometry-viewer-view-command"
-                title="Направить взгляд против оси Z"
-                onClick={() => requestView(
-                  GEOMETRY_CAMERA_COMMANDS.VIEW_NEGATIVE_Z,
-                  true,
-                )}
-              >
-                вид против Z
-              </button>
-              <select class="geometry-viewer-palette-select" aria-label="Палитра результатов"
-                value={resultPalette()}
-                onChange={event => setResultPalette(event.currentTarget.value)}>
-                <For each={RESULT_SCALAR_PALETTES}>{name => <option value={name}>палитра {name}</option>}</For>
-              </select>
-              <label>
-                <input type="checkbox" checked={performanceEnabled()}
-                  onChange={event => setPerformanceEnabled(event.currentTarget.checked)} />
-                Производительность
-              </label>
-            </Show>
-
             <Show when={openPanel() === "elements"}>
               <div class="geometry-viewer-options-title">Показ элементов</div>
               <label>
@@ -737,6 +629,22 @@ export function ResultsGeometryViewport(props) {
                 <option value="solid">тип векторов: Объемные</option>
                 <option value="cones">тип векторов: Конусы</option>
               </select>
+              <select class="geometry-viewer-palette-select" aria-label="Палитра результатов"
+                value={resultPalette()}
+                onChange={event => setResultPalette(event.currentTarget.value)}>
+                <For each={RESULT_SCALAR_PALETTES}>{name => <option value={name}>палитра {name}</option>}</For>
+              </select>
+              <label>
+                <input type="checkbox" checked={performanceEnabled()}
+                  onChange={event => setPerformanceEnabled(event.currentTarget.checked)} />
+                Производительность
+              </label>
+              <Show when={props.allowFlight === true}>
+                <button type="button" class="geometry-viewer-view-command geometry-flight-command"
+                  disabled={!flightReady() || Boolean(props.flightDisabledReason) || props.flightBlocked}
+                  title={props.flightDisabledReason || GEOMETRY_FLIGHT_HELP}
+                  onClick={() => { setFlightNotice(""); closePanel(); flightControl?.start(); }}>Полёт</button>
+              </Show>
             </Show>
           </div>
         </Show>
@@ -791,10 +699,8 @@ export function ResultsGeometryViewport(props) {
             geometryRevision={props.model}
             resultLayers={props.resultLayers}
             resultStreamlines={props.resultStreamlines}
-            graphController={props.graphController} graphState={props.graphState} graphResults={props.graphResults}
-            graphComponents={props.graphComponents} graphBackground={props.graphBackground} showGraphs={props.showGraphs}
-            graphViewRequest={props.graphViewRequest} graphBlocked={props.graphBlocked}
-            onGraphProjectionChange={value => setOrthographicView(value === "orthographic")}
+            graphResults={props.graphResults} activeGraph={props.activeGraph}
+            graphPreview={props.graphPreview} graphSelection={props.graphSelection}
             streamlineWidth={props.streamlineWidth}
             streamlineColorMap={props.streamlineColorMap}
             selectedStreamline={props.selectedStreamline}

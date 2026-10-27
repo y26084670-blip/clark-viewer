@@ -73,8 +73,6 @@ import { updateResultSurfaceMeshes } from "../../services/visualization/resultSu
 import { loadStreamlineRenderer, resizeStreamlineMaterials, streamlinePointerHandlers, updateStreamlineMeshes } from "../../services/visualization/resultStreamlineRenderer.js";
 import { captureMovieCanvas } from "../../services/movie/movieCanvas.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../../services/movie/renderedFrameGate.js";
-import { resolveGraphNode } from "../../services/visualization/graphAxes.js";
-import { installGraphAxisInteraction } from "../../services/visualization/graphAxisInteraction.js";
 import { updateGraphScene, disposeGraphScene } from "../../services/visualization/resultGraphRenderer.js";
 
 export const GEOMETRY_INSTANCE_BUDGET = 20_000;
@@ -1515,7 +1513,7 @@ export function ThreeGeometryViewport(props) {
   let helperRoot;
   let resultLayers = [];
   let streamlines = [], selectedStreamline = null, streamlineRoot = null;
-  let graphRoot, graphPreview, graphInteraction, graphFrames = [], graphsDirty = false;
+  let graphRoot, graphsDirty = false;
   let streamlineWidth = 2, streamlineColorMap = true;
   let resultLayerStates = new Map();
   let resultVectorScale = 1;
@@ -1901,11 +1899,11 @@ export function ThreeGeometryViewport(props) {
     return positions.subarray(offset, offset + 3);
   };
 
-  const showTooltip = (text, x, y) => {
+  const showTooltip = (text, x, y, { cube = false } = {}) => {
     if (typeof axisRotationController !== "undefined" && axisRotationController?.active) return;
     const lines = String(text).split("\n");
     const longestLineLength = Math.max(1, ...lines.map((line) => line.length));
-    const widthEstimate = Math.min(390, Math.max(180, longestLineLength * 6));
+    const widthEstimate = Math.min(cube ? 600 : 390, Math.max(180, longestLineLength * 6));
     const charactersPerLine = Math.max(1, Math.floor(widthEstimate / 6));
     const lineCount = lines.reduce(
       (count, line) => count + Math.max(
@@ -1921,7 +1919,7 @@ export function ThreeGeometryViewport(props) {
     const top = y + 14 + heightEstimate <= viewportHeight
       ? y + 14
       : Math.max(8, y - heightEstimate - 14);
-    setHoverTooltip({ left, text, top });
+    setHoverTooltip({ left, text, top, cube });
   };
 
   const rememberFlightSourceSize = primitive => {
@@ -1965,7 +1963,6 @@ export function ThreeGeometryViewport(props) {
   };
 
   const pickAtPointer = (pointer, action = "hover") => {
-    if (props.graphState?.mode) { clearHoverTooltip(); return; }
     const flightPicking = action === "flight";
     if (!flightPicking) vectorHover?.clear();
     if (typeof axisRotationController !== "undefined" && axisRotationController?.active) {
@@ -1999,9 +1996,10 @@ export function ThreeGeometryViewport(props) {
       y >= bounds.height - VIEW_CUBE_MARGIN - cubeSize
     ) {
       showTooltip(
-        "ViewCube: щелчок по грани, ребру или углу — выбор вида\nПеретаскивание куба — поворот сцены",
+        "A — показать все, Ctrl+A — начальный вид\nX, Y, Z — вид со стороны положительного направления оси\nCtrl+X, Ctrl+Y, Ctrl+Z — вид со стороны отрицательного направления оси",
         VIEW_CUBE_MARGIN,
-        Math.max(0, bounds.height - VIEW_CUBE_MARGIN - cubeSize - 54),
+        Math.max(0, bounds.height - VIEW_CUBE_MARGIN - cubeSize - 76),
+        { cube: true },
       );
       return;
     }
@@ -2206,15 +2204,6 @@ export function ThreeGeometryViewport(props) {
       [geometryRoot, true, true], [vertexPoints, verticesVisible],
       [discretizationLines, discretizationLinesVisible], [discretizationPoints, discretizationPointsVisible],
     ], geometryOpacity, geometryMaterialDefaults);
-    if (discretizationPoints) {
-      discretizationPoints.material.depthTest = !props.graphState?.mode;
-      discretizationPoints.material.size = DISCRETIZATION_POINT_SIZE * (props.graphState?.mode ? prescribedSourceScale(props.resultVectorScale) : 1);
-      discretizationPoints.renderOrder = props.graphState?.mode ? 34 : 21;
-      if (props.graphState?.mode) {
-        discretizationPoints.visible = true; discretizationPoints.material.opacity = 1;
-        if (!discretizationPoints.material.transparent) { discretizationPoints.material.transparent = true; discretizationPoints.material.needsUpdate = true; }
-      }
-    }
     for (const state of resultLayerStates.values()) state.vectorRoot?.traverse(object => {
       if (object.name === "result-volume-domain") object.material.uniforms.uOpacity.value = geometryOpacity ?? 1;
     });
@@ -2496,43 +2485,11 @@ export function ThreeGeometryViewport(props) {
   const replaceGraphs = () => {
     if (!THREE || !helperRoot) return;
     graphRoot ??= new THREE.Group(); graphRoot.name = "result-graphs";
-    graphFrames = updateGraphScene(THREE, graphRoot, props.scene, props.graphState?.axes ?? [], props.graphResults ?? [], {
-      active: props.graphState?.active, components: props.graphComponents, background: props.graphBackground,
-      visible: props.showGraphs !== false, filters: activeResultFilters,
+    updateGraphScene(THREE, graphRoot, props.scene, props.graphResults ?? [], {
+      active: props.activeGraph, preview: props.graphPreview, selected: props.graphSelection,
+      scale: props.resultVectorScale ?? 1, palette: props.resultPalette, filters: activeResultFilters,
     });
     if (graphRoot.parent !== helperRoot) helperRoot.add(graphRoot);
-    graphInteraction?.sync();
-  };
-
-  const previewGraphAxis = (start, end) => {
-    if (!THREE || !helperRoot) return;
-    if (!start || !end) { if (graphPreview?.visible) { graphPreview.visible = false; requestRender(); } return; }
-    if (!graphPreview) {
-      graphPreview = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
-        new THREE.LineBasicMaterial({ color: 0xff0000, transparent: true, depthTest: false, depthWrite: false }));
-      graphPreview.name = "graph-axis-preview"; graphPreview.renderOrder = 35;
-    }
-    const positions = graphPreview.geometry.attributes.position;
-    positions.setXYZ(0, ...start); positions.setXYZ(1, ...end); positions.needsUpdate = true;
-    graphPreview.geometry.computeBoundingSphere(); graphPreview.visible = true;
-    if (graphPreview.parent !== helperRoot) helperRoot.add(graphPreview);
-    requestRender();
-  };
-
-  const faceGraph = request => {
-    if (!request || !ready() || props.graphBlocked || movieSnapshot) return;
-    renderNow();
-    const group = graphRoot?.children.find(g => g.userData.axisId === request.id), plane = group?.getObjectByName("result-graph-plane");
-    if (!plane?.visible) return;
-    const frame = group.userData.frame;
-    switchProjection("orthographic", { fit: false });
-    props.onGraphProjectionChange?.("orthographic");
-    const center = plane.getWorldPosition(new THREE.Vector3());
-    controls.target.copy(center); camera.up.fromArray(frame.up);
-    camera.position.copy(center).addScaledVector(new THREE.Vector3(...frame.normal), Math.max(frame.length * 2, 1));
-    camera.lookAt(center); rebuildOrbitControls();
-    fitCameraToVisibleObjects(THREE, camera, controls, [plane], { padding: 1.12 });
-    hasFramedGeometry = true; clearHoverTooltip(); requestRender();
   };
 
   const updateMovingGeometry = (sceneModel, filters, mode, showEdges) => {
@@ -2587,7 +2544,7 @@ export function ThreeGeometryViewport(props) {
       disposeObject(geometryRoot);
     }
     if (helperRoot) {
-      for (const layer of [prescribedSourceRoot, streamlineRoot, graphRoot, graphPreview, ...resultLayerRoots(resultLayerStates)]) {
+      for (const layer of [prescribedSourceRoot, streamlineRoot, graphRoot, ...resultLayerRoots(resultLayerStates)]) {
         if (layer) helperRoot.remove(layer);
       }
       threeScene.remove(helperRoot);
@@ -2601,7 +2558,7 @@ export function ThreeGeometryViewport(props) {
     helperRoot = new THREE.Group();
     helperRoot.name = "geometry-helpers";
     threeScene.add(geometryRoot, helperRoot);
-    for (const layer of [prescribedSourceRoot, streamlineRoot, graphRoot, graphPreview, ...resultLayerRoots(resultLayerStates)]) {
+    for (const layer of [prescribedSourceRoot, streamlineRoot, graphRoot, ...resultLayerRoots(resultLayerStates)]) {
       if (layer) helperRoot.add(layer);
     }
     geometryPickTargets = [];
@@ -2830,21 +2787,12 @@ export function ThreeGeometryViewport(props) {
         onPointerMove: queuePointerPick, onPointerLeave: clearHoverTooltip,
       });
       const lineHandlers = streamlinePointerHandlers(pickAtPointer, () => movieSnapshot
-        || flightController.state !== "idle" || !props.resultPickingOnly || Boolean(props.graphState?.mode));
+        || flightController.state !== "idle" || !props.resultPickingOnly);
       handlePointerDown = lineHandlers.pointerdown;
       handleClick = lineHandlers.click; handleDoubleClick = lineHandlers.dblclick;
       renderer.domElement.addEventListener("pointerdown", handlePointerDown);
       renderer.domElement.addEventListener("click", handleClick);
       renderer.domElement.addEventListener("dblclick", handleDoubleClick);
-      if (props.graphController) graphInteraction = installGraphAxisInteraction({ THREE, element: renderer.domElement,
-        controller: props.graphController, getCamera: () => camera, getControls: () => controls,
-        getAxes: () => graphFrames, getPlanes: () => graphRoot?.children.flatMap(g => g.children.filter(c => c.name === "result-graph-plane")) ?? [],
-        getPoints: () => { materializeDiscretizationPoints(); return { positions: discretizationWorldPositions, ranges: discretizationPointRanges, size: discretizationPoints?.material.size }; },
-        getNodePosition: node => resolveGraphNode(props.scene, node).position,
-        blocked: () => disposed || contextLost || Boolean(movieSnapshot) || props.graphBlocked || flightController.state !== "idle",
-        onPreview: previewGraphAxis, onChange: requestRender,
-      });
-
       threeScene.add(new THREE.AmbientLight(0xffffff, 1.25));
       const light = new THREE.DirectionalLight(0xffffff, 0.55);
       light.position.set(1, -1, 2);
@@ -2913,7 +2861,7 @@ export function ThreeGeometryViewport(props) {
   });
 
   createEffect(() => {
-    discretizationPointsVisible = props.showCentersAndNodes === true || Boolean(props.graphState?.mode);
+    discretizationPointsVisible = props.showCentersAndNodes === true;
     if (!ready()) return;
     if (
       discretizationPointsVisible &&
@@ -2963,14 +2911,9 @@ export function ThreeGeometryViewport(props) {
   });
 
   createEffect(() => {
-    props.graphState; props.graphResults; props.graphComponents; props.graphBackground; props.showGraphs; props.graphBlocked;
+    props.graphResults; props.activeGraph; props.graphPreview; props.graphSelection; props.resultVectorScale; props.resultPalette;
     if (!ready()) return;
-    graphsDirty = true; graphInteraction?.sync(); requestRender();
-  });
-
-  createEffect(() => {
-    const request = props.graphViewRequest;
-    if (ready()) untrack(() => faceGraph(request));
+    graphsDirty = true; requestRender();
   });
 
   createEffect(() => {
@@ -3037,7 +2980,6 @@ export function ThreeGeometryViewport(props) {
   onCleanup(() => {
     rememberCamera();
     disposed = true;
-    graphInteraction?.dispose();
     viewportLens?.dispose(); vectorHover?.dispose(); lensVectorDetails?.dispose(); lensHintPreference?.dispose();
     viewCubeControls?.dispose();
     axisRotationController?.dispose();
@@ -3137,7 +3079,7 @@ export function ThreeGeometryViewport(props) {
       <Show when={hoverTooltip()} keyed>
         {(tooltip) => (
           <div
-            class="geometry-viewport-tooltip"
+            class="geometry-viewport-tooltip" classList={{ "geometry-cube-tooltip": tooltip.cube }}
             role="tooltip"
             style={{
               left: `${tooltip.left}px`,

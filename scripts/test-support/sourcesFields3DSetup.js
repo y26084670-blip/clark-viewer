@@ -6,8 +6,8 @@ import { createResultLayerReader } from "../../src/services/results/resultLayerR
 import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS } from "../../src/services/visualization/resultStreamlineField.js";
 
 import { applyResultGlobalRange, resultGlobalScale } from "../../src/services/results/resultGlobalScale.js";
-import { createGraphAxesController, graphAxisKey } from "../../src/services/visualization/graphAxes.js";
-import { createResultGraphReader, graphQuantityKey, graphResultSignature } from "../../src/services/results/resultGraphRequests.js";
+import { GRAPH_SLICE_DIRECTIONS } from "../../src/services/visualization/resultGraphField.js";
+import { createResultGraphReader, graphQuantityKey, graphRequestKey } from "../../src/services/results/resultGraphRequests.js";
 
 const streamlineSessions = new WeakMap();
 const cameraSessions = new WeakMap();
@@ -18,8 +18,8 @@ const graphSessions = new WeakMap();
 // request and display logic, not Solid's reactive scheduler or a browser DOM.
 export function sourcesFields3DSetup(props, settings = {}, options = {}) {
   const source = readFileSync(new URL("../../src/tabs/SourcesFields3D.jsx", import.meta.url), "utf8");
-  const setup = source.slice(source.indexOf("export function SourcesFields3D"), source.indexOf("  return <div"))
-    .replace("export function", "function");
+  const setup = source.slice(source.indexOf("export function SourcesFields3D"), source.indexOf('  return <div class="results-layout">'))
+    .replace("export function", "function").replace(/  function DirectionChoices\(p\) \{[\s\S]*?  let nextStreamlineId/, "  let nextStreamlineId");
   // Expose the production setup state without depending on the exact JSX menu
   // markup. The compact toolbar is tested separately as a source/UI contract.
   const controlBindings = `() => ({
@@ -45,18 +45,19 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
   })`;
   const cleanup = [];
   const effects = [];
-  let requestSource, load;
+  let requestSource, load, graphSource, graphLoad;
+  let graphState = { frame: null, requested: null, error: "", loading: false };
   let state = { frame: null, requested: null, error: "", loading: false };
   const run = new Function("props", "createGeometryViewSetting", "createMemo", "onCleanup", "createSignal", "createEffect",
     "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_METHODS", "streamlineSessions", "cameraSessions",
     "QUANTITIES", "assignedHtsElements", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
     "createMovieTabAdapter", "completedMovieFrame", "onMount", "applyResultGlobalRange", "resultGlobalScale",
-    "createGraphAxesController", "graphAxisKey", "createResultGraphReader", "graphQuantityKey", "graphResultSignature", "graphSessions", "untrack",
+    "GRAPH_SLICE_DIRECTIONS", "createResultGraphReader", "graphQuantityKey", "graphRequestKey", "graphSessions", "untrack",
     `${setup} return { cameraState, rememberCamera, quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
       colorMap, effectiveColorMap, normalizeVectors, changeNormalizeVectors, changeColorMap, conductivityAvailable, unavailableConductivity, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
       addStreamline, deleteStreamline, streamlineMethod, changeStreamlineMethod, streamlines,
-      graphsOnly, setGraphsOnly, showGraphs, setShowGraphs, graphController, graphState, buildGraphs, currentGraphResults, graphResults, graphBusy,
-      graphCaptureStatus, graphError, whenGraphsReady: () => graphBuildPromise,
+      graphsOnly, setGraphsOnly, areaGraphs, setAreaGraphs, sliceGraphs, setSliceGraphs, graphSlices, activeSlice, setActiveSlice,
+      addSlice, setAddElement, changeSlice, deleteSlice, graphResults, graphBusy, graphError, graphRequest, sliceScalar,
       controls: ${controlBindings},
       streamlineControls: ${streamlineBindings},
       globalMinMax, setGlobalMinMax, globalRanges, effectiveGlobalMinMax, resultLayers, timeIndex, selections }; } return SourcesFields3D(props);`);
@@ -66,13 +67,14 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     options.createEffect ?? (callback => { effects.push(callback); callback(); }),
     STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS, streamlineSessions, cameraSessions, QUANTITIES, assignedHtsElements, resultDisplaySelection,
     RESULT_LAYER_GROUPS, options.readerFactory ?? createResultLayerReader,
-    (source, reader) => { requestSource = source; load = reader; options.observeRequest?.(source); return () => state; },
+    (source, reader) => { if (!graphSource) { graphSource = source; graphLoad = reader; return () => graphState; } requestSource = source; load = reader; options.observeRequest?.(source); return () => state; },
     options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame, () => {}, applyResultGlobalRange, resultGlobalScale,
-    createGraphAxesController, graphAxisKey, options.graphReaderFactory ?? createResultGraphReader, graphQuantityKey, graphResultSignature, graphSessions, options.untrack ?? (read => read()));
+    GRAPH_SLICE_DIRECTIONS, options.graphReaderFactory ?? createResultGraphReader, graphQuantityKey, graphRequestKey, graphSessions, options.untrack ?? (read => read()));
   // Existing field-display cases explicitly keep result visualization enabled.
   if (options.graphsOnly !== true) api.setGraphsOnly(false);
   return { ...api, request: () => requestSource(), load: request => load(request),
     setResultState(next) { state = next; },
+    loadGraphs: request => graphLoad(request), setGraphResultState(next) { graphState = next; },
     flushEffects() { effects.forEach(callback => callback()); },
     close() { cleanup.splice(0).forEach(callback => callback()); } };
 }

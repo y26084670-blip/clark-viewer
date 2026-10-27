@@ -58,7 +58,7 @@ const errors = [], checks = [];
 const passed = name => { checks.push(name); console.log(`PASS ${checks.length}: ${name}`); };
 try {
  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
- server = await createServer({ configFile:false, root, cacheDir:path.join(root,'node_modules/.vite-plot-check'), plugins:[solid(),libavAssets()], server:{host:'127.0.0.1',port:0,hmr:false} }); await server.listen();
+ server = await createServer({ configFile:false, root, cacheDir:path.join(root,'node_modules/.vite-plot-check'), plugins:[solid(),libavAssets()], optimizeDeps:{entries:[path.join(fixture,"index.html"),path.join(fixture,"app.html"),path.join(fixture,"tooltip.html")]}, server:{host:'127.0.0.1',port:0,hmr:false} }); await server.listen();
  browser = await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_EXECUTABLE||undefined,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
  page = await browser.newPage({viewport:{width:1440,height:950}}); page.on('pageerror',e=>errors.push(e.message));
  const base = 'http://127.0.0.1:'+server.httpServer.address().port+'/__plot_constructor_check__/';
@@ -95,10 +95,10 @@ try {
  await page.goto(base+'app.html');
  const tabs = page.locator('nav[aria-label="Вкладки просмотра"] > button:not([aria-haspopup])');
  await tabs.first().waitFor();
- assert.deepEqual(await tabs.allTextContents(), ['Выбор задания','Источники / Поле 3D','Рабочие точки','Поле на линиях','Поле в областях','Графики']);
+ assert.deepEqual(await tabs.allTextContents(), ['Выбор задания','Источники / Поле 3D','Рабочие точки','Поле на линиях','Графики']);
  await page.keyboard.press('Control+a'); assert.equal(await page.evaluate(()=>String(window.getSelection())), '');
  const cancelled = await page.evaluate(()=>!document.querySelector('header').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true})));
- assert.equal(cancelled,true); passed('Actual App has six tabs and suppresses native page selection/context menu');
+ assert.equal(cancelled,true); passed('Actual App has five tabs and suppresses native page selection/context menu');
 
  await page.getByRole('button',{name:'Выбрать диск с проектами',exact:true}).click();
  await page.getByRole('button',{name:'Продолжить',exact:true}).click();
@@ -117,6 +117,7 @@ try {
  await tabs.filter({hasText:'Графики'}).click();
  const ay=page.locator('fieldset').nth(1), appAdd=page.getByRole('button',{name:'Добавить график',exact:true}), appCurve=page.getByRole('button',{name:'Добавить кривую',exact:true});
  assert.equal(await ay.getByLabel('Источник данных').inputValue(),'current');
+ assert.equal(await page.locator('fieldset').first().getByLabel('Величина',{exact:true}).locator('option').filter({hasText:'Расстояние вдоль элемента'}).count(),0);
  await appAdd.click();
  await page.waitForFunction(()=>window.__appPlots()[0]?.length===3);
  assert.deepEqual((await page.evaluate(()=>window.__appPlots()))[0][0].points.map(p=>p.y),[1,2,3]);
@@ -159,6 +160,7 @@ try {
  await tabs.filter({hasText:'Графики'}).click();
  assert.equal(await page.locator('.constructor-plot').count(),0);
  assert.equal(await ay.getByLabel('Источник данных').inputValue(),'current');
+ assert.equal(await page.locator('fieldset').first().getByLabel('Величина',{exact:true}).locator('option').filter({hasText:'Расстояние вдоль элемента'}).count(),0);
  passed('Changing base directory refreshes comparison list; opening another task resets selections and plots');
  await page.goto(base+'index.html');
  const snap = () => page.evaluate(()=>window.__graphs.snapshot());

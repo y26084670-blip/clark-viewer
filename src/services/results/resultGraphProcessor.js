@@ -23,7 +23,8 @@ export function createResultGraphProcessor({ workerFactory = () => new Worker(
             worker.onmessageerror = () => release(new Error("Ошибка передачи графиков."));
           }
           const id = ++sequence; pending = { id, resolve, reject };
-          worker.postMessage({ id, input }, input.domains.flatMap(d => [d.positions.buffer, d.vectors.buffer, d.invalid.buffer]));
+          // Cached grids belong to the reader; never detach their buffers.
+          worker.postMessage({ id, input });
         } catch (error) { release(error); reject(error); }
       });
     },

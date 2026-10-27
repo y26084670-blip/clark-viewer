@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { LineChart } from "../components/LineChart.jsx";
 import { ProtocolCheck } from "../components/protocol/ProtocolCheck.jsx";
 import { captureProtocolRenderer } from "../services/protocol/protocolCapture.js";
@@ -8,9 +8,6 @@ import { listPlotTasks } from "../services/results/plotTaskSources.js";
 import { loadLatestOMChannels, readChannelSource } from "../services/results/omResultChannels.js";
 import { useAsyncResult } from "../services/results/resultRequests.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
-import { ELEMENT_LINE_CHANNEL, supportsElementLine, elementLineObjects, elementLineLayout,
-  defaultElementLine, elementLineRequest, readElementLineEndpoints } from "../services/results/elementLinePlots.js";
-import { chartTooltipBounds } from "../services/visualization/chartTooltip.js";
 import "./PlotConstructor.css";
 
 export function PlotConstructor(props) {
@@ -20,8 +17,6 @@ export function PlotConstructor(props) {
   const [localActive, setLocalActive] = createSignal(null);
   const [x, setX] = createSignal({ key: "time", point: 1 });
   const [y, setY] = createSignal({ key: "", point: 1 });
-  const [line, setLine] = createSignal({ element: 0, indices: [1, 1, 1], copies: [1, 1, 1] });
-  const [lineStep, setLineStep] = createSignal(null);
   const [taskMode, setTaskMode] = createSignal("current");
   let sourceDialog, sourceButton, panel, disposed = false;
   const sources = () => props.plotSources ?? [];
@@ -36,40 +31,14 @@ export function PlotConstructor(props) {
   const sourceReady = () => Boolean(selectedTask()) && !(taskMode() === "other" && props.plotTaskSource?.loading);
   const yChannels = createMemo(() => taskMode() === "other"
     ? selectedTask() ? plotChannels(selectedTask(), selectedTask().plotSources) : [] : channels());
-  const spatial = () => x().key === ELEMENT_LINE_CHANNEL.key;
-  const offeredY = createMemo(() => spatial() ? yChannels().filter(supportsElementLine) : yChannels());
-  const byKey = (key, axis = "x") => axis === "x" && key === ELEMENT_LINE_CHANNEL.key ? ELEMENT_LINE_CHANNEL
-    : (axis === "y" ? yChannels() : channels()).find(c => c.key === key);
+  const byKey = (key, axis = "x") => (axis === "y" ? yChannels() : channels()).find(c => c.key === key);
   const label = c => c ? `${c.label}${c.unit ? `, ${c.unit}` : ""}` : "";
   const activeRecipe = () => recipes().find(r => r.id === activeId());
   createEffect(() => {
-    const available = offeredY();
+    const available = yChannels();
     if (available.length && !available.some(c => c.key === y().key)) {
-      setY({ key: (spatial() ? available[0] : available[1] ?? available[0]).key, point: 1 });
+      setY({ key: (available[1] ?? available[0]).key, point: 1 });
     }
-  });
-  const lineObjects = createMemo(() => {
-    if (!spatial() || !sourceReady()) return { objects: [], error: "" };
-    try { return { objects: elementLineObjects(selectedTask(), byKey(y().key, "y")), error: "" }; }
-    catch (e) { return { objects: [], error: e.message }; }
-  });
-  const lineObject = createMemo(() => lineObjects().objects.find(item => item.record.id === Number(line().element)));
-  const lineGrid = createMemo(() => lineObject() ? elementLineLayout(lineObject().record, byKey(y().key, "y")) : null);
-  const lineSteps = createMemo(() => spatial() ? selectedTask()?.metadata?.[byKey(y().key, "y")?.file]?.steps ?? [] : []);
-  createEffect(() => {
-    const objects = lineObjects().objects, channel = byKey(y().key, "y");
-    if (!objects.length) return;
-    setLine(previous => {
-      const object = objects.find(item => item.record.id === previous.element) ?? objects[0];
-      const next = defaultElementLine(object.record, channel, object.record.id === previous.element ? previous : {});
-      return JSON.stringify(next) === JSON.stringify(previous) ? previous : next;
-    });
-  });
-  createEffect(() => {
-    const steps = lineSteps();
-    if (!steps.length) { setLineStep(null); return; }
-    setLineStep(previous => steps.some(s => s.index === previous) ? previous
-      : steps.find(s => s.index === untrack(() => props.time))?.index ?? steps[0].index);
   });
   createEffect(() => {
     if (!recipes().some(r => r.id === activeId())) setActiveId(recipes().at(-1)?.id ?? null);
@@ -125,10 +94,9 @@ export function PlotConstructor(props) {
       if (append && !target) throw new Error("Сначала добавьте график или выберите существующий щелчком по его полю.");
       if (!append && recipes().length >= 12) throw new Error("На вкладке допускается до 12 графиков.");
       // Keep the exact source objects; later imports must not replace a curve's data.
-      const selection = spatial() ? elementLineRequest(selectedTask(), byKey(y().key, "y"), line(), lineStep()) : null;
       const curve = validatePlotCurve({ id: crypto.randomUUID(),
-        x: selection ? { ...x(), ...line(), indices: [...line().indices], copies: [...line().copies], lineLabel: selection.label } : { ...x() },
-        y: selection ? { ...y(), profile: true, step: lineStep(), time: lineStep() * selectedTask().general.timeStep } : { ...y() },
+        x: { ...x() },
+        y: { ...y() },
         xChannel: byKey(x().key), yChannel: byKey(y().key, "y"),
         yTask: taskMode() === "other" ? selectedTask() : undefined,
         taskLabel: taskMode() === "other" ? props.plotTaskSource.entry.label : props.task.plotLabel || props.task.name }, target?.curves[0]);
@@ -153,86 +121,6 @@ export function PlotConstructor(props) {
     props.setProtocolEntry?.(`plot:${id}`, null);
     props.setPlotRecipes(recipes().filter(recipe => recipe.id !== id));
   }
-  function LineCoordinates() {
-    const [open, setOpen] = createSignal(false), [bounds, setBounds] = createSignal({});
-    const id = `line-coordinates-${createUniqueId()}`;
-    let anchor;
-    const preview = useAsyncResult(() => open() && sourceReady() ? {
-      task: selectedTask(), channel: byKey(y().key, "y"), step: lineStep(),
-      spec: { ...line(), indices: [...line().indices], copies: [...line().copies] },
-    } : null, readElementLineEndpoints);
-    function show() {
-      const rect = anchor.getBoundingClientRect();
-      const box = chartTooltipBounds({ x: rect.left - 12, y: rect.bottom - 6 },
-        { width: innerWidth, height: innerHeight }, 180);
-      setBounds({ left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, maxHeight: `${box.maxHeight}px` });
-      setOpen(true);
-    }
-    const closeOutside = event => { if (event.target === window || !anchor.contains(event.target)) setOpen(false); };
-    onMount(() => {
-      window.addEventListener("scroll", closeOutside, true); window.addEventListener("resize", closeOutside);
-      onCleanup(() => { window.removeEventListener("scroll", closeOutside, true); window.removeEventListener("resize", closeOutside); });
-    });
-    return <span ref={anchor} class="constructor-line-coordinates" tabIndex="0" aria-label="Координаты отрезка"
-      aria-describedby={open() ? id : undefined} onPointerEnter={show} onFocus={show}
-      onPointerLeave={() => { if (!anchor.matches(":focus-within")) setOpen(false); }}
-      onBlur={() => { if (!anchor.matches(":hover")) setOpen(false); }}
-      onKeyDown={event => { if (event.key === "Escape") setOpen(false); }}>
-      Координаты
-      <Show when={open()}><span id={id} role="tooltip" class="constructor-coordinate-tooltip" style={bounds()}>
-        {preview.loading() ? "Чтение координат…" : preview.error() || preview.value()?.text || "Выберите элемент и момент времени."}
-      </span></Show>
-    </span>;
-  }
-  function LinePicker() {
-    const changeIndex = (axis, value, key = "indices") => {
-      setError(""); setLine(previous => ({ ...previous, [key]: previous[key].map((n, i) => i === axis ? value : n) }));
-    };
-    return <div class="constructor-line-picker">
-      <label>Элемент<select aria-label="Элемент для отрезка" value={line().element} disabled={!lineObjects().objects.length}
-        title="Номер и имя элемента из списка задания, выбранного для оси Y"
-        onChange={e => {
-          setError("");
-          const record = lineObjects().objects.find(item => item.record.id === Number(e.currentTarget.value))?.record;
-          if (record) setLine(defaultElementLine(record, byKey(y().key, "y"), { direction: line().direction }));
-        }}><For each={lineObjects().objects}>{item => <option value={item.record.id}>№{item.record.id} · {item.record.name || "Элемент"}</option>}</For>
-      </select></label>
-      <Show when={lineGrid()}>{grid => <>
-        <label>Направление<select aria-label="Направление отрезка" value={line().direction}
-          title="Индекс вдоль ряда центров ЭО меняется от 1 до N; два поперечных индекса фиксированы"
-          onChange={e => { setError(""); setLine(previous => ({ ...previous, direction: Number(e.currentTarget.value) })); }}>
-          <For each={grid().dimensions}>{(n, axis) => <option value={axis()} disabled={n < 2}>i{axis() + 1} · {n} ЭО</option>}</For>
-        </select></label>
-        <div class="constructor-line-indices"><For each={[0, 1, 2].filter(axis => axis !== line().direction)}>{axis =>
-          <label>i{axis + 1}<input type="number" aria-label={`Поперечный индекс i${axis + 1}`} step="1"
-            min="1" max={grid().dimensions[axis]} disabled={grid().dimensions[axis] === 1} value={line().indices[axis]}
-            title={`Поперечный индекс i${axis + 1}: от 1 до ${grid().dimensions[axis]}`}
-            onInput={e => changeIndex(axis, e.currentTarget.value)} /><small>1…{grid().dimensions[axis]}</small></label>
-        }</For><LineCoordinates /></div>
-        <span class="constructor-hint">i{line().direction + 1}: 1…{grid().dimensions[line().direction]} · от первого до последнего центра ЭО</span>
-        <Show when={grid().copies.some(n => n > 1)}><details class="constructor-line-images"><summary>Сохранённый образ: {grid().copies.flatMap((n, axis) => n > 1 ? [`${["LS", "AS", "PS"][axis]}=${line().copies[axis]}`] : []).join(", ")}</summary>
-          <For each={[0, 1, 2].filter(axis => grid().copies[axis] > 1)}>{axis => <label>{["LS", "AS", "PS"][axis]}
-            <input type="number" min="1" max={grid().copies[axis]} step="1" value={line().copies[axis]}
-              aria-label={`Образ ${["LS", "AS", "PS"][axis]}`} onInput={e => changeIndex(axis, e.currentTarget.value, "copies")} /> из {grid().copies[axis]}</label>}</For>
-        </details></Show>
-      </>}</Show>
-      <Show when={lineObjects().error}><span class="constructor-error" role="alert">{lineObjects().error}</span></Show>
-      <Show when={!lineObjects().error && sourceReady() && !lineObjects().objects.length}><span role="status">Нет элементов с сохранённой величиной Y.</span></Show>
-    </div>;
-  }
-  function LineTimePicker() {
-    const position = () => lineSteps().findIndex(s => s.index === lineStep());
-    return <div class="constructor-line-time"><label>Момент времени<select aria-label="Момент времени профиля" value={lineStep() ?? ""}
-      title="Номер сохранённого шага и его физическое время; выбор закрепляется при добавлении кривой"
-      onChange={e => setLineStep(Number(e.currentTarget.value))}>
-      <For each={lineSteps()}>{s => <option value={s.index}>№{s.index} · t = {Number((s.index * selectedTask().general.timeStep).toPrecision(10))} с</option>}</For>
-    </select></label>
-      <button type="button" aria-label="Предыдущий сохранённый момент" title="Предыдущий сохранённый момент" disabled={position() <= 0}
-        onClick={() => setLineStep(lineSteps()[position() - 1].index)}>←</button>
-      <button type="button" aria-label="Следующий сохранённый момент" title="Следующий сохранённый момент" disabled={position() < 0 || position() >= lineSteps().length - 1}
-        onClick={() => setLineStep(lineSteps()[position() + 1].index)}>→</button>
-    </div>;
-  }
   function AxisPicker(p) {
     const spec = () => p.get(), c = () => byKey(spec().key, p.axis);
     return <fieldset><legend>{p.title}</legend>
@@ -254,11 +142,9 @@ export function PlotConstructor(props) {
       <label>Величина<select value={spec().key} title="Выберите стандартную величину результата или подключённый параметр ОМ"
         disabled={p.axis === "y" && !sourceReady()}
         onChange={e => p.set({ ...spec(), key: e.currentTarget.value, point: 1 })}>
-        <option value="" selected={!c()}>Выберите величину</option><For each={p.axis === "y" ? offeredY() : [...channels(), ELEMENT_LINE_CHANNEL]}>{item => <option value={item.key} selected={spec().key === item.key}>{label(item)}</option>}</For>
+        <option value="" selected={!c()}>Выберите величину</option><For each={p.axis === "y" ? yChannels() : channels()}>{item => <option value={item.key} selected={spec().key === item.key}>{label(item)}</option>}</For>
       </select></label>
-      <Show when={p.axis === "x" && spatial()}><LinePicker /></Show>
-      <Show when={p.axis === "y" && spatial()}><LineTimePicker /></Show>
-      <Show when={c()?.kind === "field" && !(p.axis === "y" && spatial())}><label>Точка в файле результата
+      <Show when={c()?.kind === "field"}><label>Точка в файле результата
         <input type="number" min="1" max={c()?.points} value={spec().point}
           title="Порядковый номер сохранённой точки в файле результата, начиная с 1; это не номер элемента или области"
           onInput={e => p.set({ ...spec(), point: e.currentTarget.value })} /> из {c()?.points}
@@ -309,11 +195,8 @@ export function PlotConstructor(props) {
     });
     const failure = () => data.error() || data.value()?.error || "";
     const singleTime = createMemo(() => isSingleTimePlot(props.task, recipe().curves));
-    const spatialPlot = createMemo(() => recipe().curves[0]?.xChannel.kind === "distance");
-    const distanceRange = createMemo(() => spatialPlot() && series().length
-      ? { minimum: 0, maximum: Math.max(...series().map(s => s.profile?.length ?? 0)) } : null);
     const valueTable = createMemo(() => !data.loading() && !failure() ? singleTimePlotTable(recipe().curves, series()) : null);
-    const frameKey = createMemo(() => ({ frame: data.state().frame, time: spatialPlot() ? null : props.time }));
+    const frameKey = createMemo(() => ({ frame: data.state().frame, time: props.time }));
     const axisLabel = axis => {
       const labels = [...new Set(recipe().curves.map(curve => plotChannelLabel(curve[`${axis}Channel`], curve[axis])))];
       if (labels.length === 1) return labels[0];
@@ -322,7 +205,6 @@ export function PlotConstructor(props) {
     };
     const protocol = () => <ProtocolCheck context={props} entryKey={`plot:${p.id}`} title={`График ${number()}`}
       compact={!expanded()} disabled={data.loading() || !!failure()}
-      momentLabel={spatialPlot() ? [...new Set(recipe().curves.map(curve => `№${curve.y.step}: t=${curve.y.time} с`))].join("; ") : undefined}
       comment={recipe().curves.map(curve => `${plotCurveLabel(curve, "y")} / ${plotCurveLabel(curve, "x")}`).join("; ")}
       capture={options => {
         if (!singleTime()) return captureProtocolRenderer(renderer(), frameKey(), options);
@@ -348,11 +230,10 @@ export function PlotConstructor(props) {
       onCancel={event => { event.preventDefault(); if (expanded()) toggleExpanded(); }}
       tabIndex="0" aria-label={`График ${number()}${activeId() === p.id ? ", активный" : ""}`}
       onPointerDown={() => !props.movieBusy && setActiveId(p.id)} onFocusIn={() => !props.movieBusy && setActiveId(p.id)}>
-      <Show when={activeId() === p.id && !singleTime() && !spatialPlot()}><ActiveMovie /></Show>
+      <Show when={activeId() === p.id && !singleTime()}><ActiveMovie /></Show>
       <Show when={singleTime()} fallback={
       <LineChart series={series()} autoScaleToggle={true} legendMode="overlay"
-        marker={spatialPlot() ? null : { points: series().flatMap(item => item.points.filter(point => plotPointAtStep(point, props.task, props.time))) }}
-        autoXRange={distanceRange()}
+        marker={{ points: series().flatMap(item => item.points.filter(point => plotPointAtStep(point, props.task, props.time))) }}
         captureFrameKey={frameKey()} onCaptureReady={target => setRenderer(() => target)} captureError={failure()}
         tableUnavailableReason={data.loading() ? "Дождитесь загрузки всех кривых графика" : failure()}
         xLabel={axisLabel("x")} yLabel={axisLabel("y")}
@@ -399,15 +280,9 @@ export function PlotConstructor(props) {
     <Show when={taskSourceError()}><p class="constructor-error" role="alert">{taskSourceError()}</p></Show>
     <For each={taskMode() === "other" ? (selectedTask()?.plotSources ?? []).filter(s => s.warning) : []}>{s => <p role="status">{s.warning}</p>}</For>
     <For each={allSources().filter(s => s.warning)}>{s => <p role="status">{s.warning}</p>}</For>
-    <p class="constructor-hint"><Show when={spatial()} fallback={<>Векторные величины выводятся компонентами X, Y, Z; их видимость переключается в легенде. При нуле интервалов времени каждое добавление создаёт строку таблицы значений с путём задания в комментарии. Щелчок по графику выбирает его для добавления кривых и записи GIF. X берётся из текущего задания; при X = «Время» используется временная сетка задания Y. Остальные величины разных заданий сопоставляются по совпадающим моментам времени, без интерполяции.</>}>
-      Отрезок и величина Y берутся из одного выбранного задания. Индексы i1/i2/i3 задают направления сетки элемента; компоненты вектора X/Y/Z — глобальные.
-      Время закрепляется за добавленной кривой. Можно добавить другие ряды, моменты и задания в тот же график.
-      По отрезку доступны локальные величины в ЭО; результаты областей и суммарные параметры имеют другую сетку или не зависят от положения.
-    </Show></p>
+    <p class="constructor-hint">Векторные величины выводятся компонентами X, Y, Z; их видимость переключается в легенде. При нуле интервалов времени каждое добавление создаёт строку таблицы значений с путём задания в комментарии. Щелчок по графику выбирает его для добавления кривых и записи GIF. X берётся из текущего задания; при X = «Время» используется временная сетка задания Y. Остальные величины разных заданий сопоставляются по совпадающим моментам времени, без интерполяции.</p>
     <div class="constructor-plots"><For each={recipes().map(recipe => recipe.id)} fallback={<p>Выберите величины для осей и добавьте график.</p>}>{id => <Plot id={id} />}</For></div>
-    <Show when={activeRecipe()?.curves[0]?.xChannel.kind !== "distance"} fallback={<p class="constructor-hint">На активном графике показаны фиксированные моменты времени, указанные у кривых. Координаты выбранного ряда доступны при наведении на «Координаты» в области оси X.</p>}>
-      <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
-    </Show>
+    <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
     <dialog ref={sourceDialog} class="constructor-source-dialog" aria-label="Добавление параметров ОМ"
       onCancel={event => { if (adding()) event.preventDefault(); }} onClose={() => sourceButton?.focus()}>
       <h3>Добавление параметров ОМ</h3>

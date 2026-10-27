@@ -64,7 +64,9 @@
   flex-direction: column;
   justify-content: center;
   gap: 2px;
+  width: 150px;
   min-width: 150px;
+  flex: 0 0 150px;
   color: #edf2f7;
   font-size: 12px;
   white-space: nowrap;
@@ -450,17 +452,6 @@
 }
 
 
-.geometry-viewer-options-panel.is-view-panel {
-  height: 330px;
-  max-height: 330px;
-  overflow: hidden;
-}
-
-.geometry-viewer-options-panel.is-view-panel[data-flight-option="true"] {
-  height: 364px;
-  max-height: 364px;
-}
-
 .geometry-viewer-view-command:disabled {
   color: #8e9aa5;
   cursor: default;
@@ -600,3 +591,8 @@
   background: rgba(20, 26, 32, .88);
   font-size: 11px;
 }
+
+.geometry-size-range { position: relative; }
+.geometry-size-range > i { position: absolute; left: 50%; top: -6px; transform: translateX(-50%); width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 6px solid #edf2f7; pointer-events: none; }
+
+.geometry-viewport-tooltip.geometry-cube-tooltip { max-width: min(600px, calc(100% - 16px)); }

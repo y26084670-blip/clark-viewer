@@ -17,7 +17,7 @@ function Fixture() {
     releaseReads: () => { held = false; waiting.splice(0).forEach(resolve => resolve()); } };
   const props = { task:f.task, elements:[1,2], regions:[1], setElements(){}, setRegions(){}, get time(){return time();}, setTime,
     get movieBusy(){return busy();}, registerMovieAdapter:adapter => { capture=adapter;return ()=>{}; } };
-  return <div class="app-container"><header class="task-info-bar">Графики на отрезках — проверка</header>
+  return <div class="app-container"><header class="task-info-bar">Поверхности графиков — проверка</header>
     <main class="tabs-body"><Show when={mounted()}><SourcesFields3D {...props}/></Show></main></div>;
 }
 render(() => <Fixture/>, document.getElementById("root"));

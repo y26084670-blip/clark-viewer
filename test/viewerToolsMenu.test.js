@@ -427,8 +427,8 @@ test("App permits only ready result tabs and separates guarded UI time from movi
   assert.match(app.movieDisabledReason(), /вкладку/);
   app.setActive(1); assert.match(app.movieDisabledReason(), /готовности/);
   controllerOptions.onAdapterChange({}); assert.equal(app.movieDisabledReason(), "");
-  for (const tab of [1, 2, 3, 4, 5]) { app.setActive(tab); assert.equal(app.movieDisabledReason(), ""); }
-  app.setActive(6); assert.match(app.movieDisabledReason(), /вкладку/); app.setActive(5);
+  for (const tab of [1, 2, 3, 4]) { app.setActive(tab); assert.equal(app.movieDisabledReason(), ""); }
+  app.setActive(5); assert.match(app.movieDisabledReason(), /вкладку/); app.setActive(4);
   app.setBusy(true); assert.match(app.movieDisabledReason(), /загрузки/); app.setBusy(false);
   for (const timeStep of [0, -1, NaN, Infinity]) {
     app.setTask({ general: { countTimeSteps: 4, timeStep } });

@@ -111,18 +111,18 @@ test("pre-flight view snapshots stay independent and restore both camera types a
 });
 
 
-test("Ctrl and Shift restore fixed-axis rotation without snapping or fitting", async () => {
+test("Alt and Shift restore fixed-axis rotation without snapping or fitting", async () => {
  const {geometryAxisRotationFromKeyboardEvent: targetAxis, geometryOriginAxisRotationFromKeyboardEvent: originAxis, rotateGeometryCameraAroundAxis: rotate}=await import("../src/services/visualization/geometryCameraView.js");
  for(const axis of ["X","Y","Z"]){
-  assert.equal(targetAxis({code:`Key${axis}`,ctrlKey:true}),axis.toLowerCase());
+  assert.equal(targetAxis({code:`Key${axis}`,altKey:true}),axis.toLowerCase());
   assert.equal(originAxis({code:`Key${axis}`,shiftKey:true}),axis.toLowerCase());
-  assert.equal(targetAxis({code:`Key${axis}`,ctrlKey:true,shiftKey:true}),null);
-  assert.equal(targetAxis({code:`Key${axis}`,ctrlKey:true,target:{tagName:"INPUT"}}),null);
+  assert.equal(targetAxis({code:`Key${axis}`,altKey:true,shiftKey:true}),null);
+  assert.equal(targetAxis({code:`Key${axis}`,altKey:true,target:{tagName:"INPUT"}}),null);
   for(const target of [{tagName:"SELECT"},{tagName:"INPUT",type:"checkbox"},{tagName:"INPUT",type:"range"}]){
-   assert.equal(targetAxis({code:`Key${axis}`,ctrlKey:true,target},{allowControls:true}),axis.toLowerCase());
+   assert.equal(targetAxis({code:`Key${axis}`,altKey:true,target},{allowControls:true}),axis.toLowerCase());
    assert.equal(originAxis({code:`Key${axis}`,shiftKey:true,target},{allowControls:true}),axis.toLowerCase());
   }
-  assert.equal(targetAxis({code:`Key${axis}`,ctrlKey:true,target:{tagName:"INPUT",type:"number"}},{allowControls:true}),null);
+  assert.equal(targetAxis({code:`Key${axis}`,altKey:true,target:{tagName:"INPUT",type:"number"}},{allowControls:true}),null);
  }
  for(const origin of [false,true]){
   const camera=new THREE.PerspectiveCamera(45,1,.1,100);camera.position.set(4,5,6);camera.up.set(0,0,1);
@@ -185,7 +185,6 @@ function axisGestureFixture(projection = "perspective") {
 
 const AXIS_GESTURE_MODIFIERS = [
     ["AltLeft", { altKey: true }, false],
-    ["ControlLeft", { ctrlKey: true }, false],
     ["ShiftLeft", { shiftKey: true }, true],
 ];
 const axisVector = axis => new THREE.Vector3(...({ x: [1,0,0], y: [0,1,0], z: [0,0,1] }[axis]));

@@ -1,5 +1,10 @@
 import { buildGeometryScene } from "../../src/services/visualization/geometrySceneModel.js";
-import { graphPointOnPrimitive } from "../../src/services/visualization/graphAxes.js";
+import { trilinearElementPoint, bilinearRegionPoint } from "../../src/services/visualization/geometryDiscretization.js";
+
+function graphPointOnPrimitive(primitive, n) {
+  const dims = primitive.discretization.counts;
+  return primitive.source.schemaId === "elements" ? trilinearElementPoint(primitive.vertices, (Math.floor(n / (dims[1] * dims[2])) + .5) / dims[0], (Math.floor(n / dims[2]) % dims[1] + .5) / dims[1], (n % dims[2] + .5) / dims[2]) : bilinearRegionPoint(primitive.controlVertices ?? primitive.vertices, Math.floor(n / dims[1]) / (dims[0] - 1), (n % dims[1]) / (dims[1] - 1));
+}
 import { applyMatrix4ToPoint } from "../../src/services/solver/rotation3d.js";
 import { elementLayout, regionLayout, sourceRecords, expectedPointCount } from "../../src/services/results/resultMappings.js";
 

@@ -3,126 +3,145 @@ import assert from "node:assert/strict";
 import { Worker } from "node:worker_threads";
 import { createResultGraphReader } from "../src/services/results/resultGraphRequests.js";
 import { createResultGraphProcessor } from "../src/services/results/resultGraphProcessor.js";
-import { calculateResultGraphs, graphSurfaceDomain } from "../src/services/visualization/resultGraphField.js";
+import { calculateResultGraphs, graphSlicePatch } from "../src/services/visualization/resultGraphField.js";
 import { graph3DTask } from "../scripts/test-support/graph3DFixture.js";
+import { elementLayout, expectedPointCount } from "../src/services/results/resultMappings.js";
+import { trilinearElementPoint } from "../src/services/visualization/geometryDiscretization.js";
 
 const options = { processorFactory: () => ({ process: async input => calculateResultGraphs(input), close() {} }) };
-const request = f => ({ task: f.task, axes: [f.axis], time: 0, method: "trilinear", quantities: { elements: "J", regions: "Bs", virtual: "none" } });
-const close = (a, b, tolerance = 1e-8) => assert.ok(Math.abs(a - b) <= tolerance, `${a} != ${b}`);
+const request = f => ({ task: f.task, slices: [{ id: 1, recordIndex: 0, direction: 0, component: 0 }], regions: [], time: 0, quantities: { elements: "J", regions: "Bs", virtual: "Bv" } });
+const near = (a, b, tolerance = 1e-8) => assert.ok(Math.abs(a - b) <= tolerance, `${a} != ${b}`);
 
-test("all streamline methods reproduce an affine field along an arbitrary oblique segment, with one strided image read", async () => {
-  for (const method of ["trilinear", "trilinear-boundary", "quadratic", "tricubic"]) {
-    const f = graph3DTask(), reader = createResultGraphReader(options);
-    const result = (await reader.read({ ...request(f), method, axes: [{ ...f.axis, instance: { ...f.axis.instance, ps: 1 } }] }))[0];
-    assert.equal(result.error, undefined, method); assert.equal(f.reads.length, 1); assert.equal(f.reads[0].every, 2); assert.equal(f.reads[0].start, 1);
-    close(result.distances[0], 0); close(result.distances.at(-1), result.length);
-    for (let i = 0; i < result.distances.length; i++) {
-      const t = i / (result.distances.length - 1), p = result.start.map((v,k) => v * (1-t) + result.end[k] * t);
-      close(result.values[i*3], p[0]); close(result.values[i*3+1], 2*p[1]); close(result.values[i*3+2], -p[2]);
-    }
-    reader.close();
-  }
-});
-
-test("nodal observation surfaces use the same reconstruction methods without treating nodes as cell centres", async () => {
-  for (const method of ["trilinear", "trilinear-boundary", "quadratic", "tricubic"]) {
-    const f = graph3DTask(), reader = createResultGraphReader(options);
-    const axis = { ...f.axis, source: { schemaId: "regions", recordIndex: 0 }, points: [0,19] };
-    const result = (await reader.read({ ...request(f), axes: [axis], method }))[0];
-    assert.equal(result.error, undefined, method); assert.deepEqual(result.start, [0,40,0]); assert.deepEqual(result.end, [40,60,0]);
-    for (let i = 0; i < result.distances.length; i++) { const t = i / (result.distances.length - 1); close(result.values[i*3],40*t); close(result.values[i*3+1],80+40*t); }
-    reader.close();
-  }
-});
-
-test("building caches unchanged axes and invalidates changed endpoints, time, method and quantity", async () => {
+for (const direction of [0, 1, 2]) test(`DV${direction + 1} is the geometric middle plane and reconstructs signed affine components in every saved image`, async () => {
   const f = graph3DTask(), reader = createResultGraphReader(options), r = request(f);
-  const first = await reader.read(r); await reader.read(r); assert.equal(f.reads.length, 1);
-  const second = { ...f.axis, id: 2, points: [1,20] };
-  const both = await reader.read({ ...r, axes: [f.axis,second] }); assert.equal(f.reads.length, 2); assert.equal(both[0], first[0]);
-  await reader.read({ ...r, axes: [{ ...f.axis, points: [2,21] }] }); assert.equal(f.reads.length, 3);
-  await reader.read({ ...r, time: 1 }); assert.equal(f.reads.length, 4);
-  await reader.read({ ...r, time: 1, method: "tricubic" }); assert.equal(f.reads.length, 5);
-  const scalar = (await reader.read({ ...r, quantities: { ...r.quantities, elements: "JEdot" } }))[0];
-  assert.equal(scalar.components, 1); assert.equal(f.reads.length, 6);
-  close(scalar.values[0], (2*scalar.start[0]-2*scalar.start[1]-.5*scalar.start[2])*.001);
+  const result = await reader.read({ ...r, slices: [0, 1, 2].map(component => ({ ...r.slices[0], id: component + 1, direction, component })) });
+  assert.deepEqual(result.errors, []); assert.equal(f.reads.length, 1); assert.equal(f.reads[0].every, 1);
+  for (const graph of result.graphs) for (const surface of graph.surfaces) {
+    assert.equal(graph.surfaces.length, 2);
+    for (let n = 0; n < surface.values.length; n++) {
+      const p = Array.from(surface.positions.subarray(n * 3, n * 3 + 3));
+      near(p[direction], [20 + 60 * surface.instance.ps, 10, 5][direction]);
+      near(surface.values[n], [p[0], 2 * p[1], -p[2]][graph.component]);
+      near(surface.normals[n * 3 + direction], 1);
+    }
+  }
   reader.close();
 });
 
-test("mirrors transform vector components and preserve the clicked image, including magnetic versus electric parity", async () => {
+test("area graphs preserve all saved nodes, RGB component identities and physical mirror parity", async () => {
   const f = graph3DTask({ mirror: 0 }), reader = createResultGraphReader(options);
-  const axis = { ...f.axis, instance: { ...f.axis.instance, mirrorX: 1 } };
-  const result = (await reader.read({ ...request(f), axes: [axis] }))[0]; assert.equal(result.error, undefined);
-  close(result.start[0], -5); close(result.values[0], 5); close(result.values[1], -20/3); close(result.values[2], 2.5);
+  const { graphs, errors } = await reader.read({ ...request(f), slices: [], regions: [0] });
+  assert.deepEqual(errors, []); assert.equal(graphs.length, 1); assert.equal(graphs[0].surfaces.length, 6);
+  for (const surface of graphs[0].surfaces) {
+    assert.equal(surface.values.length, 20); assert.equal(surface.indices.length, 72);
+    for (let n = 0; n < surface.values.length; n++) {
+      const p = surface.positions.subarray(n * 3, n * 3 + 3);
+      near(surface.values[n], [p[0], 2 * p[1], -p[2]][surface.component]);
+    }
+  }
   reader.close();
 });
 
-test("missing steps and malformed slices report errors and cannot reuse stale curves", async () => {
+test("electric mirrors transform components with opposite parity; scalar products retain their sign and units", async () => {
+  const f = graph3DTask({ mirror: 0 }), reader = createResultGraphReader(options), r = request(f);
+  const { graphs } = await reader.read({ ...r, slices: [{ ...r.slices[0], component: 1 }] });
+  for (const surface of graphs[0].surfaces) for (let n = 0; n < surface.values.length; n++) near(surface.values[n], 2 * surface.positions[n * 3 + 1] * (surface.instance.mirrorX ? -1 : 1));
+  const scalar = await reader.read({ ...r, quantities: { ...r.quantities, elements: "JEdot" } });
+  assert.deepEqual(scalar.errors, []); assert.equal(scalar.graphs[0].components, 1);
+  for (const surface of scalar.graphs[0].surfaces) for (let n = 0; n < surface.values.length; n++) {
+    const [x, y, z] = surface.positions.subarray(n * 3, n * 3 + 3); near(surface.values[n], (2 * Math.abs(x) - 2 * y - .5 * z) * .001);
+  }
+  reader.close();
+});
+
+test("unstored physical periodic images are generated once with the physical sign", async () => {
+  const f = graph3DTask({ images: 1 }), reader = createResultGraphReader(options);
+  f.task.elements[0].symPs = 2; f.task.elements[0].symKyp = -1;
+  const { graphs, errors } = await reader.read(request(f));
+  assert.deepEqual(errors, []); assert.equal(graphs[0].surfaces.length, 2);
+  const [a, b] = graphs[0].surfaces;
+  for (let n = 0; n < a.values.length; n++) near(b.values[n], -a.values[n]);
+  reader.close();
+});
+
+test("component/direction/added-slice edits reuse complete saved grids, while time, quantity and task invalidate them", async () => {
   const f = graph3DTask(), reader = createResultGraphReader(options), r = request(f);
-  await reader.read(r);
-  const missing = (await reader.read({ ...r, time: 9 }))[0]; assert.match(missing.error, /Нет сохранённого момента/); assert.equal(f.reads.length, 1);
+  const first = await reader.read(r); const reference = first.graphs[0].referenceMaximum;
+  await reader.read({ ...r, slices: [{ ...r.slices[0], direction: 2, component: 2 }] });
+  await reader.read({ ...r, slices: [...r.slices, { ...r.slices[0], id: 2, direction: 1 }] });
+  assert.equal(f.reads.length, 1);
+  const later = await reader.read({ ...r, time: 1 }); assert.equal(f.reads.length, 2); assert.equal(later.graphs[0].referenceMaximum, reference);
+  await reader.read({ ...r, time: 1, quantities: { ...r.quantities, elements: "E" } }); assert.equal(f.reads.length, 3);
+  const another = graph3DTask(); await reader.read(request(another)); assert.equal(another.reads.length, 1);
+  reader.close();
+});
+
+test("missing steps and truncated/nonfinite buffers report errors without fabricated surfaces", async () => {
+  const f = graph3DTask(), reader = createResultGraphReader(options), r = request(f);
+  const missing = await reader.read({ ...r, time: 9 }); assert.match(missing.errors[0].message, /Нет сохранённого момента/); assert.equal(f.reads.length, 0);
   const read = f.task.reader.read; f.task.reader.read = async r => ({ ...await read(r), count: 1 });
-  const malformed = (await reader.read({ ...r, time: 1 }))[0]; assert.match(malformed.error, /Неполная сетка/); reader.close();
+  const malformed = await reader.read({ ...r, time: 1 }); assert.match(malformed.errors[0].message, /Неполная сетка/); assert.equal(malformed.graphs.length, 0);
+  f.task.reader.read = read; f.buffers.JE[0][0] = Infinity;
+  const bad = await reader.read(r); assert.match(bad.errors[0].message, /Нечисловые/); reader.close();
 });
 
-test("real graph worker transfers results while preserving the source HDF-style buffers, and closes cleanly", async () => {
-  const url = new URL("../src/workers/resultGraph.worker.js",import.meta.url).href;
-  const worker = new Worker(`const {parentPort}=require('node:worker_threads');globalThis.self={postMessage:(d,t)=>parentPort.postMessage(d,t)};import(${JSON.stringify(url)}).then(()=>parentPort.on('message',data=>self.onmessage({data})));`,{eval:true});
-  let bridge;
-  const reader = createResultGraphReader({ processorFactory: () => createResultGraphProcessor({ workerFactory: () => {
-    bridge = { postMessage: (d,t) => worker.postMessage(d,t), terminate: () => worker.terminate() };
-    worker.on("message", data => bridge.onmessage?.({data})); worker.on("error", e => bridge.onerror?.(e)); return bridge;
-  } }) });
-  const f = graph3DTask(); try {
-    const result = (await reader.read(request(f)))[0]; assert.equal(result.error, undefined);
-    assert.ok(result.values instanceof Float64Array); assert.ok(result.distances instanceof Float64Array);
-    assert.equal(f.buffers.JE[0].length, 2*4*3*2*2*9);
-  } finally { reader.close(); }
-});
-
-test("quadratic reconstruction follows a known curved field rather than a straight interpolation of the endpoints", async () => {
-  const field = ([x,y,z]) => [x*x+y*z, y*y-x*z, z*z+x*y];
-  const f = graph3DTask({ dimensions: [6,5,4], field }), reader = createResultGraphReader(options);
-  try {
-    const result = (await reader.read({ ...request(f), method: "quadratic" }))[0];
-    assert.equal(result.error, undefined);
-    for (let i=0; i<result.distances.length; i++) {
-      const t=result.distances[i]/result.length, expected=field(result.start.map((v,k)=>v*(1-t)+result.end[k]*t));
-      expected.forEach((v,c)=>close(result.values[i*3+c],v,1e-6));
+test("HV field storage permutations do not permute the user's DV plane", async () => {
+  for (const indAmp of [1, 2, 3]) {
+    const f = graph3DTask({ images: 1 }), record = f.task.elements[0]; f.task.elements = [record]; record.targ = 3; record.indAmp = indAmp;
+    const order = ({1:[4,0,6,2,5,1,7,3],2:[0,4,1,5,2,6,3,7],3:[2,0,3,1,6,4,7,5]})[indAmp];
+    const layout = elementLayout(record, true), [n1, n2, n3] = layout.dimensions, values = [];
+    const vertices = order.flatMap(i => record.geo[i]);
+    for (let i = 0; i < n1; i++) for (let j = 0; j < n2; j++) for (let k = 0; k < n3; k++) {
+      const p = trilinearElementPoint(vertices, (i + .5) / n1, (j + .5) / n2, (k + .5) / n3); values.push(...p, p[0], 2 * p[1], -p[2]);
     }
-  } finally { reader.close(); }
-});
-
-test("line regions keep their endpoint nodes for all four interpolation methods", () => {
-  const start=[2,3,4], end=[22,13,9], dimensions=[1,5,1];
-  const positions=Float64Array.from(Array.from({length:5},(_,n)=>start.map((v,k)=>v+(end[k]-v)*n/4)).flat());
-  const vectors=Float64Array.from(positions,v=>v*2);
-  const domain={...graphSurfaceDomain([start,end],dimensions,true),key:"line",positions,vectors,invalid:new Uint8Array(5)};
-  for(const method of ["trilinear","trilinear-boundary","quadratic","tricubic"]) {
-    const [result]=calculateResultGraphs({domains:[domain],axes:[{key:"line",start,end,components:3}],method});
-    assert.equal(result.error,undefined,method);
-    for(let i=0;i<result.distances.length;i++) for(let c=0;c<3;c++) close(result.values[i*3+c],2*(start[c]+(end[c]-start[c])*i/(result.distances.length-1)));
+    f.task.metadata.HV = { header: { stride: 6, numbs: [expectedPointCount(record, "HV")], inds1: [1] }, steps: [{ index: 0 }] };
+    f.buffers.HV = [Float64Array.from(values)]; const reader = createResultGraphReader(options);
+    for (const direction of [0, 1, 2]) {
+      const r = request(f); const result = await reader.read({ ...r, slices: [{ ...r.slices[0], direction, component: 1 }] });
+      assert.deepEqual(result.errors, [], `indAmp=${indAmp}, DV${direction+1}`);
+      const surface = result.graphs[0].surfaces[0];
+      for (let n = 0; n < surface.values.length; n++) { near(surface.positions[n * 3 + direction], [20,10,5][direction]); near(surface.values[n], 2 * surface.positions[n * 3 + 1]); }
+    }
+    reader.close();
   }
 });
 
-test("undefined conductivity creates gaps, never fictitious zeros in the plotted scalar", async () => {
-  const f=graph3DTask({images:1,dimensions:[12,1,1],field:()=>[1,0,0]});
-  f.task.elements[0].model=2;
-  const handle={getDirectoryHandle:async()=>handle,getFileHandle:async()=>({getFile:async()=>({text:async()=>JSON.stringify({j_gmin:1})})})};
-  f.task.handle=handle; f.buffers.JE[0].fill(0,5*9+6,5*9+9);
-  const reader=createResultGraphReader(options);
-  try { for(const method of ["trilinear","trilinear-boundary","quadratic","tricubic"]) {
-    const [result]=await reader.read({...request(f),method,quantities:{elements:"sigmaRelative"}});
-    assert.equal(result.error,undefined,method); assert.ok(result.values.some(Number.isNaN),method);
-    assert.ok(Number.isFinite(result.values[0]),method); assert.ok(Number.isFinite(result.values.at(-1)),method);
-    assert.ok([...result.values].filter(Number.isFinite).every(v=>v>0),method);
-  } } finally {reader.close();}
+test("undefined conductivity makes holes in the surface, never zero-valued triangles", async () => {
+  const f = graph3DTask({ images: 1, dimensions: [12, 3, 3], field: () => [1, 0, 0] }); f.task.elements[0].model = 2;
+  const handle = { getDirectoryHandle: async () => handle, getFileHandle: async () => ({ getFile: async () => ({ text: async () => JSON.stringify({j_gmin:1}) }) }) }; f.task.handle = handle;
+  for (let n = 4 * 9; n < 7 * 9; n++) f.buffers.JE[0].fill(0, n * 9 + 6, n * 9 + 9);
+  const reader = createResultGraphReader(options), r = request(f);
+  const result = await reader.read({ ...r, quantities: { elements: "sigmaRelative" }, slices: [{ ...r.slices[0], direction: 2 }] });
+  assert.deepEqual(result.errors, []); const surface = result.graphs[0].surfaces[0];
+  assert.ok(surface.values.some(Number.isNaN)); assert.ok(surface.values.some(Number.isFinite));
+  assert.ok([...surface.indices].every(n => Number.isFinite(surface.values[n]))); reader.close();
 });
 
-test("closing a reader during a pending file read rejects without starting interpolation", async () => {
-  const f=graph3DTask(), original=f.task.reader.read; let release, processed=false;
-  f.task.reader.read=r=>new Promise(resolve=>{release=async()=>resolve(await original(r));});
-  const reader=createResultGraphReader({processorFactory:()=>({process(){processed=true;},close(){}})});
-  const pending=reader.read(request(f)); reader.close(); await release();
-  await assert.rejects(pending,{name:"AbortError"}); assert.equal(processed,false);
+test("real surface worker leaves cached inputs intact and terminates cleanly", async () => {
+  const url = new URL("../src/workers/resultGraph.worker.js", import.meta.url).href;
+  const worker = new Worker(`const { parentPort } = require('node:worker_threads');global.self = {postMessage:(data,transfer)=>parentPort.postMessage(data,transfer)};import(${JSON.stringify(url)}).then(()=>parentPort.on('message',data=>self.onmessage({data})));`, { eval: true });
+  const adapter = { postMessage: (...args) => worker.postMessage(...args), terminate: () => worker.terminate() };
+  worker.on("message", data => adapter.onmessage?.({ data })); worker.on("error", error => adapter.onerror?.(error));
+  const processor = createResultGraphProcessor({ workerFactory: () => adapter });
+  const f = graph3DTask(), original = f.buffers.JE[0].slice(), reader = createResultGraphReader({ processorFactory: () => processor });
+  try {
+    assert.deepEqual((await reader.read(request(f))).errors, []);
+    assert.deepEqual((await reader.read({ ...request(f), slices: [{ ...request(f).slices[0], direction: 2 }] })).errors, []);
+    assert.equal(f.reads.length, 1); assert.deepEqual(f.buffers.JE[0], original);
+  } finally { reader.close(); }
+  await assert.rejects(processor.process({ domains: [], graphs: [] }), { name: "AbortError" });
+});
+
+test("closing a pending reader prevents interpolation and late publication", async () => {
+  const f = graph3DTask(), original = f.task.reader.read; let release, processed = false;
+  f.task.reader.read = r => new Promise(resolve => { release = async () => resolve(await original(r)); });
+  const reader = createResultGraphReader({ processorFactory: () => ({ process() { processed = true; }, close() {} }) });
+  const pending = reader.read(request(f)); reader.close(); await release(); await assert.rejects(pending, { name: "AbortError" }); assert.equal(processed, false);
+});
+
+test("warped hexahedra use the parametric centre surface with consistently oriented local normals", () => {
+  const vertices = [[0,0,0],[2,0,0],[0,2,0],[2,2,0],[0,0,2],[2,0,3],[0,2,2],[2,2,4]];
+  const patch = graphSlicePatch(vertices, 2, [4,4,2]);
+  const mid = Math.floor(patch.positions.length / 6); const p = patch.positions.subarray(mid * 3, mid * 3 + 3);
+  assert.ok(p[2] > 1); for (let n = 0; n < patch.normals.length / 3; n++) assert.ok(patch.normals[n * 3 + 2] > 0);
 });

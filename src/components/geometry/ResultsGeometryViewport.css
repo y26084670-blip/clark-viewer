@@ -137,6 +137,10 @@
   font-weight: 600;
 }
 
+.geometry-viewer-options-panel.geometry-viewer-general-options {
+  max-height: var(--geometry-options-height);
+}
+
 .geometry-viewer-options-panel label {
   display: flex;
   align-items: center;
@@ -593,6 +597,6 @@
 }
 
 .geometry-size-range { position: relative; }
-.geometry-size-range > i { position: absolute; left: 50%; top: -6px; transform: translateX(-50%); width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 6px solid #edf2f7; pointer-events: none; }
+.geometry-size-range > i { position: absolute; left: var(--nominal-position, 40%); top: -6px; transform: translateX(-50%); width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 6px solid #edf2f7; pointer-events: none; }
 
 .geometry-viewport-tooltip.geometry-cube-tooltip { max-width: min(600px, calc(100% - 16px)); }

@@ -1,3 +1,10 @@
+const logMinimum = -2, logMaximum = 3;
+export const RESULT_SIZE_SCALE = Object.freeze({
+  logMinimum, logMaximum, logStep: .05,
+  minimum: 10 ** logMinimum, maximum: 10 ** logMaximum,
+  nominalPercent: 100 * -logMinimum / (logMaximum - logMinimum),
+});
+
 // Only small, immutable scale descriptors survive tab unmounts. Neither result
 // arrays nor the task's HDF5/Three resources are retained by these maps.
 const taskReferences = new WeakMap();

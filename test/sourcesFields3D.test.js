@@ -88,8 +88,8 @@ test("scalar maps expose size controls, force every active layer to color mode a
   assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [false, false, false]);
   ui.controls().onChange({ currentTarget: { checked: true } });
   assert.equal(settings.resultVectorColorMap, false, "forced scalar mode must not overwrite the vector preference");
-  ui.controls().onInput({ currentTarget: { valueAsNumber: 1 } });
-  assert.equal(ui.scale(), 10);
+  ui.controls().onInput({ currentTarget: { valueAsNumber: 3 } });
+  assert.equal(ui.scale(), 1000);
   assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [true, true, true]);
   ui.quantities.regions.write("none"); ui.quantities.virtual.write("none");
   assert.equal(ui.hasVectors(), false); assert.equal(ui.hasScalars(), true);
@@ -184,10 +184,10 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
     set("resultVectorColorMap", true); set("resultVectorScale", 8);
     set("resultVectorColorMap", false); set("resultVectorColorMap", true);
     assert.equal(requests.length, 1);
-    set("resultVectorScale", 10);
+    set("resultVectorScale", 1000);
     assert.equal(requests.length, 2);
     assert.equal(requests.at(-1).layers[0].volumeMode, true);
-    set("resultVectorScale", 10);
+    set("resultVectorScale", 1000);
     assert.equal(requests.length, 2);
     set("resultVectorScale", 9);
     assert.equal(requests.length, 3);
@@ -200,7 +200,7 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
     assert.equal(ui.controls().checked, true);
     set("resultVectorScale", 8);
     assert.equal(requests.length, 4);
-    set("resultVectorScale", 10);
+    set("resultVectorScale", 1000);
     assert.equal(requests.length, 5);
     assert.equal(requests.at(-1).layers[0].volumeMode, true);
     set("resultElementsQuantity", "JEdot");
@@ -302,7 +302,7 @@ test("relative conductivity is unavailable without HTS without blocking other ma
 });
 
 test("normalized vectors retain scalar maps, select arrows over vector maps and freeze during capture", () => {
-  const props = fixture(), settings = { resultElementsQuantity: "J", resultRegionsQuantity: "Bs", resultVectorScale: 10, resultVectorColorMap: true };
+  const props = fixture(), settings = { resultElementsQuantity: "J", resultRegionsQuantity: "Bs", resultVectorScale: 1000, resultVectorColorMap: true };
   const ui = sourcesFields3DSetup(props, settings);
   ui.changeNormalizeVectors(true);
   assert.equal(ui.normalizeVectors(), true); assert.equal(ui.colorMap(), false);

@@ -33,11 +33,18 @@ test("symmetry filters preserve graph resources while hiding images; selection a
   updateGraphScene(THREE, f.root, f.scene, f.graphs, { filters: { symmetry: { mirror: false, periodic: false } }, selected: { recordIndex: 0 }, preview: { recordIndex: 0, direction: 1 } });
   assert.equal(surfaces(f.root)[0], meshes[0]); assert.equal(surfaces(f.root).filter(m => m.parent.visible).length, 4);
   assert.ok(f.root.getObjectByName("graph-selected-element")); assert.ok(f.root.getObjectByName("graph-slice-preview")); assert.equal(f.reads.length, count);
+  const selection = f.root.getObjectByName("graph-selected-element");
+  assert.ok(selection.children.every(mesh => mesh.isMesh && mesh.material.transparent && mesh.material.depthTest && !mesh.material.depthWrite));
+  assert.ok(selection.children.every(mesh => mesh.geometry.index.count === 36 && mesh.material.opacity < .2));
+  const patch = f.root.getObjectByName("graph-slice-preview").children[0].geometry.attributes.position;
+  assert.equal(patch.getY(0), 10);
+  updateGraphScene(THREE, f.root, f.scene, f.graphs, { preview: { recordIndex: 0, direction: 0, discrete: 4 } });
+  assert.equal(f.root.getObjectByName("graph-slice-preview").children[0].geometry.attributes.position.getX(0), 35);
   disposeGraphScene(f.root);
 });
 
 test("replacing and removing surface plots disposes geometry and material resources", async () => {
-  const f = await fixture(); updateGraphScene(THREE, f.root, f.scene, f.graphs);
+  const f = await fixture(); updateGraphScene(THREE, f.root, f.scene, f.graphs, { selected: { recordIndex: 0 } });
   let expected = 0, disposed = 0;
   f.root.traverse(o => { for (const resource of [o.geometry, o.material].filter(Boolean)) { expected++; resource.addEventListener("dispose", () => disposed++); } });
   updateGraphScene(THREE, f.root, f.scene, [], {}); assert.equal(f.root.children.length, 0); assert.equal(disposed, expected);

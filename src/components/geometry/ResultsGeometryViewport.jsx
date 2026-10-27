@@ -26,6 +26,7 @@ import {
   ThreeGeometryViewport,
 } from "./ThreeGeometryViewport.jsx";
 import { RESULT_SCALAR_PALETTES } from "../../services/visualization/resultScalarColors.js";
+import { RESULT_SIZE_SCALE } from "../../services/visualization/resultVectorScale.js";
 import "./ResultsGeometryViewport.css";
 
 const EMPTY_RENDER_STATS = Object.freeze({
@@ -228,15 +229,14 @@ export function ResultsGeometryViewport(props) {
     const toolbarBounds = toolbarElement?.getBoundingClientRect();
     const panelWidth = optionsPanelElement?.offsetWidth ?? 248;
     const maximumLeft = Math.max(8, viewerBounds.width - panelWidth - 8);
+    const top = Math.max((toolbarBounds?.bottom ?? buttonBounds.bottom) - viewerBounds.top + 4, 4);
     setPanelPosition({
       left: Math.min(
         Math.max(buttonBounds.left - viewerBounds.left, 8),
         maximumLeft,
       ),
-      top: Math.max(
-        (toolbarBounds?.bottom ?? buttonBounds.bottom) - viewerBounds.top + 4,
-        4,
-      ),
+      top,
+      availableHeight: Math.max(0, viewerBounds.height - top - 8),
     });
   };
 
@@ -412,11 +412,12 @@ export function ResultsGeometryViewport(props) {
             </button>
 
             <label class="geometry-viewer-transparency geometry-viewer-size"
-              title="Размер векторов и высота поверхностей графиков; середина — номинальный размер">
-              <span>Размер</span>
-              <span class="geometry-size-range"><i aria-hidden="true" title="Номинальный размер" />
-                <input type="range" min="-1" max="1" step="0.05" value={Math.log10(props.resultVectorScale ?? 1)}
+              title="Логарифмический масштаб 0,01–1000: длина векторов и высота графиков. Треугольник — номинал 1. В режиме «Карта» крайнее правое положение включает объёмную карту.">
+              <span>Размер <output>{Number((props.resultVectorScale ?? 1).toPrecision(3))}×</output></span>
+              <span class="geometry-size-range" style={{ "--nominal-position": `${RESULT_SIZE_SCALE.nominalPercent}%` }}><i aria-hidden="true" title="Номинальный размер: 1×" />
+                <input type="range" min={RESULT_SIZE_SCALE.logMinimum} max={RESULT_SIZE_SCALE.logMaximum} step={RESULT_SIZE_SCALE.logStep} value={Math.log10(props.resultVectorScale ?? 1)}
                   aria-label="Размер представления" disabled={props.flightBlocked}
+                  aria-valuetext={`${Number((props.resultVectorScale ?? 1).toPrecision(3))} от номинального размера`}
                   onInput={event => props.onResultVectorScaleChange?.(10 ** event.currentTarget.valueAsNumber)} />
               </span>
             </label>
@@ -440,6 +441,7 @@ export function ResultsGeometryViewport(props) {
             }}
             id={OPTIONS_PANEL_ID}
             class="geometry-viewer-options-panel"
+            classList={{ "geometry-viewer-general-options": openPanel() === "general" }}
             role="dialog"
             aria-modal="false"
             aria-label={openPanel() === "general"
@@ -451,6 +453,7 @@ export function ResultsGeometryViewport(props) {
             style={{
               left: `${panelPosition().left}px`,
               top: `${panelPosition().top}px`,
+              "--geometry-options-height": `${panelPosition().availableHeight ?? 360}px`,
             }}
           >
             <Show when={openPanel() === "elements"}>

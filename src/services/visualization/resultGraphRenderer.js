@@ -85,9 +85,13 @@ export function updateGraphScene(THREE, root, scene, graphs, options = {}) {
       const group = new THREE.Group(); group.name = "graph-selected-element";
       for (const instance of primitive.instances) {
         if (!visible(primitive.source, instance, settings.filters)) continue;
-        const points = Array.from(primitive.edgeIndices, i => new THREE.Vector3(...applyMatrix4ToPoint(instance.matrix, primitive.vertices.subarray(i * 3, i * 3 + 3))));
-        const edges = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: 0xffa000, transparent: true, depthTest: false, depthWrite: false }));
-        edges.renderOrder = 35; group.add(edges);
+        const positions = new Float64Array(primitive.vertices.length);
+        for (let n = 0; n < positions.length / 3; n++) positions.set(applyMatrix4ToPoint(instance.matrix, primitive.vertices.subarray(n * 3, n * 3 + 3)), n * 3);
+        const tint = new THREE.Mesh(geometry(THREE, positions, primitive.indices), new THREE.MeshBasicMaterial({
+          color: 0xffb640, transparent: true, opacity: .12, side: THREE.DoubleSide, depthTest: true, depthWrite: false,
+          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+        }));
+        tint.name = "graph-element-tint"; tint.renderOrder = 34; group.add(tint);
       }
       root.add(group);
     }
@@ -99,7 +103,7 @@ export function updateGraphScene(THREE, root, scene, graphs, options = {}) {
       const flat = primitive.controlVertices ?? primitive.vertices;
       const vertices = Array.from({ length: flat.length / 3 }, (_, i) => Array.from(flat.slice(i * 3, i * 3 + 3)));
       try {
-        const patch = graphSlicePatch(vertices, descriptor.direction, [2, 2, 2]);
+        const patch = graphSlicePatch(vertices, descriptor.direction, primitive.discretization.counts, descriptor.discrete);
         const group = new THREE.Group(); group.name = "graph-slice-preview";
         for (const instance of primitive.instances) {
           if (!visible(primitive.source, instance, settings.filters)) continue;

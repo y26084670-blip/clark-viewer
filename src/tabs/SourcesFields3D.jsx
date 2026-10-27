@@ -15,7 +15,8 @@ import { applyResultGlobalRange, resultGlobalScale } from "../services/results/r
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import { movie3DFilenamePrefix } from "../services/movie/movieFilename.js";
 import { STREAMLINE_METHODS, STREAMLINE_DEFAULT_TOLERANCE } from "../services/visualization/resultStreamlineField.js";
-import { GRAPH_SLICE_DIRECTIONS } from "../services/visualization/resultGraphField.js";
+import { GRAPH_SLICE_DIRECTIONS, graphSliceCount, middleGraphDiscrete } from "../services/visualization/resultGraphField.js";
+import { RESULT_SIZE_SCALE } from "../services/visualization/resultVectorScale.js";
 import { createResultGraphReader, graphQuantityKey, graphRequestKey } from "../services/results/resultGraphRequests.js";
 import "./SourcesFields3D.css";
 
@@ -62,6 +63,10 @@ export function SourcesFields3D(props) {
   const selectedSlice = () => graphSlices().find(s => s.id === activeSlice());
   const graphQuantities = () => ({ elements: elementsQuantity(), regions: regionsQuantity(), virtual: virtualQuantity() });
   const sliceScalar = slice => QUANTITIES[graphQuantityKey(props.task, slice, graphQuantities())]?.components !== 3;
+  const sliceCount = (recordIndex, direction) => graphSliceCount(props.task?.elements?.[recordIndex], direction);
+  const sliceLabel = (recordIndex, direction) => `${GRAPH_SLICE_DIRECTIONS[direction].label} (${sliceCount(recordIndex, direction) || "—"})`;
+  const sliceChoice = (recordIndex, direction, previous) => ({ recordIndex, direction,
+    discrete: previous?.direction === direction ? previous.discrete : middleGraphDiscrete(sliceCount(recordIndex, direction)) });
   const closeGraphChoice = () => { setAddingSlice(false); setDirectionMenu(null); setPreviewSlice(null); };
   createEffect(() => {
     const task = props.task;
@@ -80,20 +85,27 @@ export function SourcesFields3D(props) {
   function addSlice(direction) {
     if (graphBlocked()) return;
     const record = props.task.elements[addElement()];
-    if (!record) return;
+    if (!record || !sliceCount(addElement(), direction)) return;
+    const discrete = middleGraphDiscrete(sliceCount(addElement(), direction));
     const group = record.targ === 3 ? "virtual" : "elements";
     if (quantities[group].read() === "none") quantities[group].write(group === "virtual" ? (props.task.metadata.HV ? "Bv" : "Av") : (props.task.metadata.MH ? "M" : "J"));
-    const existing = graphSlices().find(s => s.recordIndex === addElement() && s.direction === direction && s.component === 0);
+    const existing = graphSlices().find(s => s.recordIndex === addElement() && s.direction === direction && s.discrete === discrete && s.component === 0);
     if (existing) setActiveSlice(existing.id);
     else {
-      const slice = { id: nextSliceId++, recordIndex: addElement(), direction, component: 0 };
+      const slice = { id: nextSliceId++, recordIndex: addElement(), direction, discrete, component: 0 };
       setGraphSlices(previous => [...previous, slice]); setActiveSlice(slice.id);
     }
     setSliceGraphs(true); closeGraphChoice();
   }
   function changeSlice(id, update) {
     if (graphBlocked()) return;
-    setGraphSlices(previous => previous.map(s => s.id === id ? { ...s, ...update } : s));
+    setGraphSlices(previous => previous.map(s => {
+      if (s.id !== id) return s;
+      const direction = update.direction ?? s.direction, count = sliceCount(s.recordIndex, direction);
+      const discrete = direction !== s.direction ? middleGraphDiscrete(count) : update.discrete ?? s.discrete;
+      if (!Number.isSafeInteger(discrete) || discrete < 1 || discrete > count) return s;
+      return { ...s, ...update, direction, discrete };
+    }));
     setActiveSlice(id);
   }
   function deleteSlice() {
@@ -105,9 +117,11 @@ export function SourcesFields3D(props) {
     return <div class="source-slice-directions" role="menu" aria-label="Направление среза"
       onPointerLeave={() => setPreviewSlice(null)}>
       <For each={GRAPH_SLICE_DIRECTIONS}>{option => <button type="button" role="menuitem"
-        onPointerEnter={() => setPreviewSlice({ recordIndex: p.recordIndex, direction: option.value })}
-        onFocus={() => setPreviewSlice({ recordIndex: p.recordIndex, direction: option.value })}
-        onClick={() => { p.choose(option.value); setDirectionMenu(null); setPreviewSlice(null); }}>{option.label}</button>}</For>
+        disabled={!sliceCount(p.recordIndex, option.value)}
+        title={`Срез поперёк DV${option.value + 1}; в скобках число дискретов. Наведите для предпросмотра, нажмите для выбора. Новое направление начинает с центрального дискрета.`}
+        onPointerEnter={() => setPreviewSlice(sliceChoice(p.recordIndex, option.value, p.slice))}
+        onFocus={() => setPreviewSlice(sliceChoice(p.recordIndex, option.value, p.slice))}
+        onClick={() => { p.choose(option.value); setDirectionMenu(null); setPreviewSlice(null); }}>{sliceLabel(p.recordIndex, option.value)}</button>}</For>
     </div>;
   }
   let nextStreamlineId = savedStreamlines?.nextId ?? 1, streamlineTask = props.task;
@@ -189,7 +203,7 @@ export function SourcesFields3D(props) {
   // Scalars require a color map, but must not replace the user's vector-mode
   // preference when a later quantity selection contains only vectors again.
   const effectiveColorMap = createMemo(() => hasScalars() || colorMap());
-  const volumeMode = createMemo(() => effectiveColorMap() && scale() >= 10 - 1e-9);
+  const volumeMode = createMemo(() => effectiveColorMap() && scale() >= RESULT_SIZE_SCALE.maximum * (1 - 1e-9));
   const requestedLayers = createMemo(() => RESULT_LAYER_GROUPS.map(group => {
     const records = group.key === "regions" ? props.task?.regions ?? []
       : (props.task?.elements ?? []).filter(record => group.key === "virtual" ? record.targ === 3 : record.targ !== 3);
@@ -376,24 +390,27 @@ export function SourcesFields3D(props) {
             <div class="source-toolbar-menu-panel source-graphs-panel" onKeyDown={event => {
               if (event.key === "Escape") { event.stopPropagation(); closeGraphChoice(); }
             }}>
-              <label class="source-toolbar-option"><input type="checkbox" checked={graphsOnly()} disabled={graphBlocked()}
+              <label class="source-toolbar-option" title="Оставить геометрию и включённые поверхности графиков; скрыть расчётные векторы, карты и векторные линии."><input type="checkbox" checked={graphsOnly()} disabled={graphBlocked()}
                 onChange={event => setGraphsOnly(event.currentTarget.checked)} /> Только графики</label>
-              <label class="source-toolbar-option"><input type="checkbox" checked={areaGraphs()} disabled={graphBlocked()}
+              <label class="source-toolbar-option" title="Показать над видимыми площадками поверхности выбранной величины областей: X — красная, Y — зелёная, Z — синяя. Снятие флажка скрывает поверхности."><input type="checkbox" checked={areaGraphs()} disabled={graphBlocked()}
                 onChange={event => {
                   if (event.currentTarget.checked && regionsQuantity() === "none") setRegionsQuantity(props.task.metadata.HS ? "Bs" : "As");
                   setAreaGraphs(event.currentTarget.checked);
                 }} /> Графики над площадками</label>
               <div class="source-slice-actions">
-                <label class="source-toolbar-option"><input type="checkbox" checked={sliceGraphs()} disabled={graphBlocked()}
+                <label class="source-toolbar-option" title="Показать или скрыть все добавленные срезы. Скрытие сохраняет строки таблицы и выбранные дискреты."><input type="checkbox" checked={sliceGraphs()} disabled={graphBlocked()}
                   onChange={event => setSliceGraphs(event.currentTarget.checked)} /> Срезы в элементах</label>
                 <button type="button" aria-expanded={addingSlice()} disabled={graphBlocked() || !props.task?.elements?.length}
+                  title="Добавить график среза: выберите элемент, наведите на направление для предпросмотра и нажмите на плоскость. Создаётся центральный слой; номер дискрета меняется в таблице. Повторное нажатие закрывает выбор."
                   onClick={() => { setAddingSlice(!addingSlice()); setDirectionMenu(null); setPreviewSlice(null);
                     setAddElement(selectedSlice()?.recordIndex ?? Math.max(0, props.task.elements.findIndex(r => props.elements.includes(r.id)))); }}>Добавить</button>
-                <button type="button" disabled={graphBlocked() || !selectedSlice()} onClick={deleteSlice}>Удалить</button>
+                <button type="button" disabled={graphBlocked() || !selectedSlice()} onClick={deleteSlice}
+                  title="Удалить выбранную строку таблицы и её график во всех симметричных образах. Сначала выберите строку щелчком; элемент и файлы результатов сохраняются.">Удалить</button>
               </div>
               <Show when={addingSlice()}>
                 <div class="source-slice-add">
                   <label>Элемент <select aria-label="Элемент для среза" value={addElement()}
+                    title="Элемент для нового среза: порядковый номер и имя из списка элементов."
                     onChange={event => { setAddElement(Number(event.currentTarget.value)); setPreviewSlice(null); }}>
                     <For each={props.task.elements}>{record => <option value={record.recordIndex}>№{record.id} · {record.name}</option>}</For>
                   </select></label>
@@ -402,25 +419,44 @@ export function SourcesFields3D(props) {
               </Show>
               <div class="source-slice-scroll">
                 <table class="source-slice-table" aria-label="Графики срезов элементов">
-                  <thead><tr><th>Имя элемента</th><th>Номер</th><th>Направление среза</th><th>Компонента</th></tr></thead>
-                  <tbody><For each={graphSlices()}>{slice => <tr classList={{ selected: activeSlice() === slice.id }}
-                    aria-selected={activeSlice() === slice.id} tabIndex="0"
-                    onClick={event => { if (!graphBlocked()) { setActiveSlice(slice.id); if (!event.target.closest(".source-slice-direction")) setDirectionMenu(null); } }} onFocus={() => !graphBlocked() && setActiveSlice(slice.id)}>
-                    <td title={props.task.elements[slice.recordIndex]?.name}>{props.task.elements[slice.recordIndex]?.name}</td>
-                    <td>{props.task.elements[slice.recordIndex]?.id}</td>
-                    <td><button type="button" class="source-slice-direction" aria-haspopup="menu" aria-expanded={directionMenu() === slice.id}
-                      disabled={graphBlocked()} onClick={() => { setDirectionMenu(directionMenu() === slice.id ? null : slice.id); setAddingSlice(false); }}>
-                      {GRAPH_SLICE_DIRECTIONS[slice.direction].label}</button>
+                  <thead><tr><th title="Имя элемента из исходных данных; только для чтения.">Имя элемента</th>
+                    <th title="Порядковый номер элемента в списке; только для чтения.">Номер</th>
+                    <th title="Срез поперёк выбранного направления DV; в скобках число дискретов этого направления.">Направление среза</th>
+                    <th title="Номер слоя ЭО в выбранном направлении, от 1 до числа дискретов.">Дискрет</th>
+                    <th title="Глобальная компонента вектора X, Y или Z; для скалярной величины выбор не требуется.">Компонента</th></tr></thead>
+                  <tbody><For each={graphSlices().map(s => s.id)}>{id => {
+                    const slice = () => graphSlices().find(s => s.id === id);
+                    return <tr classList={{ selected: activeSlice() === id }}
+                    aria-selected={activeSlice() === id} tabIndex="0" title="Щёлкните для выделения среза и подсветки его элемента в 3D."
+                    onClick={event => { if (!graphBlocked()) { setActiveSlice(id); if (!event.target.closest(".source-slice-direction")) { setDirectionMenu(null); setPreviewSlice(null); } } }}
+                    onFocusIn={event => { if (!graphBlocked()) {
+                      if (activeSlice() !== id || !event.target.closest(".source-slice-direction")) { setDirectionMenu(null); setPreviewSlice(null); }
+                      setActiveSlice(id);
+                    } }}>
+                    <td title={`Имя элемента: ${props.task.elements[slice().recordIndex]?.name}`}>{props.task.elements[slice().recordIndex]?.name}</td>
+                    <td title="Порядковый номер элемента в списке; только для чтения.">{props.task.elements[slice().recordIndex]?.id}</td>
+                    <td><button type="button" class="source-slice-direction" aria-haspopup="menu" aria-expanded={directionMenu() === id}
+                      title="Выбрать направление среза с предпросмотром. В скобках — число дискретов; при смене направления выбирается центральный слой."
+                      disabled={graphBlocked()} onClick={() => { setDirectionMenu(directionMenu() === id ? null : id); setAddingSlice(false); setPreviewSlice(null); }}>
+                      {sliceLabel(slice().recordIndex, slice().direction)}</button>
                     </td>
-                    <td><select aria-label={`Компонента среза ${slice.id}`} value={slice.component} disabled={graphBlocked() || sliceScalar(slice)}
-                      onChange={event => changeSlice(slice.id, { component: Number(event.currentTarget.value) })}>
+                    <td><input type="number" class="source-slice-discrete" aria-label={`Дискрет среза ${id}`}
+                      min="1" max={sliceCount(slice().recordIndex, slice().direction)} step="1" value={slice().discrete} disabled={graphBlocked()}
+                      title={`Слой от 1 до ${sliceCount(slice().recordIndex, slice().direction)}. Плоскость проходит через центры ЭО слоя; изменение номера сразу перемещает срез.`}
+                      onInput={event => changeSlice(id, { discrete: event.currentTarget.valueAsNumber })}
+                      onBlur={event => { event.currentTarget.value = String(slice().discrete); }}
+                      onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.value = String(slice().discrete); } }} />
+                    </td>
+                    <td title={sliceScalar(slice()) ? "Выбрана скалярная величина: компоненты X, Y, Z неприменимы." : "Выбрать глобальную компоненту вектора для этой поверхности."}>
+                      <select aria-label={`Компонента среза ${id}`} value={slice().component} disabled={graphBlocked() || sliceScalar(slice())}
+                      onChange={event => changeSlice(id, { component: Number(event.currentTarget.value) })}>
                       <For each={["X", "Y", "Z"]}>{(name, index) => <option value={index()}>{name}</option>}</For>
                     </select></td>
-                  </tr>}</For></tbody>
+                  </tr>; }}</For></tbody>
                 </table>
               </div>
               <Show when={directionMenu() !== null && selectedSlice()}>
-                <DirectionChoices recordIndex={selectedSlice().recordIndex} choose={direction => changeSlice(directionMenu(), { direction })} />
+                <DirectionChoices recordIndex={selectedSlice().recordIndex} slice={selectedSlice()} choose={direction => changeSlice(directionMenu(), { direction })} />
               </Show>
               <Show when={graphBusy()}><span role="status">Построение поверхностей…</span></Show>
               <Show when={graphError()}><span class="source-graph-error" role="alert">{graphError()}</span></Show>

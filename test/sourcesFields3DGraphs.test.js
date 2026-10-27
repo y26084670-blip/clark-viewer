@@ -13,13 +13,28 @@ test("all graph options start unchecked; Only graphs keeps geometry selections a
   ui.setAreaGraphs(true); assert.deepEqual(ui.graphRequest().regions, [0]); ui.close();
 });
 
-test("adding shows a middle slice immediately; editing one row, selection and deletion are independent", () => {
+test("adding shows a central EO layer immediately; editing one row, selection and deletion are independent", () => {
   const { ui } = setup(); ui.setAddElement(0); ui.addSlice(2);
   assert.equal(ui.sliceGraphs(), true); assert.equal(ui.graphSlices().length, 1); assert.equal(ui.graphRequest().slices[0].direction, 2);
+  assert.equal(ui.graphSlices()[0].discrete, 1);
   ui.setAddElement(1); ui.addSlice(0); assert.equal(ui.graphSlices().length, 2);
   const first = ui.graphSlices()[0].id; ui.changeSlice(first, { component: 2, direction: 1 });
   assert.equal(ui.activeSlice(), first); assert.equal(ui.graphSlices()[1].component, 0);
   ui.deleteSlice(); assert.equal(ui.graphSlices().length, 1); assert.equal(ui.graphSlices()[0].recordIndex, 1); ui.close();
+});
+
+test("discrete edits retain row identity, reject invalid numbers and reset to the central layer on direction change", () => {
+  const { ui } = setup(); ui.addSlice(0); const id = ui.activeSlice();
+  assert.equal(ui.sliceLabel(0, 0), "плоскость DV1 (4)"); assert.equal(ui.graphSlices()[0].discrete, 2);
+  ui.changeSlice(id, { discrete: 4 }); assert.equal(ui.graphSlices()[0].discrete, 4);
+  for (const discrete of [0,5,NaN,1.5]) ui.changeSlice(id, { discrete });
+  assert.equal(ui.graphSlices()[0].discrete, 4); assert.equal(ui.graphSlices()[0].id, id);
+  ui.addSlice(0); assert.equal(ui.graphSlices().length, 2, "a different layer is a different graph");
+  ui.addSlice(0); assert.equal(ui.graphSlices().length, 2, "adding the same central layer selects it");
+  assert.deepEqual(ui.sliceChoice(0, 0, ui.graphSlices()[0]), { recordIndex: 0, direction: 0, discrete: 4 });
+  assert.deepEqual(ui.sliceChoice(0, 2, ui.graphSlices()[0]), { recordIndex: 0, direction: 2, discrete: 1 });
+  ui.changeSlice(id, { direction: 2 }); assert.equal(ui.graphSlices()[0].discrete, 1);
+  ui.close();
 });
 
 test("hiding preserves rows; task-bound choices survive tab remount and do not leak to another task", () => {

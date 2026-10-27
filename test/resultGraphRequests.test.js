@@ -12,7 +12,35 @@ const options = { processorFactory: () => ({ process: async input => calculateRe
 const request = f => ({ task: f.task, slices: [{ id: 1, recordIndex: 0, direction: 0, component: 0 }], regions: [], time: 0, quantities: { elements: "J", regions: "Bs", virtual: "Bv" } });
 const near = (a, b, tolerance = 1e-8) => assert.ok(Math.abs(a - b) <= tolerance, `${a} != ${b}`);
 
-for (const direction of [0, 1, 2]) test(`DV${direction + 1} is the geometric middle plane and reconstructs signed affine components in every saved image`, async () => {
+test("one-based discrete selects every EO layer, including first/last, without rereading the grid", async () => {
+  const f = graph3DTask(), reader = createResultGraphReader(options), r = request(f);
+  const dimensions = [4,3,2], sizes = [40,20,10];
+  for (const direction of [0,1,2]) for (let discrete = 1; discrete <= dimensions[direction]; discrete++) {
+    const { graphs, errors } = await reader.read({ ...r, slices: [{ ...r.slices[0], direction, discrete, component: direction }] });
+    assert.deepEqual(errors, []);
+    for (const surface of graphs[0].surfaces) for (let n = 0; n < surface.values.length; n++) {
+      const p = Array.from(surface.positions.subarray(n * 3, n * 3 + 3));
+      near(p[direction], sizes[direction] * (discrete - .5) / dimensions[direction] + (direction === 0 ? 60 * surface.instance.ps : 0));
+      near(surface.values[n], [p[0], 2 * p[1], -p[2]][direction]);
+    }
+  }
+  assert.equal(f.reads.length, 1);
+  for (const discrete of [0,5,1.5,NaN,Infinity]) {
+    const bad = await reader.read({ ...r, slices: [{ ...r.slices[0], discrete }] });
+    assert.equal(bad.graphs.length, 0); assert.match(bad.errors[0].message, /Номер дискрета/);
+  }
+  reader.close();
+});
+
+test("a single EO layer is exactly central; odd and even counts choose valid central centres", () => {
+  const vertices = [[0,0,0],[40,0,0],[0,20,0],[40,20,0],[0,0,10],[40,0,10],[0,20,10],[40,20,10]];
+  for (const [count, expected] of [[1,20],[3,20],[4,15]]) {
+    const patch = graphSlicePatch(vertices, 0, [count,2,2]);
+    for (let n = 0; n < patch.positions.length / 3; n++) near(patch.positions[n * 3], expected);
+  }
+});
+
+for (const direction of [0, 1, 2]) test(`DV${direction + 1} defaults to the central EO layer and reconstructs signed affine components in every saved image`, async () => {
   const f = graph3DTask(), reader = createResultGraphReader(options), r = request(f);
   const result = await reader.read({ ...r, slices: [0, 1, 2].map(component => ({ ...r.slices[0], id: component + 1, direction, component })) });
   assert.deepEqual(result.errors, []); assert.equal(f.reads.length, 1); assert.equal(f.reads[0].every, 1);
@@ -20,7 +48,7 @@ for (const direction of [0, 1, 2]) test(`DV${direction + 1} is the geometric mid
     assert.equal(graph.surfaces.length, 2);
     for (let n = 0; n < surface.values.length; n++) {
       const p = Array.from(surface.positions.subarray(n * 3, n * 3 + 3));
-      near(p[direction], [20 + 60 * surface.instance.ps, 10, 5][direction]);
+      near(p[direction], [15 + 60 * surface.instance.ps, 10, 2.5][direction]);
       near(surface.values[n], [p[0], 2 * p[1], -p[2]][graph.component]);
       near(surface.normals[n * 3 + direction], 1);
     }
@@ -97,10 +125,11 @@ test("HV field storage permutations do not permute the user's DV plane", async (
     f.task.metadata.HV = { header: { stride: 6, numbs: [expectedPointCount(record, "HV")], inds1: [1] }, steps: [{ index: 0 }] };
     f.buffers.HV = [Float64Array.from(values)]; const reader = createResultGraphReader(options);
     for (const direction of [0, 1, 2]) {
-      const r = request(f); const result = await reader.read({ ...r, slices: [{ ...r.slices[0], direction, component: 1 }] });
+      const r = request(f); const discrete = [4,3,2][direction];
+      const result = await reader.read({ ...r, slices: [{ ...r.slices[0], direction, discrete, component: 1 }] });
       assert.deepEqual(result.errors, [], `indAmp=${indAmp}, DV${direction+1}`);
       const surface = result.graphs[0].surfaces[0];
-      for (let n = 0; n < surface.values.length; n++) { near(surface.positions[n * 3 + direction], [20,10,5][direction]); near(surface.values[n], 2 * surface.positions[n * 3 + 1]); }
+      for (let n = 0; n < surface.values.length; n++) { near(surface.positions[n * 3 + direction], [35,50/3,7.5][direction]); near(surface.values[n], 2 * surface.positions[n * 3 + 1]); }
     }
     reader.close();
   }
@@ -139,9 +168,9 @@ test("closing a pending reader prevents interpolation and late publication", asy
   const pending = reader.read(request(f)); reader.close(); await release(); await assert.rejects(pending, { name: "AbortError" }); assert.equal(processed, false);
 });
 
-test("warped hexahedra use the parametric centre surface with consistently oriented local normals", () => {
+test("warped hexahedra use the parametric EO-layer surface with consistently oriented local normals", () => {
   const vertices = [[0,0,0],[2,0,0],[0,2,0],[2,2,0],[0,0,2],[2,0,3],[0,2,2],[2,2,4]];
-  const patch = graphSlicePatch(vertices, 2, [4,4,2]);
+  const patch = graphSlicePatch(vertices, 2, [4,4,3], 2);
   const mid = Math.floor(patch.positions.length / 6); const p = patch.positions.subarray(mid * 3, mid * 3 + 3);
   assert.ok(p[2] > 1); for (let n = 0; n < patch.normals.length / 3; n++) assert.ok(patch.normals[n * 3 + 2] > 0);
 });

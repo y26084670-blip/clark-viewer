@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import solid from "vite-plugin-solid";
+const planeName = direction => `плоскость DV${direction} (${[4,3,2][direction-1]})`;
 const root = fileURLToPath(new URL("..", import.meta.url)), out = process.env.CHECK_OUTPUT || "/tmp/clark-3d-graphs";
 const dir = await mkdtemp(path.join(root, "__graph3d_check_")); await mkdir(out, { recursive: true });
 await writeFile(path.join(dir, "index.html"), '<html><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="/scripts/test-support/graph3DBrowserFixture.jsx"></script></body></html>');
@@ -17,8 +18,8 @@ const inspect = { name: "surface-graph-inspection", enforce: "pre", configureSer
     '  window.graphUI = { slices: graphSlices, active: activeSlice, results: graphResults, only: graphsOnly, busy: graphBusy, error: graphError };\n  return <div class="results-layout">');
   if (id.endsWith("/src/components/geometry/ThreeGeometryViewport.jsx")) return code.replace('  return (\n    <div',
     `  window.graphScene = { ready: () => ready(), snapshot: () => {
-      const meshes=[];graphRoot?.traverse(o=>{if(o.name==="result-graph-surface")meshes.push({id:o.userData.graphId,component:o.userData.component,visible:o.parent.visible,color:o.material.color.getHexString(),lit:o.material.isMeshStandardMaterial,palette:o.material.vertexColors,factor:o.userData.factor,positions:Array.from(o.geometry.attributes.position.array.slice(0,9))});});
-      return {meshes,preview:graphRoot?.getObjectByName("graph-slice-preview")?.children.length??0,previewSpec:props.graphPreview,selected:graphRoot?.getObjectByName("graph-selected-element")?.children.length??0,
+      const meshes=[];graphRoot?.traverse(o=>{if(o.name==="result-graph-surface")meshes.push({id:o.userData.graphId,component:o.userData.component,visible:o.parent.visible,color:o.material.color.getHexString(),lit:o.material.isMeshStandardMaterial,palette:o.material.vertexColors,factor:o.userData.factor,positions:Array.from(o.geometry.attributes.position.array.slice(0,9)),basePositions:Array.from(o.userData.surface.positions.slice(0,9))});});
+      return {meshes,preview:graphRoot?.getObjectByName("graph-slice-preview")?.children.length??0,previewSpec:props.graphPreview,previewPoint:graphRoot?.getObjectByName("graph-slice-preview")?.children[0]?.geometry.attributes.position.array.slice(0,3),selectionTypes:graphRoot?.getObjectByName("graph-selected-element")?.children.map(o=>o.type)??[],selected:graphRoot?.getObjectByName("graph-selected-element")?.children.length??0,
         camera:[camera?.position.toArray(),camera?.quaternion.toArray(),controls?.target.toArray()],direction:camera?.position.clone().sub(controls.target).normalize().toArray(),layers:[...resultLayerStates.values()].reduce((n,s)=>n+(s.vectorRoot?.children.length??0)+(s.scalarRoot?.children.length??0),0)};
     }};\n  return (\n    <div`);
 } };
@@ -47,14 +48,17 @@ try {
   const transparency = page.getByRole("slider", { name: "Прозрачность геометрии и рёбер", exact: true });
   assert.equal((await size.boundingBox()).width, (await transparency.boundingBox()).width);
   assert.ok((await size.boundingBox()).x < (await transparency.boundingBox()).x);
+  assert.equal(await size.getAttribute("min"), "-2"); assert.equal(await size.getAttribute("max"), "3");
   const mark = await page.locator(".geometry-size-range > i").boundingBox(), slider = await size.boundingBox();
-  assert.ok(Math.abs(mark.x + mark.width / 2 - slider.x - slider.width / 2) < 1);
+  assert.ok(Math.abs(mark.x + mark.width / 2 - slider.x - slider.width * .4) < 1);
   if (await graphs.isVisible()) await page.getByRole("button", { name: "Графики", exact: true }).click();
   await page.getByRole("button", { name: "Общие опции отображения", exact: true }).click();
   const general = page.getByRole("dialog", { name: "Общие опции отображения", exact: true });
   const order = await general.locator("select,label,button").allTextContents();
   assert.ok(order.at(-3).includes("палитра")); assert.ok(order.at(-2).includes("Производительность")); assert.equal(order.at(-1), "Полёт");
-  pass("Size and Transparency have equal widths; the nominal marker is centred and General options end in palette, performance, flight");
+  assert.ok(await general.evaluate(el => el.scrollHeight <= el.clientHeight + 1));
+  await page.screenshot({ path: path.join(out, "general-options.png"), fullPage: true });
+  pass("Logarithmic size covers 0.01–1000 with the nominal marker at 40%; equal-width sliders and General options without scrolling");
 
   await open(); await graphs.getByRole("checkbox", { name: "Графики над площадками", exact: true }).check();
   await page.waitForFunction(() => graphScene.snapshot().meshes.length === 3); await waitGraphs();
@@ -64,18 +68,39 @@ try {
   await graphs.getByRole("button", { name: "Добавить", exact: true }).click();
   const add = graphs.locator(".source-slice-add");
   for (const direction of [1, 2, 3]) {
-    await add.getByRole("menuitem", { name: `плоскость DV${direction}`, exact: true }).hover();
+    await add.getByRole("menuitem", { name: planeName(direction), exact: true }).hover();
     await page.waitForFunction(d => graphScene.snapshot().preview > 0 && graphScene.snapshot().previewSpec.direction === d - 1, direction);
   }
-  await add.getByRole("menuitem", { name: "плоскость DV1", exact: true }).click();
+  await add.getByRole("menuitem", { name: planeName(1), exact: true }).click();
   await page.waitForFunction(() => graphUI.slices().length === 1 && graphScene.snapshot().meshes.length === 5); await waitGraphs();
   assert.equal(await graphs.getByRole("checkbox", { name: "Срезы в элементах", exact: true }).isChecked(), true);
   assert.equal((await scene()).selected, 2); assert.ok((await scene()).meshes.filter(m => m.id === 1).every(m => m.palette && m.lit));
-  pass("DV1/DV2/DV3 hover previews update live; adding creates a slice and both periodic images without aiming at a node");
+  assert.deepEqual((await scene()).selectionTypes, ["Mesh", "Mesh"]);
+  assert.equal(await graphs.getByRole("spinbutton", { name: "Дискрет среза 1", exact: true }).inputValue(), "2");
+  for (const button of ["Добавить", "Удалить"]) assert.ok((await graphs.getByRole("button", { name: button, exact: true }).getAttribute("title")).length > 50);
+  for (const checkbox of await graphs.getByRole("checkbox").all()) assert.ok(await checkbox.evaluate(el => !!el.closest("[title]")?.title));
+  pass("Direction menus show actual discrete counts; hover previews, tooltips and light element tint replace the extra wireframe");
+
+  const discrete = graphs.getByRole("spinbutton", { name: "Дискрет среза 1", exact: true }), discreteReads = await page.evaluate(() => graphFixture.reads.length);
+  assert.deepEqual(await discrete.evaluate(el => { const s=getComputedStyle(el); return [s.color,s.backgroundColor]; }), ["rgb(237, 242, 247)", "rgb(48, 57, 67)"]);
+  await discrete.fill("4"); await page.waitForFunction(() => graphUI.results().find(g=>g.id===1)?.discrete === 4); await waitGraphs();
+  assert.equal((await scene()).meshes.find(m=>m.id===1).basePositions[0], 35);
+  assert.ok(await discrete.evaluate(el => document.activeElement === el));
+  await discrete.press("ArrowDown"); await page.waitForFunction(() => graphUI.results().find(g=>g.id===1)?.discrete === 3);
+  await discrete.fill("0"); await graphs.locator("th").first().click(); assert.equal(await discrete.inputValue(), "3");
+  await graphs.locator("tbody tr").first().getByRole("button", { name: planeName(1), exact: true }).click();
+  await graphs.getByRole("menuitem", { name: planeName(1), exact: true }).hover();
+  await page.waitForFunction(() => graphScene.snapshot().previewSpec?.discrete === 3);
+  assert.equal((await scene()).previewPoint[0], 25);
+  await graphs.getByRole("menuitem", { name: planeName(1), exact: true }).click();
+  assert.equal(await page.evaluate(() => graphFixture.reads.length), discreteReads);
+  pass("Editing the discrete moves the plane through EO centres, preserves keyboard focus and cached reads, and rejects invalid numbers");
 
   const reads = await page.evaluate(() => graphFixture.reads.length), before = (await scene()).meshes.find(m => m.id === 1).factor;
-  await size.evaluate(input => { input.value = ".5"; input.dispatchEvent(new Event("input", { bubbles: true })); });
-  await page.waitForFunction(v => graphScene.snapshot().meshes.find(m => m.id === 1).factor > v * 3, before);
+  for (const [exponent, factor] of [[-2,.01],[3,1000]]) {
+    await size.evaluate((input, value) => { input.value = String(value); input.dispatchEvent(new Event("input", { bubbles: true })); }, exponent);
+    await page.waitForFunction(({before, factor}) => Math.abs(graphScene.snapshot().meshes.find(m => m.id === 1).factor / before - factor) < 1e-6, {before, factor});
+  }
   assert.equal(await page.evaluate(() => graphFixture.reads.length), reads);
   await size.evaluate(input => { input.value = "0"; input.dispatchEvent(new Event("input", { bubbles: true })); });
   if (await graphs.isVisible()) await page.getByRole("button", { name: "Графики", exact: true }).click();
@@ -83,10 +108,11 @@ try {
   await page.getByRole("combobox", { name: "Палитра результатов", exact: true }).selectOption("Viridis");
   assert.equal(await page.evaluate(() => graphFixture.reads.length), reads);
   await open(); const row = graphs.locator("tbody tr").first();
-  await row.getByRole("button", { name: "плоскость DV1", exact: true }).click();
-  await graphs.getByRole("menuitem", { name: "плоскость DV3", exact: true }).hover(); await page.waitForFunction(() => graphScene.snapshot().previewSpec?.direction === 2);
-  await graphs.getByRole("menuitem", { name: "плоскость DV3", exact: true }).click();
-  await row.getByRole("combobox").selectOption("1"); await waitGraphs();
+  await row.getByRole("button", { name: planeName(1), exact: true }).click();
+  await graphs.getByRole("menuitem", { name: planeName(3), exact: true }).hover(); await page.waitForFunction(() => graphScene.snapshot().previewSpec?.direction === 2);
+  await graphs.getByRole("menuitem", { name: planeName(3), exact: true }).click();
+  assert.equal(await discrete.inputValue(), "1"); assert.equal(await discrete.getAttribute("max"), "2");
+  await discrete.fill("2"); await row.getByRole("combobox").selectOption("1"); await waitGraphs();
   await page.waitForFunction(() => graphUI.results().find(g => g.id === 1)?.component === 1);
   assert.equal(await page.evaluate(() => graphFixture.reads.length), reads);
   pass("Height, palette, direction and component update immediately; editing a slice reuses cached HDF5 data");
@@ -102,8 +128,13 @@ try {
 
   await open(); await graphs.getByRole("button", { name: "Добавить", exact: true }).click();
   await add.getByRole("combobox", { name: "Элемент для среза", exact: true }).selectOption("1");
-  await add.getByRole("menuitem", { name: "плоскость DV2", exact: true }).click(); await waitGraphs();
+  await add.getByRole("menuitem", { name: planeName(2), exact: true }).click(); await waitGraphs();
   assert.equal(await graphs.locator("tbody tr").count(), 2);
+  await graphs.locator("tbody tr").first().getByRole("button", { name: planeName(3), exact: true }).click();
+  await graphs.getByRole("menuitem", { name: planeName(1), exact: true }).hover();
+  await graphs.getByRole("spinbutton", { name: "Дискрет среза 2", exact: true }).focus();
+  assert.equal(await graphs.getByRole("menuitem").count(), 0);
+  await page.waitForFunction(() => graphScene.snapshot().preview === 0);
   await graphs.locator("tbody tr").first().locator("td").first().click(); assert.equal(await page.evaluate(() => graphUI.active()), 1);
   await graphs.getByRole("button", { name: "Удалить", exact: true }).click(); await waitGraphs();
   assert.equal(await graphs.locator("tbody tr").count(), 1); assert.equal(await graphs.locator("tbody tr td").nth(1).innerText(), "2");
@@ -163,7 +194,7 @@ try {
   for (const recordIndex of [0,1]) for (const direction of [0,1,2]) {
     await graphs.getByRole("button", { name: "Добавить", exact: true }).click();
     await add.getByRole("combobox", { name: "Элемент для среза", exact: true }).selectOption(String(recordIndex));
-    await add.getByRole("menuitem", { name: `плоскость DV${direction+1}`, exact: true }).click(); await waitGraphs();
+    await add.getByRole("menuitem", { name: planeName(direction+1), exact: true }).click(); await waitGraphs();
   }
   const scroll = graphs.locator(".source-slice-scroll");
   assert.ok(await scroll.evaluate(element => element.scrollHeight > element.clientHeight));

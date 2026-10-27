@@ -128,7 +128,8 @@
 .source-graphs-panel {
   left: auto;
   right: 0;
-  min-width: min(500px, 85vw);
+  min-width: min(640px, 85vw);
+  max-width: min(640px, 85vw);
   max-height: min(560px, 70vh);
   overflow: auto;
 }
@@ -144,6 +145,8 @@
 .source-slice-table tr.selected { background: #285b3a; outline: 1px solid #70bd85; outline-offset: -1px; }
 .source-slice-table tr { cursor: pointer; }
 .source-slice-table select, .source-slice-add select { background: #303943; color: #edf2f7; color-scheme: dark; border: 1px solid #697683; border-radius: 3px; font: inherit; }
+.source-slice-table input.source-slice-discrete { width: 5em; box-sizing: border-box; padding: 3px; background: #303943; color: #edf2f7; color-scheme: dark; border: 1px solid #697683; border-radius: 3px; font: inherit; }
+.source-slice-direction { white-space: nowrap; }
 .source-slice-add { display: grid; gap: 6px; padding: 7px; border: 1px solid #697683; }
 .source-slice-add label { display: flex; gap: 6px; align-items: center; }
 .source-slice-add select { flex: 1; min-width: 0; }

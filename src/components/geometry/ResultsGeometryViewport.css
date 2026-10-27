@@ -340,7 +340,7 @@
 
 .geometry-scalar-legends {
   position: absolute;
-  top: 10px;
+  bottom: 10px;
   right: 10px;
   z-index: 3;
   width: 260px;
@@ -351,6 +351,8 @@
   overflow: auto;
   pointer-events: auto;
 }
+
+.geometry-scalar-legend-list { display: flex; flex-direction: column-reverse; gap: 8px; }
 
 .geometry-scalar-legend {
   box-sizing: border-box;

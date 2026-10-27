@@ -25,7 +25,7 @@ export function installGeometryOverlayDrag(element, { getPosition, setPosition }
   };
   const apply = (position, bounds) => {
     const { left, top } = geometryOverlayPosition(bounds, position);
-    element.style.left = `${left}px`; element.style.top = `${top}px`; element.style.right = "auto";
+    element.style.left = `${left}px`; element.style.top = `${top}px`; element.style.right = "auto"; element.style.bottom = "auto";
   };
   const refresh = () => {
     if (disposed) return;

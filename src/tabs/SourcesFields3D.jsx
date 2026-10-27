@@ -52,6 +52,7 @@ export function SourcesFields3D(props) {
   const [streamlineMethod, setStreamlineMethod] = createSignal(savedStreamlines?.method ?? "trilinear");
   const [streamlineNotice, setStreamlineNotice] = createSignal("");
   const [openSourceMenu, setOpenSourceMenu] = createSignal(null);
+  const [geometryToolbarHost, setGeometryToolbarHost] = createSignal(null);
   const savedGraphs = props.task && graphSessions.get(props.task);
   const [graphsOnly, setGraphsOnly] = createSignal(savedGraphs?.only ?? false);
   const [areaGraphs, setAreaGraphs] = createSignal(savedGraphs?.areas ?? false);
@@ -348,6 +349,18 @@ export function SourcesFields3D(props) {
     ? RESULT_LAYER_QUANTITY_LABELS.none
     : `${RESULT_LAYER_QUANTITY_LABELS[key]}, ${QUANTITIES[key]?.unit ?? ""}`;
   const toggleSourceMenu = name => setOpenSourceMenu(current => current === name ? null : name);
+  function positionSourcePanel(element) {
+    const place = () => {
+      if (!element.isConnected) return;
+      element.style.transform = "";
+      const bounds = element.getBoundingClientRect(), width = element.ownerDocument.documentElement.clientWidth;
+      const offset = bounds.left < 8 ? 8 - bounds.left : Math.min(0, width - 8 - bounds.right);
+      element.style.transform = `translateX(${offset}px)`;
+    };
+    queueMicrotask(place); window.addEventListener("resize", place);
+    onCleanup(() => window.removeEventListener("resize", place));
+  }
+
 
   return <div class="results-layout">
     <aside class="split-list-column">
@@ -360,9 +373,9 @@ export function SourcesFields3D(props) {
       <div class="plot-toolbar sources-fields-toolbar">
         <div class="sources-fields-toolbar-controls">
         <For each={[
-          ["elements", "Объемные элементы"],
-          ["regions", "Области интересов"],
-          ["virtual", "Виртуальные элементы"],
+          ["elements", "Элементы"],
+          ["regions", "Области"],
+          ["virtual", "Симметрии"],
         ]}>{([key, label]) => {
           const group = RESULT_LAYER_GROUPS.find(item => item.key === key);
           return <div class="source-toolbar-menu">
@@ -375,8 +388,8 @@ export function SourcesFields3D(props) {
               }[key]}
               onClick={() => toggleSourceMenu(key)}>{label}</button>
             <Show when={openSourceMenu() === key}>
-              <div class="source-toolbar-menu-panel">
-                <For each={group.quantities}>{quantityKey =>
+              <div class="source-toolbar-menu-panel" ref={positionSourcePanel}>
+                <For each={group.quantities}>{quantityKey => <>
                   <label class="source-toolbar-option">
                     <input type="radio" name={`source-quantity-${key}`}
                       checked={quantities[key].read() === quantityKey}
@@ -384,8 +397,24 @@ export function SourcesFields3D(props) {
                       title={unavailableConductivity(quantityKey) ? "В задании нет материалов ВТСП" : undefined}
                       onChange={() => quantities[key].write(quantityKey)} />
                     <span>{quantityText(quantityKey)}</span>
-                  </label>}
-                </For>
+                  </label>
+                  <Show when={(key === "elements" ? ["none", "MHdot", "sigmaRelative"] : key === "regions" ? ["none", "As"] : ["Av"]).includes(quantityKey)}>
+                    <hr class="source-menu-separator" />
+                  </Show>
+                </>}</For>
+                <Show when={key !== "virtual"} fallback={
+                  <For each={[["showLocalSymmetry", "Локальная"], ["showAxialSymmetry", "Азимутальная"],
+                    ["showPeriodicSymmetry", "Периодическая"], ["showMirrorSymmetry", "Зеркальная"]]}>{([setting, label]) =>
+                    <label class="source-toolbar-option"><input type="checkbox" checked={graphView[setting][0]()} disabled={graphBlocked()}
+                      onChange={event => graphView[setting][1](event.currentTarget.checked)} />{label}</label>
+                  }</For>
+                }>
+                  <For each={[["all", "Показать все"], ["selected", "Выделенные в списке"], ["exceptSelected", "Кроме выделенных"]]}>{([mode, label]) =>
+                    <label class="source-toolbar-option"><input type="radio" name={`source-visibility-${key}`}
+                      checked={graphView[`${key}Mode`][0]() === mode} disabled={graphBlocked()}
+                      onChange={() => graphView[`${key}Mode`][1](mode)} />{label}</label>
+                  }</For>
+                </Show>
               </div>
             </Show>
           </div>;
@@ -393,11 +422,11 @@ export function SourcesFields3D(props) {
 
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
-            aria-expanded={openSourceMenu() === "presentation"} aria-label="Представление"
+            aria-expanded={["presentation", "graphs"].includes(openSourceMenu())} aria-label="Представление"
             title="Настроить карту, нормализацию и минимакс"
             onClick={() => toggleSourceMenu("presentation")}>Представление</button>
           <Show when={openSourceMenu() === "presentation"}>
-            <div class="source-toolbar-menu-panel source-presentation-panel">
+            <div class="source-toolbar-menu-panel source-presentation-panel" ref={positionSourcePanel}>
               <label><input type="checkbox" aria-label="Карта" checked={effectiveColorMap()} disabled={hasScalars()}
                 onChange={event => changeColorMap(event.currentTarget.checked)} /> Карта</label>
               <label title="Одинаковая длина векторов; цвет соответствует исходному модулю">
@@ -411,17 +440,12 @@ export function SourcesFields3D(props) {
                   onChange={event => !props.movieBusy && globalRanges().available
                     && setGlobalMinMax(event.currentTarget.checked)} /> Общий минимакс
               </label>
+              <button type="button" class="source-toolbar-menu-button" aria-haspopup="dialog"
+                title="Открыть панель графиков" onClick={() => setOpenSourceMenu("graphs")}>Графики</button>
             </div>
           </Show>
-        </div>
-
-        <div class="source-toolbar-menu">
-          <button type="button" class="source-toolbar-menu-button"
-            aria-expanded={openSourceMenu() === "graphs"} aria-label="Графики"
-            title="Открыть панель графиков"
-            onClick={() => toggleSourceMenu("graphs")}>Графики</button>
           <Show when={openSourceMenu() === "graphs"}>
-            <div class="source-toolbar-menu-panel source-graphs-panel" onKeyDown={event => {
+            <div class="source-toolbar-menu-panel source-graphs-panel" ref={positionSourcePanel} role="dialog" aria-label="Графики в 3D" onKeyDown={event => {
               if (event.key === "Escape") { event.stopPropagation(); closeGraphChoice(); }
             }}>
               <label class="source-toolbar-option" title="Оставить геометрию и включённые поверхности графиков; скрыть расчётные векторы, карты и векторные линии."><input type="checkbox" checked={graphsOnly()} disabled={graphBlocked()}
@@ -504,7 +528,7 @@ export function SourcesFields3D(props) {
             title="Настроить метод и толщину, выбрать или удалить векторные линии"
             onClick={() => toggleSourceMenu("lines")}>Векторные линии</button>
           <Show when={openSourceMenu() === "lines"}>
-            <div class="source-toolbar-menu-panel source-lines-panel">
+            <div class="source-toolbar-menu-panel source-lines-panel" ref={positionSourcePanel}>
               <label class="source-line-method">Метод построения
                 <select aria-label="Метод построения" value={streamlineMethod()} disabled={props.movieBusy}
                   title="Выбрать метод построения векторных линий" onChange={changeStreamlineMethod}>
@@ -540,6 +564,7 @@ export function SourcesFields3D(props) {
         </div>
 
         </div>
+        <div class="source-geometry-controls" ref={setGeometryToolbarHost} />
         <ProtocolCheck context={props} entryKey="sources" title="Источники / Поле 3D" adapter={movie.adapter}
           disabled={flightBusy() || result().loading || graphBusy()}
           comment={requestedLayers().filter(layer => layer.quantityKey !== "none").map(layer =>
@@ -549,7 +574,7 @@ export function SourcesFields3D(props) {
       </div>
       <Show when={graphSaveNotice()}><div class="plot-status" role="status">{graphSaveNotice()}</div></Show>
       <div class="source-graph-workspace"><div class="embedded-geometry">
-        <ResultsGeometryViewport cameraState={cameraState()} onCameraStateChange={rememberCamera} open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
+        <ResultsGeometryViewport toolbarMount={geometryToolbarHost()} cameraState={cameraState()} onCameraStateChange={rememberCamera} open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           allowFlight={true} flightBlocked={props.movieBusy || graphBusy()} flightDisabledReason={flightDisabledReason()}
           onFlightStateChange={setFlightState}
           cameraRequest={cameraRequest()}

@@ -1795,13 +1795,13 @@ export function ThreeGeometryViewport(props) {
     const panel = legendLeft() !== null && legendTop() !== null && legendPanel?.isConnected
       ? legendPanel.getBoundingClientRect() : null;
     const left = panel && viewport.width > 0 ? (panel.left - viewport.left) * width / viewport.width : width - boxWidth - 8;
-    const top = panel && viewport.height > 0 ? (panel.top - viewport.top) * height / viewport.height : 8;
+    const top = panel && viewport.height > 0 ? (panel.top - viewport.top) * height / viewport.height : height - legends.length * boxHeight - 8;
     const startX = Math.max(8, Math.min(width - boxWidth - 8, left));
     const startY = Math.max(8, Math.min(height - legends.length * boxHeight - 8, top));
     context.font = "12px sans-serif";
     context.textBaseline = "top";
     legends.forEach((legend, index) => {
-      const x = startX, y = startY + index * boxHeight;
+      const x = startX, y = startY + (legends.length - 1 - index) * boxHeight;
       context.fillStyle = "rgba(27, 34, 41, .95)";
       context.fillRect(x, y, boxWidth, boxHeight - 4);
       context.fillStyle = "#f1f5f8";
@@ -3147,6 +3147,7 @@ export function ThreeGeometryViewport(props) {
       <Show when={!error() && scalarLegends().length}>
         <div class="geometry-scalar-legends" ref={attachLegendDrag}>
           <div class="geometry-overlay-drag-handle" title="Перетащите панель за заголовок">Цветовые шкалы</div>
+          <div class="geometry-scalar-legend-list">
           <For each={scalarLegends()}>{(legend) => (
             <div class="geometry-scalar-legend" aria-label={`Цветовая шкала: ${legend.groupLabel ? `${legend.groupLabel} · ` : ""}${legend.quantity}, ${legend.unit}`}>
               <Show when={legend.groupLabel}><strong>{legend.groupLabel}</strong></Show>
@@ -3158,6 +3159,7 @@ export function ThreeGeometryViewport(props) {
               </div>
             </div>
           )}</For>
+          </div>
         </div>
       </Show>
       <Show when={hoverTooltip()} keyed>

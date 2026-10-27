@@ -1,4 +1,5 @@
 import { GEOMETRY_FLIGHT_HELP, formatGeometryFlightSpeed } from "../../services/visualization/geometryFlightController.js";
+import { Portal } from "solid-js/web";
 import { createGeometryViewSetting } from "../../services/visualization/geometryViewSettings.js";
 import { installGeometryOverlayDrag } from "../../services/visualization/geometryOverlayDrag.js";
 import {
@@ -229,7 +230,8 @@ export function ResultsGeometryViewport(props) {
     const toolbarBounds = toolbarElement?.getBoundingClientRect();
     const panelWidth = optionsPanelElement?.offsetWidth ?? 248;
     const maximumLeft = Math.max(8, viewerBounds.width - panelWidth - 8);
-    const top = Math.max((toolbarBounds?.bottom ?? buttonBounds.bottom) - viewerBounds.top + 4, 4);
+    const bottom = props.toolbarMount ? buttonBounds.bottom : toolbarBounds?.bottom ?? buttonBounds.bottom;
+    const top = Math.max(bottom - viewerBounds.top + 4, 4);
     setPanelPosition({
       left: Math.min(
         Math.max(buttonBounds.left - viewerBounds.left, 8),
@@ -338,26 +340,18 @@ export function ResultsGeometryViewport(props) {
     }
   });
 
-  return (
-      <section
-        ref={setViewerElement}
-        class="geometry-viewer-window"
-        tabIndex="0"
-        onPointerDown={(event) => {
-          if (isGeometryCameraShortcutTarget(event.target)) {
-            viewerElement?.focus({ preventScroll: true });
-          }
-        }}
-        onKeyDown={handleViewerKeyDown}
-      >
+  function Toolbar() {
+    return (
         <div
           ref={(element) => (toolbarElement = element)}
           class="geometry-viewer-toolbar"
           role="toolbar"
           aria-label="Управление 3D-окном"
           onScroll={updatePanelPosition}
+          onKeyDown={handleViewerKeyDown}
         >
           <div class="geometry-viewer-toolbar-controls">
+            <Show when={!props.toolbarMount}>
             <button
               type="button"
               class="geometry-viewer-menu-button"
@@ -397,6 +391,7 @@ export function ResultsGeometryViewport(props) {
               Симметрии
             </button>
 
+            </Show>
             <button
               type="button"
               class="geometry-viewer-menu-button"
@@ -432,6 +427,24 @@ export function ResultsGeometryViewport(props) {
             </label>
           </div>
         </div>
+    );
+  }
+
+  return (
+      <section
+        ref={setViewerElement}
+        class="geometry-viewer-window"
+        tabIndex="0"
+        onPointerDown={(event) => {
+          if (isGeometryCameraShortcutTarget(event.target)) {
+            viewerElement?.focus({ preventScroll: true });
+          }
+        }}
+        onKeyDown={handleViewerKeyDown}
+      >
+        <Show when={props.toolbarMount} fallback={<Toolbar />}>
+          <Portal mount={props.toolbarMount}><Toolbar /></Portal>
+        </Show>
 
         <Show when={openPanel()}>
           <div

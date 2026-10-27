@@ -260,18 +260,12 @@ test("field method selector keeps the same seeds and tolerance, validates choice
 
 test("compact 3D toolbar exposes requested menus and fixed streamline settings",()=>{
   const source=readFileSync(new URL("../src/tabs/SourcesFields3D.jsx",import.meta.url),"utf8");
-  for(const label of ["Объемные элементы","Области интересов","Виртуальные элементы","Представление","Векторные линии","Графики"]) assert.ok(source.includes(label),label);
+  for(const label of ["Элементы","Области","Симметрии","Представление","Векторные линии","Графики"]) assert.ok(source.includes(label),label);
   assert.match(source,/RESULT_LAYER_QUANTITY_LABELS\[key\].*QUANTITIES\[key\]\?\.unit/s);
   assert.doesNotMatch(source,/Допуск, % шага сетки|Цвет по модулю|Стереть линию/);
   assert.ok(source.includes("Удалить линию №"));
   assert.match(source,/streamlineColorMap=\{true\}/);
 });
-test("all six compact toolbar buttons share the maximum label width",()=>{
-  const css=readFileSync(new URL("../src/tabs/SourcesFields3D.css",import.meta.url),"utf8");
-  assert.match(css,/\.sources-fields-toolbar\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-auto-flow:\s*column;[\s\S]*grid-auto-columns:\s*1fr;[\s\S]*width:\s*max-content;/);
-  assert.match(css,/\.source-toolbar-menu-button\s*\{[\s\S]*width:\s*100%;/);
-});
-
 test("compact 3D toolbar buttons expose concise explanatory tooltips",()=>{
   const source=readFileSync(new URL("../src/tabs/SourcesFields3D.jsx",import.meta.url),"utf8");
   for(const text of [

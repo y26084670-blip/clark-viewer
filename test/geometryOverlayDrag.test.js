@@ -14,7 +14,7 @@ function fixture(saved = null, detached = false) {
   const parent = { clientWidth: 1000, clientHeight: 600, clientLeft: 2, clientTop: 2,
     getBoundingClientRect: () => ({ left: 30, top: 20 }) };
   Object.assign(panel, { ownerDocument: detached ? new EventTarget() : owner, parentElement: parent, offsetWidth: 200, offsetHeight: 100,
-    style: { left: "", top: "", right: "" }, contains: child => child === handle,
+    style: { left: "", top: "", right: "", bottom: "10px" }, contains: child => child === handle,
     classList: { add: name => classes.add(name), remove: name => classes.delete(name) },
     setPointerCapture: id => capture.push(["set", id]), releasePointerCapture: id => capture.push(["release", id]),
     getBoundingClientRect: () => ({ left: 32 + (parseFloat(panel.style.left) || 780),
@@ -40,7 +40,7 @@ test("relative positions clamp every edge and oversized panels keep an accessibl
 
 test("only the primary pointer on a heading starts a drag, without changing untouched defaults", async () => {
   const f = fixture(); await Promise.resolve();
-  assert.equal(f.panel.style.left, ""); assert.deepEqual(f.writes, []);
+  assert.equal(f.panel.style.left, ""); assert.equal(f.panel.style.bottom, "10px"); assert.deepEqual(f.writes, []);
   f.event("pointerdown", f.panel, { button: 2 });
   f.event("pointerdown", f.panel, { target: { closest: () => null } });
   assert.deepEqual(f.capture, []);
@@ -55,6 +55,7 @@ test("drag retains the pointer offset, clamps to the viewport and commits coordi
   assert.equal(f.panel.style.left, "");
   f.event("pointermove", f.owner, { clientX: 1000, clientY: 700 });
   assert.equal(f.panel.style.left, "792px"); assert.equal(f.panel.style.top, "492px");
+  assert.equal(f.panel.style.bottom, "auto");
   assert.deepEqual(f.writes, []);
   f.event("pointerup"); assert.deepEqual(f.position(), { x: 1, y: 1 }); assert.equal(f.writes.length, 1);
   assert.equal(f.classes.size, 0); assert.deepEqual(f.capture.at(-1), ["release", 1]);

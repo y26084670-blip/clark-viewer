@@ -1,24 +1,30 @@
-.sources-fields-toolbar {
+.plot-toolbar.sources-fields-toolbar {
   position: relative;
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   box-sizing: border-box;
   width: 100%;
-  gap: 8px;
+  gap: 6px;
+  font-size: 12px;
   overflow: visible;
 }
 
 .sources-fields-toolbar-controls {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  align-items: center;
-  width: max-content;
-  max-width: 100%;
-  gap: 6px 8px;
-  overflow: visible;
+  display: contents;
 }
+
+.source-geometry-controls, .source-geometry-controls > div,
+.source-geometry-controls .geometry-viewer-toolbar,
+.source-geometry-controls .geometry-viewer-toolbar-controls { display: contents; }
+.source-geometry-controls .geometry-viewer-menu-button { width: auto; height: 27px; font: inherit; }
+.sources-fields-toolbar .geometry-viewer-transparency {
+  display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+  width: 128px; min-width: 128px; flex: 0 0 128px; color: #263b4d; font-size: 11px;
+}
+.sources-fields-toolbar .geometry-viewer-transparency input[type="range"] { width: 100%; }
+.sources-fields-toolbar .geometry-size-range > i { border-top-color: #344b60; }
+.source-menu-separator { margin: 2px 0; width: 100%; border: 0; border-top: 1px solid #596774; }
 
 .sources-fields-toolbar > .geometry-material-help-button {
   margin-left: auto;
@@ -126,8 +132,8 @@
 }
 
 .source-graphs-panel {
-  left: auto;
-  right: 0;
+  left: 0;
+  right: auto;
   min-width: min(640px, 85vw);
   max-width: min(640px, 85vw);
   max-height: min(560px, 70vh);

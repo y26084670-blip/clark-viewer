@@ -32,7 +32,7 @@ const inspect = { name: "surface-graph-inspection", enforce: "pre", configureSer
     }, snapshot: () => {
       const meshes=[];graphRoot?.traverse(o=>{if(o.name==="result-graph-surface")meshes.push({id:o.userData.graphId,component:o.userData.component,visible:o.parent.visible,color:o.material.color.getHexString(),lit:o.material.isMeshStandardMaterial,palette:o.material.vertexColors,factor:o.userData.factor,positions:Array.from(o.geometry.attributes.position.array.slice(0,9)),basePositions:Array.from(o.userData.surface.positions.slice(0,9))});});
       const contours=[];graphRoot?.traverse(o=>{if(o.name==="graph-contour")contours.push({selection:o.userData.selection,preview:o.userData.preview,positions:Array.from(o.children[0].geometry.attributes.instanceStart.array)});});
-      return {meshes,contours,preview:graphRoot?.getObjectByName("graph-slice-preview")?.children.length??0,previewSpec:props.graphPreview,previewPoint:graphRoot?.getObjectByName("graph-slice-preview")?.children[0]?.geometry.attributes.position.array.slice(0,3),selectionTypes:graphRoot?.getObjectByName("graph-selected-element")?.children.map(o=>o.type)??[],selected:graphRoot?.getObjectByName("graph-selected-element")?.children.length??0,
+      return {meshes,contours,filters:activeResultFilters,geometryCount:geometryRoot?.children.length,preview:graphRoot?.getObjectByName("graph-slice-preview")?.children.length??0,previewSpec:props.graphPreview,previewPoint:graphRoot?.getObjectByName("graph-slice-preview")?.children[0]?.geometry.attributes.position.array.slice(0,3),selectionTypes:graphRoot?.getObjectByName("graph-selected-element")?.children.map(o=>o.type)??[],selected:graphRoot?.getObjectByName("graph-selected-element")?.children.length??0,
         camera:[camera?.position.toArray(),camera?.quaternion.toArray(),controls?.target.toArray()],direction:camera?.position.clone().sub(controls.target).normalize().toArray(),layers:[...resultLayerStates.values()].reduce((n,s)=>n+(s.vectorRoot?.children.length??0)+(s.scalarRoot?.children.length??0),0)};
     }};\n  return (\n    <div`);
 } };
@@ -46,8 +46,88 @@ try {
   await page.goto("http://127.0.0.1:" + server.httpServer.address().port + "/" + path.basename(dir) + "/index.html");
   await page.waitForFunction(() => window.graphScene?.ready() && graphUI.ready());
   const scene = () => page.evaluate(() => graphScene.snapshot()), graphs = page.locator(".source-graphs-panel");
-  const open = async () => { if (!await graphs.isVisible()) await page.getByRole("button", { name: "Графики", exact: true }).click(); };
+  const closeMenus = () => page.locator(".task-info-bar").click();
+  const open = async () => {
+    if (await graphs.isVisible()) return;
+    if (!await page.locator(".source-presentation-panel").isVisible()) await page.getByRole("button", { name: "Представление", exact: true }).click();
+    await page.getByRole("button", { name: "Графики", exact: true }).click();
+  };
   const waitGraphs = () => page.waitForFunction(() => !graphUI.busy() && !graphUI.error());
+  const toolbar = page.locator(".sources-fields-toolbar");
+  const topButtons = toolbar.locator(".sources-fields-toolbar-controls > .source-toolbar-menu > button, .source-geometry-controls button");
+  assert.deepEqual(await topButtons.allTextContents(), ["Элементы", "Области", "Симметрии", "Представление", "Векторные линии", "Общие опции"]);
+  assert.equal(await page.locator(".geometry-viewer-window .geometry-viewer-toolbar").count(), 0);
+  for (const width of [1920,1440,960]) {
+    await page.setViewportSize({ width, height: 1080 });
+    const boxes = await toolbar.locator(".source-toolbar-menu > button, .source-geometry-controls button, .geometry-viewer-transparency, .protocol-check-wrap").evaluateAll(els => els.map(el => { const r=el.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom}; }));
+    assert.ok(boxes.every(box => box.x>=0 && box.right<=width), JSON.stringify({width,boxes}));
+    for (let i=1;i<boxes.length;i++) assert.ok(boxes[i].y>=boxes[i-1].bottom || boxes[i].x>=boxes[i-1].right, JSON.stringify({width,boxes}));
+    if(width>=1440) assert.ok(Math.max(...boxes.map(b=>b.y))-Math.min(...boxes.map(b=>b.y))<12, JSON.stringify({width,boxes}));
+  }
+  await page.screenshot({path:path.join(out,"toolbar-960.png"),fullPage:true});
+  await page.setViewportSize({width:1920,height:1080});
+  pass("Unified toolbar has six buttons and Size/Transparency before Protocol; no duplicate inner toolbar, no overlaps at 960/1440/1920px");
+
+  const sourceMenu = page.locator(".source-toolbar-menu-panel");
+  const geometryCount = (await scene()).geometryCount;
+  await page.evaluate(n=>{window.toolbarGeometryCount=n;graphFixture.setElements([1]);},geometryCount);
+  for(const [label,key,separators] of [["Элементы","elements",[/Не показывать/,/Плотность энергии/,/Относительная электропроводность/]], ["Области","regions",[/Не показывать/,/Векторный потенциал/]]]) {
+    await page.getByRole("button",{name:label,exact:true}).click();
+    const preceding = await sourceMenu.locator("hr").evaluateAll(els=>els.map(el=>el.previousElementSibling.textContent));
+    assert.equal(preceding.length,separators.length); preceding.forEach((text,i)=>assert.match(text,separators[i]));
+    assert.deepEqual((await sourceMenu.locator("label").allTextContents()).slice(-3),["Показать все","Выделенные в списке","Кроме выделенных"]);
+    await sourceMenu.getByRole("radio",{name:"Кроме выделенных",exact:true}).check();
+    await page.waitForFunction(key=>graphScene.snapshot().filters.objectModes[key]==="exceptSelected" && graphScene.snapshot().geometryCount<window.toolbarGeometryCount,key);
+    await sourceMenu.getByRole("radio",{name:"Выделенные в списке",exact:true}).check();
+    await page.waitForFunction(key=>graphScene.snapshot().filters.objectModes[key]==="selected",key);
+    await sourceMenu.getByRole("radio",{name:"Показать все",exact:true}).check();
+    await page.waitForFunction(n=>graphScene.snapshot().geometryCount===n,geometryCount);
+    await closeMenus();
+  }
+  await page.evaluate(()=>graphFixture.setElements([1,2]));
+  pass("Elements/Regions contain separators and independent quantity/visibility radios; selection filters really remove and restore geometry");
+
+  await page.getByRole("button",{name:"Симметрии",exact:true}).click();
+  assert.equal(await sourceMenu.getByRole("radio").count(),3);
+  assert.deepEqual(await sourceMenu.locator("label:has(input[type=checkbox])").allTextContents(),["Локальная","Азимутальная","Периодическая","Зеркальная"]);
+  for (const [label,key] of [["Локальная","local"],["Азимутальная","axial"],["Периодическая","periodic"],["Зеркальная","mirror"]]) {
+    const checkbox=sourceMenu.getByRole("checkbox",{name:label,exact:true}); const initial=await checkbox.isChecked();
+    await checkbox.setChecked(!initial); await page.waitForFunction(({key,value})=>graphScene.snapshot().filters.symmetry[key]===value,{key,value:!initial});
+    if(key==="periodic") assert.ok((await scene()).geometryCount<geometryCount);
+    await checkbox.setChecked(initial);
+  }
+  await page.waitForFunction(n=>graphScene.snapshot().geometryCount===n,geometryCount);
+  await closeMenus();
+  pass("Symmetries preserves virtual quantity choices and all four display switches; periodic images hide and return");
+
+  await page.getByRole("button",{name:"Представление",exact:true}).click();
+  assert.equal(await page.locator(".source-presentation-panel > :last-child").innerText(),"Графики");
+  await page.getByRole("checkbox",{name:"Карта",exact:true}).check(); await closeMenus();
+  await page.waitForFunction(()=>document.querySelectorAll(".geometry-scalar-legend").length===2);
+  const legendPanel=page.locator(".geometry-scalar-legends");
+  const legendBox=await legendPanel.boundingBox(), viewBox=await page.locator(".three-geometry-viewport").boundingBox();
+  assert.ok(Math.abs(viewBox.y+viewBox.height-legendBox.y-legendBox.height-10)<2);
+  assert.ok(Math.abs(viewBox.x+viewBox.width-legendBox.x-legendBox.width-10)<2);
+  const legendPositions=await legendPanel.locator(".geometry-scalar-legend").evaluateAll(els=>els.map(el=>({label:el.querySelector("strong").textContent,y:el.getBoundingClientRect().y})));
+  assert.deepEqual(legendPositions.map(p=>p.label),["Элементы","Области"]);assert.ok(legendPositions[0].y>legendPositions[1].y);
+  const capturedLegends=await page.evaluate(async()=>{
+    const adapter=graphFixture.capture();await adapter.prepare();const frame=await adapter.capture(0);await adapter.restore(0);
+    const pixel=(x,y)=>Array.from(frame.data.slice((Math.round(y)*frame.width+Math.round(x))*4,(Math.round(y)*frame.width+Math.round(x))*4+3));
+    const strips=[1,2].map(i=>[pixel(frame.width-288,frame.height-8-i*86+46),pixel(frame.width-25,frame.height-8-i*86+46)]);
+    const canvas=document.createElement("canvas");canvas.width=frame.width;canvas.height=frame.height;canvas.getContext("2d").putImageData(frame,0,0);
+    return {strips,png:canvas.toDataURL("image/png").split(",")[1]};
+  });
+  capturedLegends.strips.forEach(([a,b])=>assert.ok(a.some((v,i)=>Math.abs(v-b[i])>50),JSON.stringify({a,b})));
+  await writeFile(path.join(out,"bottom-legends-capture.png"),Buffer.from(capturedLegends.png,"base64"));
+  await page.screenshot({path:path.join(out,"bottom-legends.png"),fullPage:true});
+  const heading=await legendPanel.locator(".geometry-overlay-drag-handle").boundingBox();
+  await page.mouse.move(heading.x+30,heading.y+8);await page.mouse.down();await page.mouse.move(viewBox.x+100,viewBox.y+80,{steps:5});await page.mouse.up();
+  const movedLegend=await legendPanel.boundingBox(); assert.equal(movedLegend.height,legendBox.height);assert.ok(movedLegend.x<legendBox.x && movedLegend.y<legendBox.y);
+  assert.equal(await legendPanel.evaluate(el=>el.style.bottom),"auto");
+  await page.mouse.move(400,400);assert.deepEqual(await legendPanel.boundingBox(),movedLegend);
+  await page.getByRole("button",{name:"Представление",exact:true}).click();await page.getByRole("checkbox",{name:"Карта",exact:true}).uncheck();await closeMenus();
+  pass("Colour legends start at bottom right and grow upward in both viewport and captured frame; dragging retains panel height and releases the pointer");
+
   await open();
   for (const label of ["Только графики", "Графики над площадками", "Срезы в элементах"]) assert.equal(await graphs.getByRole("checkbox", { name: label, exact: true }).isChecked(), false);
   for (const label of ["Изменить", "Построить", "Повернуть"]) assert.equal(await graphs.getByRole("button", { name: label, exact: true }).count(), 0);
@@ -64,7 +144,7 @@ try {
   assert.equal(await size.getAttribute("min"), "-2"); assert.equal(await size.getAttribute("max"), "3");
   const mark = await page.locator(".geometry-size-range > i").boundingBox(), slider = await size.boundingBox();
   assert.ok(Math.abs(mark.x + mark.width / 2 - slider.x - slider.width * .4) < 1);
-  if (await graphs.isVisible()) await page.getByRole("button", { name: "Графики", exact: true }).click();
+  if (await graphs.isVisible()) await closeMenus();
   await page.getByRole("button", { name: "Общие опции отображения", exact: true }).click();
   const general = page.getByRole("dialog", { name: "Общие опции отображения", exact: true });
   const order = await general.locator("select,label,button").allTextContents();
@@ -77,10 +157,9 @@ try {
   await page.waitForFunction(() => graphScene.snapshot().meshes.length === 3); await waitGraphs();
   const rgb = (await scene()).meshes; assert.deepEqual(rgb.map(m => m.color), ["ff0000", "00ff00", "0000ff"]); assert.ok(rgb.every(m => m.lit && !m.palette));
   pass("Area graphs build three lit RGB surfaces in the real worker");
-  assert.ok((await page.getByRole("button",{name:"Графики",exact:true}).boundingBox()).x < (await page.getByRole("button",{name:"Векторные линии",exact:true}).boundingBox()).x);
   const surfacePoint = (id,component,u,v,ps=0) => page.evaluate(args=>graphScene.point(...args),[id,component,u,v,ps]);
   const clickSurface = async (id,component,u,v,button="left",ps=0) => {await waitGraphs(); const p=await surfacePoint(id,component,u,v,ps);await page.mouse.click(p.x,p.y,{button});};
-  await page.getByRole("button",{name:"Графики",exact:true}).click();
+  await closeMenus();
   await page.keyboard.press("z"); await page.waitForFunction(()=>graphScene.snapshot().direction[2]>.999);
   const contourMenu = page.getByRole("menu",{name:"Направление 1D графика",exact:true});
   await clickSurface("region:0",1,.4,.4,"right"); await contourMenu.waitFor();
@@ -103,7 +182,7 @@ try {
   assert.deepEqual(await page.evaluate(()=>graphUI.contour()),fixedContour);
   assert.equal(await page.evaluate(()=>graphFixture.reads.length),contourReads);
   await page.screenshot({path:path.join(out,"contour-selected.png"),fullPage:true});
-  pass("Graph button precedes lines; right-click hover previews both area directions, Escape cancels, clicks pin/move a single contour without camera sticking or HDF5 reads");
+  pass("Right-click hover previews both area directions, Escape cancels, clicks pin/move a single contour without camera sticking or HDF5 reads");
   await page.setViewportSize({width:960,height:640}); await page.waitForTimeout(100);
   await clickSurface("region:0",1,.9,.9,"right"); await contourMenu.waitFor();
   const menuBox=await contourMenu.boundingBox(), viewportBox=await page.locator(".three-geometry-viewport").boundingBox();
@@ -154,7 +233,7 @@ try {
   }
   assert.equal(await page.evaluate(() => graphFixture.reads.length), reads);
   await size.evaluate(input => { input.value = "0"; input.dispatchEvent(new Event("input", { bubbles: true })); });
-  if (await graphs.isVisible()) await page.getByRole("button", { name: "Графики", exact: true }).click();
+  if (await graphs.isVisible()) await closeMenus();
   await page.getByRole("button", { name: "Общие опции отображения", exact: true }).click();
   await page.getByRole("combobox", { name: "Палитра результатов", exact: true }).selectOption("Viridis");
   assert.equal(await page.evaluate(() => graphFixture.reads.length), reads);
@@ -167,7 +246,7 @@ try {
   await page.waitForFunction(() => graphUI.results().find(g => g.id === 1)?.component === 1);
   assert.equal(await page.evaluate(() => graphFixture.reads.length), reads);
   pass("Height, palette, direction and component update immediately; editing a slice reuses cached HDF5 data");
-  await page.getByRole("button",{name:"Графики",exact:true}).click();
+  await closeMenus();
   await transparency.evaluate(el=>{el.value="100";el.dispatchEvent(new Event("input",{bubbles:true}));});
   await page.keyboard.press("z"); await page.waitForFunction(()=>graphScene.snapshot().direction[2]>.999);
   await clickSurface(1,1,.35,.45,"right");
@@ -193,7 +272,7 @@ try {
   await page.waitForFunction(()=>graphScene.snapshot().meshes.some(m=>m.id===1 && m.component===2));
   assert.deepEqual(await page.evaluate(()=>graphUI.contour()),sliceContour);
   assert.equal((await scene()).contours.length,2);
-  await page.getByRole("button",{name:"Графики",exact:true}).click();
+  await closeMenus();
   await clickSurface(1,2,.35,.92,"right"); await contourMenu.getByRole("menuitemradio").first().click(); await waitGraphs();
   assert.equal(await collection.locator(".graph-1d-miniature").count(),2);
   pass("Marked sections remain on multiple graphs, tooltips show bounded slice/section indices, and component changes or duplicate picks preserve the collection");
@@ -259,7 +338,7 @@ try {
   await graphs.locator("tbody tr").first().locator("td").first().click(); assert.equal(await page.evaluate(() => graphUI.active()), 1);
   await graphs.getByRole("button", { name: "Удалить", exact: true }).click(); await waitGraphs();
   assert.equal(await graphs.locator("tbody tr").count(), 1); assert.equal(await graphs.locator("tbody tr td").nth(1).innerText(), "2");
-  await page.getByRole("button", { name: "Объемные элементы", exact: true }).click(); await page.getByRole("radio", { name: /Потери на токи проводимости/ }).check();
+  await page.getByRole("button", { name: "Элементы", exact: true }).click(); await page.getByRole("radio", { name: /Потери на токи проводимости/ }).check();
   await open(); await waitGraphs(); assert.equal(await graphs.locator("tbody select").isDisabled(), true);
   assert.equal(await page.evaluate(() => graphUI.results().find(g => g.kind === "slice").components), 1);
   pass("One table row selects its highlighted element; Delete removes that row and scalar quantities disable component selection");
@@ -269,7 +348,7 @@ try {
   await page.evaluate(() => graphFixture.setMounted(true)); await page.waitForFunction(() => graphScene.ready()); await open();
   assert.equal(await graphs.locator("tbody tr").count(), 1); assert.equal(await graphs.getByRole("checkbox", { name: "Срезы в элементах", exact: true }).isChecked(), false);
   await graphs.getByRole("checkbox", { name: "Срезы в элементах", exact: true }).check(); await waitGraphs();
-  await page.getByRole("button", { name: "Графики", exact: true }).click();
+  await closeMenus();
   pass("Tab remount preserves slices, selection and visibility settings");
 
   for (const key of ["x", "y", "z"]) for (const negative of [false, true]) {
@@ -334,7 +413,7 @@ try {
   assert.equal(textColor, "rgb(237, 242, 247)");
   await page.screenshot({ path: path.join(out, "panel.png"), fullPage: true });
   pass("The graph panel fits 1440px and the slice table has its own vertical scroll");
-  await page.getByRole("button",{name:"Графики",exact:true}).click();
+  await closeMenus();
   await size.evaluate(el=>{el.value="0.5";el.dispatchEvent(new Event("input",{bubbles:true}));});
   await page.getByRole("button", { name: "Общие опции отображения", exact: true }).click();
   await page.getByRole("combobox", { name: "Палитра результатов", exact: true }).selectOption("Turbo");

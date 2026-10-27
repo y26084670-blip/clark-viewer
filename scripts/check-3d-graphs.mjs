@@ -15,7 +15,9 @@ const inspect = { name: "surface-graph-inspection", enforce: "pre", configureSer
   });
 }, transform(code, id) {
   if (id.endsWith("/src/tabs/SourcesFields3D.jsx")) return code.replace('  return <div class="results-layout">',
-    '  window.graphUI = { slices: graphSlices, active: activeSlice, results: graphResults, only: graphsOnly, busy: graphBusy, error: graphError, contour: graphContour };\n  return <div class="results-layout">');
+    '  window.graphUI = { slices: graphSlices, active: activeSlice, results: graphResults, only: graphsOnly, busy: graphBusy, error: graphError, contour: graphContour, profiles: graphProfiles, profileResults, ready: graphReady, expanded: expandedProfile };\n  return <div class="results-layout">');
+  if (id.endsWith("/src/components/LineChart.jsx")) return code.replace('  return <div class="line-chart"',
+    '  window.profileChart = { chart: () => chart, legend: () => legendHitBoxes, endpoints: () => props.endpointCoordinates, view: () => ({limits:limits(),auto:autoScale(),legend:showLegend()}) };\n  return <div class="line-chart"');
   if (id.endsWith("/src/tabs/WorkingPoints.jsx")) return code.replace('  // Axis transforms use different coordinates:',
     '  window.workingPointUI = { series, count: () => displayed().count, omitted: () => displayed().omittedZeros, log: () => props.logarithmic };\n  // Axis transforms use different coordinates:');
   if (id.endsWith("/src/components/geometry/ThreeGeometryViewport.jsx")) return code.replace('  return (\n    <div',
@@ -38,11 +40,11 @@ let browser, server, page; const errors = [], checks = [];
 const pass = text => { checks.push(text); console.log("PASS " + checks.length + ": " + text); };
 try {
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
-  server = await createServer({ configFile: false, root, plugins: [inspect, solid()], optimizeDeps: { entries: [path.join(dir, "index.html")] }, server: { host: "127.0.0.1", port: 0, hmr: false } }); await server.listen();
+  server = await createServer({ configFile: false, root, cacheDir: path.join(root, "node_modules/.vite-graph3d-check"), plugins: [inspect, solid()], optimizeDeps: { entries: [path.join(dir, "index.html")] }, server: { host: "127.0.0.1", port: 0, hmr: false } }); await server.listen();
   browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE || undefined, args: ["--no-sandbox", "--enable-unsafe-swiftshader", "--disable-dev-shm-usage"] });
-  page = await browser.newPage({ viewport: { width: 1920, height: 1080 } }); page.on("pageerror", e => errors.push(e.message)); page.on("console", message => { if (message.type() === "error") console.error(message.text()); });
+  page = await browser.newPage({ viewport: { width: 1920, height: 1080 } }); page.on("pageerror", e => errors.push(e.message)); page.on("console", message => { if (message.type() === "error") console.error(message.text()); if(message.text().includes("computations created outside")) errors.push(message.text()); });
   await page.goto("http://127.0.0.1:" + server.httpServer.address().port + "/" + path.basename(dir) + "/index.html");
-  await page.waitForFunction(() => window.graphScene?.ready());
+  await page.waitForFunction(() => window.graphScene?.ready() && graphUI.ready());
   const scene = () => page.evaluate(() => graphScene.snapshot()), graphs = page.locator(".source-graphs-panel");
   const open = async () => { if (!await graphs.isVisible()) await page.getByRole("button", { name: "Графики", exact: true }).click(); };
   const waitGraphs = () => page.waitForFunction(() => !graphUI.busy() && !graphUI.error());
@@ -77,7 +79,7 @@ try {
   pass("Area graphs build three lit RGB surfaces in the real worker");
   assert.ok((await page.getByRole("button",{name:"Графики",exact:true}).boundingBox()).x < (await page.getByRole("button",{name:"Векторные линии",exact:true}).boundingBox()).x);
   const surfacePoint = (id,component,u,v,ps=0) => page.evaluate(args=>graphScene.point(...args),[id,component,u,v,ps]);
-  const clickSurface = async (id,component,u,v,button="left",ps=0) => {const p=await surfacePoint(id,component,u,v,ps);await page.mouse.click(p.x,p.y,{button});};
+  const clickSurface = async (id,component,u,v,button="left",ps=0) => {await waitGraphs(); const p=await surfacePoint(id,component,u,v,ps);await page.mouse.click(p.x,p.y,{button});};
   await page.getByRole("button",{name:"Графики",exact:true}).click();
   await page.keyboard.press("z"); await page.waitForFunction(()=>graphScene.snapshot().direction[2]>.999);
   const contourMenu = page.getByRole("menu",{name:"Направление 1D графика",exact:true});
@@ -85,7 +87,7 @@ try {
   const cameraBefore = (await scene()).camera, contourReads = await page.evaluate(()=>graphFixture.reads.length);
   for(const direction of [0,1]) {
     await contourMenu.getByRole("menuitemradio").nth(direction).hover();
-    await page.waitForFunction(d=>graphScene.snapshot().contours[0]?.preview && graphScene.snapshot().contours[0].selection.direction===d,direction);
+    await page.waitForFunction(d=>graphScene.snapshot().contours.some(c=>c.preview && c.selection.direction===d),direction);
     assert.equal(await page.evaluate(()=>graphUI.contour()),null);
   }
   await page.screenshot({path:path.join(out,"contour-preview.png"),fullPage:true});
@@ -107,7 +109,7 @@ try {
   const menuBox=await contourMenu.boundingBox(), viewportBox=await page.locator(".three-geometry-viewport").boundingBox();
   assert.ok(menuBox.x>=viewportBox.x && menuBox.y>=viewportBox.y && menuBox.x+menuBox.width<=viewportBox.x+viewportBox.width && menuBox.y+menuBox.height<=viewportBox.y+viewportBox.height);
   await contourMenu.getByRole("menuitemradio").first().focus(); await page.keyboard.press("ArrowDown");
-  await page.waitForFunction(()=>graphScene.snapshot().contours[0]?.preview && graphScene.snapshot().contours[0].selection.direction===1);
+  await page.waitForFunction(()=>graphScene.snapshot().contours.some(c=>c.preview && c.selection.direction===1));
   await page.keyboard.press("Escape"); assert.deepEqual(await page.evaluate(()=>graphUI.contour()),fixedContour);
   await page.setViewportSize({width:1920,height:1080}); await page.waitForTimeout(100);
   pass("Context menu stays inside a smaller viewport; keyboard preview and Escape preserve the selected contour");
@@ -172,17 +174,67 @@ try {
   assert.match(await contourMenu.getByRole("menuitemradio").nth(0).innerText(),/направлении 1 \(DV1\)/);
   assert.match(await contourMenu.getByRole("menuitemradio").nth(1).innerText(),/направлении 2 \(DV2\)/);
   await contourMenu.getByRole("menuitemradio").nth(0).hover();
-  await page.waitForFunction(()=>graphScene.snapshot().contours[0]?.preview);
+  await page.waitForFunction(()=>graphScene.snapshot().contours.some(c=>c.preview));
   await contourMenu.getByRole("menuitemradio").nth(0).click();
   await page.waitForFunction(()=>graphUI.contour()?.graphId===1);
   await clickSurface(1,1,.35,.92); await page.waitForFunction(()=>graphUI.contour().index===2);
   const sliceContour=await page.evaluate(()=>graphUI.contour());
   await clickSurface(1,1,.35,.05,"left",1); assert.deepEqual(await page.evaluate(()=>graphUI.contour()),sliceContour);
-  assert.equal((await scene()).contours.length,1);
+  assert.equal((await scene()).contours.length,2);
   await page.screenshot({path:path.join(out,"slice-contour.png"),fullPage:true});
   pass("Slice menu names the two actual DV axes; clicks snap to EO rows and cannot move the selection onto a different symmetry image");
-  await open();
+  const collection = page.getByRole("complementary", {name:"Коллекция 1D"});
+  assert.equal(await collection.locator(".graph-1d-miniature").count(), 2);
+  const contourPoint = await surfacePoint(1,1,.35,5/6); await page.mouse.move(contourPoint.x,contourPoint.y);
+  await page.waitForFunction(()=>document.querySelector(".geometry-viewport-tooltip")?.textContent.includes("Сечение:"));
+  const contourHint=await page.locator(".geometry-viewport-tooltip").innerText();
+  assert.match(contourHint,/дискрет 2 \/ 2/); assert.match(contourHint,/индекс 3 \/ 3/);
+  await open(); await graphs.locator("tbody select").selectOption("2"); await waitGraphs();
+  await page.waitForFunction(()=>graphScene.snapshot().meshes.some(m=>m.id===1 && m.component===2));
+  assert.deepEqual(await page.evaluate(()=>graphUI.contour()),sliceContour);
+  assert.equal((await scene()).contours.length,2);
+  await page.getByRole("button",{name:"Графики",exact:true}).click();
+  await clickSurface(1,2,.35,.92,"right"); await contourMenu.getByRole("menuitemradio").first().click(); await waitGraphs();
+  assert.equal(await collection.locator(".graph-1d-miniature").count(),2);
+  pass("Marked sections remain on multiple graphs, tooltips show bounded slice/section indices, and component changes or duplicate picks preserve the collection");
 
+  const expandProfile = id => page.getByRole("button",{name:`Развернуть 1D график №${id}`,exact:true}).click();
+  await expandProfile(2); const expanded=page.getByRole("dialog",{name:"1D график №2",exact:true});
+  await page.waitForFunction(()=>profileChart.chart()?.data.datasets.length===3);
+  const full = await page.evaluate(()=>({ colors:profileChart.chart().data.datasets.map(d=>d.borderColor), points:profileChart.chart().data.datasets.map(d=>d.data), endpoints:profileChart.endpoints() }));
+  assert.deepEqual(full.colors,["#ff0000","#00ff00","#0000ff"]); assert.equal(full.points[0].length,4);
+  assert.ok(Math.abs(full.endpoints.start[0]-5)<1e-8); assert.ok(Math.abs(full.endpoints.end[0]-35)<1e-8); assert.ok(Math.abs(full.endpoints.length-30)<1e-8);
+  const chartBox=await expanded.locator("canvas").boundingBox();
+  const legendY=await page.evaluate(()=>profileChart.legend()[1]);
+  await page.mouse.click(chartBox.x+(legendY.left+legendY.right)/2,chartBox.y+(legendY.top+legendY.bottom)/2);
+  assert.equal(await page.evaluate(()=>profileChart.chart().isDatasetVisible(1)),false);
+  await expanded.getByRole("button",{name:"Авто",exact:true}).click();
+  const frozen=await page.evaluate(()=>profileChart.view().limits);
+  await page.evaluate(()=>{window.keptProfileChart=profileChart.chart();graphFixture.setTime(1);}); await waitGraphs();
+  assert.ok(await page.evaluate(()=>profileChart.chart()===keptProfileChart && !profileChart.chart().isDatasetVisible(1)));
+  assert.deepEqual(await page.evaluate(()=>profileChart.view().limits),frozen);
+  await page.evaluate(()=>graphFixture.setTime(0)); await waitGraphs();
+  pass("Expanded 1D uses all XYZ samples in RGB, actual endpoint coordinates, a toggling legend and frozen axes that survive time updates without recreating the chart");
+
+  await page.evaluate(()=>{
+    window.copiedGraph={}; Object.defineProperty(navigator,"clipboard",{configurable:true,value:{
+      async writeText(text){copiedGraph.table=text;},async write(items){const blob=await items[0].getType("image/png");const bitmap=await createImageBitmap(blob);copiedGraph.image={type:blob.type,size:blob.size,width:bitmap.width,height:bitmap.height};bitmap.close();}
+    }});
+  });
+  await expanded.locator("canvas").click({button:"right",position:{x:60,y:60}});
+  await expanded.getByRole("button",{name:"Копировать таблицу",exact:true}).click();
+  const copied=await page.evaluate(()=>copiedGraph.table); assert.equal(copied.split("\n").length,5);assert.equal(copied.split("\n")[0].split("\t").length,4);assert.match(copied,/X/);assert.match(copied,/Y/);assert.match(copied,/Z/);
+  await expanded.locator("canvas").click({button:"right",position:{x:60,y:60}});
+  await expanded.getByRole("button",{name:"Копировать изображение",exact:true}).click();
+  await page.waitForFunction(()=>copiedGraph.image?.size>1000);
+  assert.ok((await page.evaluate(()=>copiedGraph.image)).width>1000);
+  await page.screenshot({path:path.join(out,"expanded-profile.png"),fullPage:true});
+  await expanded.getByRole("button",{name:"Свернуть",exact:true}).click(); await expandProfile(2);
+  await page.waitForFunction(()=>profileChart.chart()?.data.datasets.length===3);
+  assert.equal(await page.evaluate(()=>profileChart.chart().isDatasetVisible(1)),false);assert.deepEqual(await page.evaluate(()=>profileChart.view().limits),frozen);
+  await expanded.getByRole("button",{name:"Свернуть",exact:true}).click();
+  pass("Copy table includes hidden components; copy image produces PNG with the full plot; collapse/expand retains visibility and axes");
+  await open();
 
   await graphs.getByRole("checkbox", { name: "Срезы в элементах", exact: true }).uncheck(); await page.waitForFunction(() => graphScene.snapshot().meshes.length === 3);
   assert.equal(await graphs.locator("tbody tr").count(), 1);
@@ -191,8 +243,8 @@ try {
   await page.evaluate(() => { graphFixture.holdReads(); graphFixture.setTime(1); }); await page.waitForFunction(() => graphFixture.pendingReads() > 0);
   assert.equal((await scene()).meshes.length, 5); assert.ok(await page.evaluate(() => graphUI.results().every(g => g.timeIndex === 0)));
   await page.evaluate(() => graphFixture.releaseReads()); await page.waitForFunction(() => !graphUI.busy() && graphUI.results().every(g => g.timeIndex === 1));
-  assert.deepEqual(await page.evaluate(()=>graphUI.contour()),sliceContour);
-  await page.waitForFunction(()=>graphScene.snapshot().contours.length===1);
+  assert.deepEqual(await page.evaluate(()=>{const {view,...selection}=graphUI.contour();return selection;}),sliceContour);
+  await page.waitForFunction(()=>graphScene.snapshot().contours.length===2);
   pass("Hiding retains rows and contour; time changes retain old surfaces then update the selected contour with the new frame");
 
   await open(); await graphs.getByRole("button", { name: "Добавить", exact: true }).click();
@@ -236,9 +288,9 @@ try {
 
   await page.keyboard.press("z"); await page.waitForFunction(()=>graphScene.snapshot().direction[2]>.999);
   await clickSurface("region:0",1,.4,.55,"right"); await contourMenu.getByRole("menuitemradio").nth(1).click();
-  await page.waitForFunction(()=>graphScene.snapshot().contours.length===1);
+  await page.waitForFunction(()=>graphScene.snapshot().contours.length===2);
   await clickSurface("region:0",1,.4,.55,"right"); await contourMenu.getByRole("menuitemradio").nth(0).hover();
-  await page.waitForFunction(()=>graphScene.snapshot().contours[0]?.preview);
+  await page.waitForFunction(()=>graphScene.snapshot().contours.some(c=>c.preview));
   await page.evaluate(async()=>{const adapter=graphFixture.capture();await adapter.prepare();await adapter.capture(1);await adapter.restore(1);});
   await contourMenu.waitFor({state:"hidden"});
   assert.equal((await scene()).contours[0].preview,false);
@@ -264,7 +316,7 @@ try {
   });
   await writeFile(path.join(out, "surfaces.webm"), new Uint8Array(movie.bytes)); delete movie.bytes;
   assert.equal(movie.frames, 3); assert.deepEqual(movie.decoded, [movie.width, movie.height]);
-  movie.samples.forEach((sample, index) => { assert.deepEqual(sample.times, [index,index]); assert.equal(sample.meshes, 5); assert.equal(sample.contours, 1); assert.ok(sample.color > 100 && sample.white > 100, JSON.stringify(sample)); });
+  movie.samples.forEach((sample, index) => { assert.deepEqual(sample.times, [index,index]); assert.equal(sample.meshes, 5); assert.equal(sample.contours, 2); assert.ok(sample.color > 100 && sample.white > 100, JSON.stringify(sample)); });
   assert.ok(await page.evaluate(() => graphUI.results().every(g => g.timeIndex === 1)));
   await writeFile(path.join(out, "movie.json"), JSON.stringify(movie, null, 2));
   pass("Real moview encodes and decodes WebM with refreshed area/slice surfaces and the selected contour in every frame and restores time");
@@ -282,6 +334,34 @@ try {
   assert.equal(textColor, "rgb(237, 242, 247)");
   await page.screenshot({ path: path.join(out, "panel.png"), fullPage: true });
   pass("The graph panel fits 1440px and the slice table has its own vertical scroll");
+  await page.getByRole("button",{name:"Графики",exact:true}).click();
+  await size.evaluate(el=>{el.value="0.5";el.dispatchEvent(new Event("input",{bubbles:true}));});
+  await page.getByRole("button", { name: "Общие опции отображения", exact: true }).click();
+  await page.getByRole("combobox", { name: "Палитра результатов", exact: true }).selectOption("Turbo");
+  await expandProfile(1); const persistedDialog=page.getByRole("dialog",{name:"1D график №1",exact:true});
+  await page.waitForFunction(()=>profileChart.chart()?.data.datasets.length===3);
+  const persistedBox=await persistedDialog.locator("canvas").boundingBox(), persistedLegend=await page.evaluate(()=>profileChart.legend()[2]);
+  await page.mouse.click(persistedBox.x+(persistedLegend.left+persistedLegend.right)/2,persistedBox.y+(persistedLegend.top+persistedLegend.bottom)/2);
+  await persistedDialog.getByRole("button",{name:"Авто",exact:true}).click();
+  await page.waitForFunction(()=>graphFixture.saved()?.settings.expandedProfile===1 && graphFixture.saved()?.settings.profiles.find(p=>p.id===1)?.view?.hidden.includes("Z"));
+  const savedSettings=await page.evaluate(()=>graphFixture.saved().settings);
+  await page.reload(); await page.waitForFunction(()=>window.graphUI?.ready() && window.graphScene?.ready() && !graphUI.busy());
+  await persistedDialog.waitFor(); await page.waitForFunction(()=>profileChart.chart()?.data.datasets.length===3);
+  assert.equal(await page.evaluate(()=>graphUI.profiles().length),savedSettings.profiles.length);
+  assert.deepEqual(await page.evaluate(()=>graphUI.slices()),savedSettings.slices);
+  assert.equal(await page.evaluate(()=>profileChart.chart().isDatasetVisible(2)),false);
+  assert.equal(await page.evaluate(()=>profileChart.view().auto),false);
+  assert.equal(await size.inputValue(),"0.5");
+  await page.screenshot({path:path.join(out,"restored-profile.png"),fullPage:true});
+  await persistedDialog.getByRole("button",{name:"Свернуть",exact:true}).click();
+  await page.getByRole("button", { name: "Общие опции отображения", exact: true }).click();
+  assert.equal(await page.getByRole("combobox", { name: "Палитра результатов", exact: true }).inputValue(),"Turbo");
+  const storedIds=await page.evaluate(()=>graphUI.profiles().map(p=>p.id));
+  for(const id of storedIds) await page.getByRole("button",{name:`Удалить 1D график №${id}`,exact:true}).click();
+  await page.waitForFunction(()=>graphUI.profiles().length===0 && graphScene.snapshot().contours.length===0 && graphFixture.saved()?.settings.profiles.length===0);
+  assert.equal(await collection.count(),0); assert.equal(await page.evaluate(()=>graphUI.slices().length),savedSettings.slices.length);
+  pass("Full page reload restores task-owned slices, collection, size, palette, expanded state, hidden components and manual axes; deleting thumbnails clears only 1D sections and saves automatically");
+
   await page.evaluate(()=>{
     graphFixture.buffers.JE[0].fill(0,3,6); graphFixture.buffers.JE[0].fill(0,15,18);
     graphFixture.setTime(0);graphFixture.showWorking(true);

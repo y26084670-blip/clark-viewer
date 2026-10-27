@@ -37,10 +37,12 @@ function buildGraph(THREE, graph, options) {
     const image = new THREE.Group(); image.userData = { source: graph.source, instance: surface.instance };
     const positions = new Float32Array(surface.positions.length), colors = new Float32Array(positions.length);
     const factor = spanOf(surface) * .35 * options.scale / graph.referenceMaximum;
+    const gap = spanOf(surface) * .01;
     const color = new THREE.Color();
     for (let n = 0; n < surface.values.length; n++) {
       const value = Number.isFinite(surface.values[n]) ? surface.values[n] : 0;
-      for (let k = 0; k < 3; k++) positions[n * 3 + k] = surface.positions[n * 3 + k] + surface.normals[n * 3 + k] * value * factor;
+      const height = gap + (value - surface.minimum) * factor;
+      for (let k = 0; k < 3; k++) positions[n * 3 + k] = surface.positions[n * 3 + k] + surface.normals[n * 3 + k] * height;
       color.setRGB(...resultScalarColor(value, surface.minimum, surface.maximum, options.palette), THREE.SRGBColorSpace);
       colors.set(color.toArray(), n * 3);
     }
@@ -52,7 +54,7 @@ function buildGraph(THREE, graph, options) {
     if (!rgb) meshGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     const mesh = new THREE.Mesh(meshGeometry, new THREE.MeshStandardMaterial({ color: rgb ? RGB[surface.component] : 0xffffff,
       vertexColors: !rgb, roughness: .72, metalness: 0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
-    mesh.name = "result-graph-surface"; mesh.userData = { graphId: graph.id, component: surface.component, surface, factor };
+    mesh.name = "result-graph-surface"; mesh.userData = { graphId: graph.id, graphKind: graph.kind, graph, component: surface.component, surface, factor, gap };
     image.add(mesh);
     const baseKey = JSON.stringify([surface.instance.ls, surface.instance.as, surface.instance.ps, surface.instance.mirrorX, surface.instance.mirrorY]);
     if (!bases.has(baseKey)) {
@@ -83,7 +85,7 @@ export function updateGraphScene(THREE, root, scene, graphs, options = {}) {
     for (const image of group.children) image.visible = visible(image.userData.source, image.userData.instance, settings.filters);
   }
   for (const child of [...root.children]) if (!retained.has(child)) { root.remove(child); dispose(child); }
-  updateGraphContours(THREE, root, settings.contour, settings.contourPreview, settings.resolution);
+  updateGraphContours(THREE, root, settings.contours ?? settings.contour, settings.contourPreview, settings.resolution, settings.contour?.id);
   if (settings.selected) {
     const primitive = scene?.primitives.find(p => p.source.schemaId === "elements" && p.source.recordIndex === settings.selected.recordIndex);
     if (primitive) {

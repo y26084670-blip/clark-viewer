@@ -2039,6 +2039,21 @@ export function ThreeGeometryViewport(props) {
     raycaster.params.Line2 = { threshold: 10 }; // Full width grows by 5 CSS px on either side.
     raycaster.params.Points.threshold = unitsPerPixel * 9;
 
+    if (action === "hover") {
+      const lines = [], surfaces = [];
+      graphRoot?.traverseVisible(o => {
+        if (o.userData.tooltip && o.name === "graph-contour-line") lines.push(o);
+        if (["result-graph-surface", "result-graph-base"].includes(o.name)) surfaces.push(o);
+      });
+      const hit = raycaster.intersectObjects(lines, false)[0];
+      if (hit) {
+        const obstruction = raycaster.intersectObjects(surfaces.concat(activeRenderMode === "solid" && (geometryOpacity ?? 1) >= 1 ? geometryPickTargets : []), false)[0];
+        if (!obstruction || obstruction.distance >= hit.distance - unitsPerPixel * 5) {
+          showTooltip(hit.object.userData.tooltip, x, y); return;
+        }
+      }
+    }
+
     let flightGeometryHit;
     if (props.resultPickingOnly) {
       // Report saved nodes, including for an intersection on a scaled vector.
@@ -2509,7 +2524,7 @@ export function ThreeGeometryViewport(props) {
     updateGraphScene(THREE, graphRoot, props.scene, props.graphResults ?? [], {
       active: props.activeGraph, preview: props.graphPreview, selected: props.graphSelection,
       scale: props.resultVectorScale ?? 1, palette: props.resultPalette, filters: activeResultFilters,
-      contour: props.graphContour, contourPreview: graphContourPreview(), resolution: [viewportWidth, viewportHeight],
+      contour: props.graphContour, contours: props.graphContours, contourPreview: graphContourPreview(), resolution: [viewportWidth, viewportHeight],
     });
     if (graphRoot.parent !== helperRoot) helperRoot.add(graphRoot);
   };
@@ -2821,7 +2836,7 @@ export function ThreeGeometryViewport(props) {
         blocked: () => props.graphInteractionBlocked || !props.onGraphContourChange || movieSnapshot || !ready() || contextLost
           || flightController.state !== "idle" || axisRotationController?.active,
         pick: event => { renderNow(); return pickAtPointer(event, "graph"); },
-        getSelection: () => props.graphContour, onSelection: selection => props.onGraphContourChange?.(selection),
+        getSelection: () => props.graphContour, onSelection: (selection, options) => props.onGraphContourChange?.(selection, options),
         onMenu: menu => { clearHoverTooltip(); setGraphContourMenu(menu); }, onPreview: setGraphContourPreview,
         menuElement: () => graphMenuElement,
       });
@@ -2944,7 +2959,7 @@ export function ThreeGeometryViewport(props) {
 
   createEffect(() => {
     props.graphResults; props.activeGraph; props.graphPreview; props.graphSelection; props.resultVectorScale; props.resultPalette;
-    props.graphContour; graphContourPreview();
+    props.graphContour; props.graphContours; graphContourPreview();
     if (!ready()) return;
     graphsDirty = true; requestRender();
   });

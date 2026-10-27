@@ -33,7 +33,7 @@ export function installGraphContourInteraction({ element, blocked, pick, getSele
     const hit = pick(event);
     if (!sameContourSurface(hit, selected)) return;
     const next = graphContourSelection(hit, selected.direction);
-    if (next) { stop(event); onSelection(next); }
+    if (next) { stop(event); onSelection(next, { add: false }); }
   }
   const outside = event => { if (menu && !menuElement()?.contains(event.target)) close(); };
   const escape = event => { if (menu && event.key === "Escape") { stop(event); close(); element.focus({ preventScroll: true }); } };
@@ -51,7 +51,7 @@ export function installGraphContourInteraction({ element, blocked, pick, getSele
     choose(direction) {
       if (!menu || blocked()) return;
       const next = graphContourSelection(menu.hit, direction);
-      if (next) onSelection(next);
+      if (next) onSelection(next, { add: true });
       close(); element.focus({ preventScroll: true });
     },
     dispose() {

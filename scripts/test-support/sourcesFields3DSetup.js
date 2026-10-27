@@ -11,6 +11,9 @@ import { createResultGraphReader, graphQuantityKey, graphRequestKey } from "../.
 
 import { RESULT_SIZE_SCALE } from "../../src/services/visualization/resultVectorScale.js";
 
+import { createGraphSettingsStore, GRAPH_VIEW_DEFAULTS } from "../../src/services/results/graphSettingsStore.js";
+import { graphContourIdentity } from "../../src/services/visualization/resultGraphContours.js";
+
 const streamlineSessions = new WeakMap();
 const cameraSessions = new WeakMap();
 const graphSessions = new WeakMap();
@@ -54,13 +57,13 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_METHODS", "streamlineSessions", "cameraSessions",
     "QUANTITIES", "assignedHtsElements", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
     "createMovieTabAdapter", "completedMovieFrame", "onMount", "applyResultGlobalRange", "resultGlobalScale",
-    "GRAPH_SLICE_DIRECTIONS", "createResultGraphReader", "graphQuantityKey", "graphRequestKey", "graphSessions", "untrack", "graphSliceCount", "middleGraphDiscrete", "RESULT_SIZE_SCALE",
+    "GRAPH_SLICE_DIRECTIONS", "createResultGraphReader", "graphQuantityKey", "graphRequestKey", "graphSessions", "untrack", "graphSliceCount", "middleGraphDiscrete", "RESULT_SIZE_SCALE", "createGraphSettingsStore", "GRAPH_VIEW_DEFAULTS", "graphContourIdentity",
     `${setup} return { cameraState, rememberCamera, quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
       colorMap, effectiveColorMap, normalizeVectors, changeNormalizeVectors, changeColorMap, conductivityAvailable, unavailableConductivity, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
       addStreamline, deleteStreamline, streamlineMethod, changeStreamlineMethod, streamlines,
       graphsOnly, setGraphsOnly, areaGraphs, setAreaGraphs, sliceGraphs, setSliceGraphs, graphSlices, activeSlice, setActiveSlice,
       addSlice, setAddElement, changeSlice, deleteSlice, graphResults, graphBusy, graphError, graphRequest, sliceScalar, sliceCount, sliceLabel, sliceChoice,
-      graphContour, selectGraphContour,
+      graphContour, selectGraphContour, graphProfiles, activeProfile, selectProfile, removeProfiles, expandedProfile, changeProfileView, graphReady, graphSaveNotice,
       controls: ${controlBindings},
       streamlineControls: ${streamlineBindings},
       globalMinMax, setGlobalMinMax, globalRanges, effectiveGlobalMinMax, resultLayers, timeIndex, selections }; } return SourcesFields3D(props);`);
@@ -72,7 +75,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     RESULT_LAYER_GROUPS, options.readerFactory ?? createResultLayerReader,
     (source, reader) => { if (!graphSource) { graphSource = source; graphLoad = reader; return () => graphState; } requestSource = source; load = reader; options.observeRequest?.(source); return () => state; },
     options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame, () => {}, applyResultGlobalRange, resultGlobalScale,
-    GRAPH_SLICE_DIRECTIONS, options.graphReaderFactory ?? createResultGraphReader, graphQuantityKey, graphRequestKey, graphSessions, options.untrack ?? (read => read()), graphSliceCount, middleGraphDiscrete, RESULT_SIZE_SCALE);
+    GRAPH_SLICE_DIRECTIONS, options.graphReaderFactory ?? createResultGraphReader, graphQuantityKey, graphRequestKey, graphSessions, options.untrack ?? (read => read()), graphSliceCount, middleGraphDiscrete, RESULT_SIZE_SCALE, createGraphSettingsStore, GRAPH_VIEW_DEFAULTS, graphContourIdentity);
   // Existing field-display cases explicitly keep result visualization enabled.
   if (options.graphsOnly !== true) api.setGraphsOnly(false);
   return { ...api, request: () => requestSource(), load: request => load(request),

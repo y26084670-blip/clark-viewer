@@ -18,6 +18,9 @@ import { STREAMLINE_METHODS, STREAMLINE_DEFAULT_TOLERANCE } from "../services/vi
 import { GRAPH_SLICE_DIRECTIONS, graphSliceCount, middleGraphDiscrete } from "../services/visualization/resultGraphField.js";
 import { RESULT_SIZE_SCALE } from "../services/visualization/resultVectorScale.js";
 import { createResultGraphReader, graphQuantityKey, graphRequestKey } from "../services/results/resultGraphRequests.js";
+import { createGraphSettingsStore, GRAPH_VIEW_DEFAULTS } from "../services/results/graphSettingsStore.js";
+import { graphContourIdentity } from "../services/visualization/resultGraphContours.js";
+import { Graph1DCollection } from "../components/Graph1DCollection.jsx";
 import "./SourcesFields3D.css";
 
 // Switching tabs unmounts this component. Retain task-owned choices,
@@ -55,12 +58,21 @@ export function SourcesFields3D(props) {
   const [sliceGraphs, setSliceGraphs] = createSignal(savedGraphs?.showSlices ?? false);
   const [graphSlices, setGraphSlices] = createSignal(savedGraphs?.slices ?? []);
   const [activeSlice, setActiveSlice] = createSignal(savedGraphs?.active ?? null);
-  const [graphContour, setGraphContour] = createSignal(savedGraphs?.contour ?? null);
+  const [graphProfiles, setGraphProfiles] = createSignal(savedGraphs?.profiles ?? []);
+  const [activeProfile, setActiveProfile] = createSignal(savedGraphs?.activeProfile ?? null);
+  const [expandedProfile, setExpandedProfile] = createSignal(savedGraphs?.expandedProfile ?? null);
+  const graphContour = () => graphProfiles().find(p => p.id === activeProfile()) ?? null;
+  const [graphReady, setGraphReady] = createSignal(!props.task?.handle || !!savedGraphs);
+  const [graphSaveNotice, setGraphSaveNotice] = createSignal("");
   const [addingSlice, setAddingSlice] = createSignal(false), [addElement, setAddElement] = createSignal(0);
   const [directionMenu, setDirectionMenu] = createSignal(null), [previewSlice, setPreviewSlice] = createSignal(null);
-  let graphTask = props.task, nextSliceId = Math.max(0, ...graphSlices().map(s => s.id)) + 1;
-  const graphSession = () => ({ only: graphsOnly(), areas: areaGraphs(), showSlices: sliceGraphs(), slices: graphSlices(), active: activeSlice(), contour: graphContour() });
-  const graphBlocked = () => props.movieBusy || flightBusy();
+  let graphTask = props.task, graphStore, graphRevision = 0, nextSliceId = Math.max(0, ...graphSlices().map(s => s.id)) + 1;
+  let nextProfileId = Math.max(0, ...graphProfiles().map(p => p.id)) + 1;
+  const graphSession = () => ({ only: graphsOnly(), areas: areaGraphs(), showSlices: sliceGraphs(), slices: graphSlices(), active: activeSlice(),
+    profiles: graphProfiles(), activeProfile: activeProfile(), expandedProfile: expandedProfile(),
+    view: Object.fromEntries(Object.entries(graphView).map(([key, [read]]) => [key, read()])),
+    selections: { elements: props.elements, regions: props.regions } });
+  const graphBlocked = () => props.movieBusy || flightBusy() || !graphReady();
   const selectedSlice = () => graphSlices().find(s => s.id === activeSlice());
   const graphQuantities = () => ({ elements: elementsQuantity(), regions: regionsQuantity(), virtual: virtualQuantity() });
   const sliceScalar = slice => QUANTITIES[graphQuantityKey(props.task, slice, graphQuantities())]?.components !== 3;
@@ -69,21 +81,7 @@ export function SourcesFields3D(props) {
   const sliceChoice = (recordIndex, direction, previous) => ({ recordIndex, direction,
     discrete: previous?.direction === direction ? previous.discrete : middleGraphDiscrete(sliceCount(recordIndex, direction)) });
   const closeGraphChoice = () => { setAddingSlice(false); setDirectionMenu(null); setPreviewSlice(null); };
-  createEffect(() => {
-    const task = props.task;
-    untrack(() => {
-      if (task === graphTask) return;
-      if (graphTask) graphSessions.set(graphTask, graphSession());
-      graphTask = task;
-      const saved = task && graphSessions.get(task);
-      setGraphsOnly(saved?.only ?? false); setAreaGraphs(saved?.areas ?? false); setSliceGraphs(saved?.showSlices ?? false);
-      setGraphSlices(saved?.slices ?? []); setActiveSlice(saved?.active ?? null);
-      setGraphContour(saved?.contour ?? null);
-      nextSliceId = Math.max(0, ...graphSlices().map(s => s.id)) + 1; closeGraphChoice();
-    });
-  });
   createEffect(() => { if (openSourceMenu() !== "graphs" || props.movieBusy) closeGraphChoice(); });
-  onCleanup(() => { if (graphTask) graphSessions.set(graphTask, graphSession()); });
   function addSlice(direction) {
     if (graphBlocked()) return;
     const record = props.task.elements[addElement()];
@@ -106,21 +104,43 @@ export function SourcesFields3D(props) {
       const direction = update.direction ?? s.direction, count = sliceCount(s.recordIndex, direction);
       const discrete = direction !== s.direction ? middleGraphDiscrete(count) : update.discrete ?? s.discrete;
       if (!Number.isSafeInteger(discrete) || discrete < 1 || discrete > count) return s;
-      if (graphContour()?.graphId === id && (direction !== s.direction || (update.component !== undefined && update.component !== s.component))) setGraphContour(null);
+      if (direction !== s.direction) removeProfiles(p => p.graphId === id);
       return { ...s, ...update, direction, discrete };
     }));
     setActiveSlice(id);
   }
   function deleteSlice() {
     if (graphBlocked()) return;
-    if (graphContour()?.graphId === activeSlice()) setGraphContour(null);
+    removeProfiles(p => p.graphId === activeSlice());
     const remaining = graphSlices().filter(s => s.id !== activeSlice());
     setGraphSlices(remaining); setActiveSlice(remaining.at(-1)?.id ?? null); closeGraphChoice();
   }
-  function selectGraphContour(contour) {
-    if (graphBlocked()) return;
-    setGraphContour(contour);
+  function selectGraphContour(contour, { add = true } = {}) {
+    if (graphBlocked() || !contour) return;
+    const existing = graphProfiles().find(p => graphContourIdentity(p) === graphContourIdentity(contour));
+    if (existing) setActiveProfile(existing.id);
+    else if (!add && graphContour()) {
+      const id = activeProfile(); setGraphProfiles(previous => previous.map(p => p.id === id ? { ...p, ...contour } : p));
+    } else {
+      const profile = { ...contour, id: nextProfileId++ };
+      setGraphProfiles(previous => [...previous, profile]); setActiveProfile(profile.id);
+    }
     if (graphSlices().some(slice => slice.id === contour?.graphId)) setActiveSlice(contour.graphId);
+  }
+  function removeProfiles(predicate) {
+    const remaining = graphProfiles().filter(p => !predicate(p)); setGraphProfiles(remaining);
+    if (!remaining.some(p => p.id === activeProfile())) setActiveProfile(remaining.at(-1)?.id ?? null);
+    if (!remaining.some(p => p.id === expandedProfile())) setExpandedProfile(null);
+  }
+  function selectProfile(id) {
+    if (graphBlocked()) return;
+    setActiveProfile(id);
+    const profile = graphProfiles().find(p => p.id === id);
+    if (graphSlices().some(s => s.id === profile?.graphId)) setActiveSlice(profile.graphId);
+  }
+  function changeProfileView(id, view) {
+    if (graphBlocked()) return;
+    setGraphProfiles(previous => previous.map(p => p.id === id ? { ...p, view } : p));
   }
   function DirectionChoices(p) {
     return <div class="source-slice-directions" role="menu" aria-label="Направление среза"
@@ -199,6 +219,47 @@ export function SourcesFields3D(props) {
   };
   const [elementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode] = createGeometryViewSetting("regionsMode", "all");
+  const graphView = Object.fromEntries(Object.entries(GRAPH_VIEW_DEFAULTS).map(([key, initial]) => [key, createGeometryViewSetting(key, initial)]));
+  function restoreGraphs(saved) {
+    setGraphsOnly(saved?.only ?? false); setAreaGraphs(saved?.areas ?? false); setSliceGraphs(saved?.showSlices ?? false);
+    setGraphSlices(saved?.slices ?? []); setActiveSlice(saved?.active ?? null);
+    setGraphProfiles(saved?.profiles ?? []); setActiveProfile(saved?.activeProfile ?? null); setExpandedProfile(saved?.expandedProfile ?? null);
+    for (const [key, value] of Object.entries(saved?.view ?? {})) graphView[key]?.[1](value);
+    if (saved?.selections?.elements) props.setElements?.(saved.selections.elements);
+    if (saved?.selections?.regions) props.setRegions?.(saved.selections.regions);
+    nextSliceId = Math.max(0, ...graphSlices().map(s => s.id)) + 1;
+    nextProfileId = Math.max(0, ...graphProfiles().map(p => p.id)) + 1; closeGraphChoice();
+  }
+  createEffect(() => {
+    const task = props.task;
+    untrack(() => {
+      if (graphStore && task === graphTask) return;
+      if (graphStore) { if (graphTask) graphSessions.set(graphTask, graphSession()); graphStore.dispose(); }
+      graphTask = task; const revision = ++graphRevision, saved = task && graphSessions.get(task);
+      restoreGraphs(saved); setGraphSaveNotice(""); setGraphReady(!task?.handle || !!saved);
+      graphStore = createGraphSettingsStore(task, { onNotice: text => { if (revision === graphRevision) setGraphSaveNotice(text); } });
+      graphStore.ready.then(value => {
+        if (revision !== graphRevision) return;
+        if (!saved && value) restoreGraphs(value);
+        setGraphReady(true);
+      });
+    });
+  });
+  createEffect(() => {
+    if (!graphReady()) return;
+    const saved = graphSession();
+    if (graphTask) graphSessions.set(graphTask, saved);
+    graphStore?.save(saved);
+  });
+  onMount(() => {
+    const flush = () => graphStore?.flush();
+    window.addEventListener("pagehide", flush); document.addEventListener("visibilitychange", flush);
+    onCleanup(() => { window.removeEventListener("pagehide", flush); document.removeEventListener("visibilitychange", flush); });
+  });
+  onCleanup(() => {
+    if (graphReady() && graphTask) { const saved = graphSession(); graphSessions.set(graphTask, saved); graphStore?.save(saved); }
+    ++graphRevision; graphStore?.dispose();
+  });
   const quantities = {
     elements: { read: elementsQuantity, write: setElementsQuantity },
     regions: { read: regionsQuantity, write: setRegionsQuantity },
@@ -227,15 +288,20 @@ export function SourcesFields3D(props) {
   }));
   const graphReader = createResultGraphReader();
   onCleanup(() => graphReader.close());
+  const profileDefinitions = createMemo(() => graphReady() ? graphProfiles().map(({ id, graphId, instanceKey, surfaceKey, direction, index }) => ({ id, graphId, instanceKey, surfaceKey, direction, index })) : [],
+    undefined, { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) });
   const graphRequest = createMemo(() => {
+    const profiles = profileDefinitions();
+    const wanted = new Set(profiles.map(p => p.graphId));
     const request = { task: props.task, time: props.time, quantities: graphQuantities(),
-      slices: sliceGraphs() ? graphSlices() : [],
-      regions: areaGraphs() && regionsQuantity() !== "none" ? (props.task?.regions ?? [])
-        .filter(r => r.geoType !== 2 && requestedLayers().find(g => g.key === "regions").selected.includes(r.id)).map(r => r.recordIndex) : [] };
+      slices: graphReady() ? graphSlices().filter(s => sliceGraphs() || wanted.has(s.id)) : [], profiles,
+      regions: graphReady() && regionsQuantity() !== "none" ? (props.task?.regions ?? [])
+        .filter(r => r.geoType !== 2 && (wanted.has(`region:${r.recordIndex}`) || areaGraphs() && requestedLayers().find(g => g.key === "regions").selected.includes(r.id))).map(r => r.recordIndex) : [] };
     return { ...request, quantityKey: graphRequestKey(request) };
   });
   const graphResult = useResultFrame(graphRequest, request => graphReader.read(request));
-  const graphResults = () => graphResult().frame?.value.graphs ?? [];
+  const graphResults = () => (graphResult().frame?.value.graphs ?? []).filter(g => g.kind === "region" ? areaGraphs() : sliceGraphs() && graphSlices().some(s => s.id === g.id));
+  const profileResults = () => graphResult().frame?.value.profiles ?? [];
   const graphBusy = () => graphResult().loading;
   const graphError = () => [graphResult().error, ...(graphResult().frame?.value.errors ?? []).map(e => e.message)].filter(Boolean).join(" · ");
   const globalRanges = createMemo(() => resultGlobalScale(props.task, requestedLayers(), streamlineSeeds()));
@@ -428,6 +494,7 @@ export function SourcesFields3D(props) {
               </Show>
               <Show when={graphBusy()}><span role="status">Построение поверхностей…</span></Show>
               <Show when={graphError()}><span class="source-graph-error" role="alert">{graphError()}</span></Show>
+              <Show when={!graphReady()}><span role="status">Загрузка настроек графиков…</span></Show>
             </div>
           </Show>
         </div>
@@ -480,7 +547,8 @@ export function SourcesFields3D(props) {
         <GeometryMaterialLegend buttonClass="source-toolbar-menu-button"
           onOpen={() => setOpenSourceMenu(null)} />
       </div>
-      <div class="embedded-geometry">
+      <Show when={graphSaveNotice()}><div class="plot-status" role="status">{graphSaveNotice()}</div></Show>
+      <div class="source-graph-workspace"><div class="embedded-geometry">
         <ResultsGeometryViewport cameraState={cameraState()} onCameraStateChange={rememberCamera} open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           allowFlight={true} flightBlocked={props.movieBusy || graphBusy()} flightDisabledReason={flightDisabledReason()}
           onFlightStateChange={setFlightState}
@@ -490,7 +558,7 @@ export function SourcesFields3D(props) {
           resultError={[result().error, ...(value()?.errors ?? []).map(error => error.message)].filter(Boolean).join(" · ")}
           resultStreamlines={graphsOnly() ? [] : streamlines()} selectedStreamline={selectedStreamline()}
           graphResults={graphResults()} activeGraph={activeSlice()} graphPreview={previewSlice()} graphSelection={selectedSlice()}
-          graphContour={graphContour()} onGraphContourChange={selectGraphContour} graphInteractionBlocked={graphBlocked() || graphBusy()}
+          graphContour={graphContour()} graphContours={graphProfiles()} onGraphContourChange={selectGraphContour} graphInteractionBlocked={graphBlocked() || graphBusy()}
           streamlineWidth={streamlineWidth()} streamlineColorMap={true}
           onSelectStreamline={setSelectedStreamline} onResultNodeDoubleClick={addStreamline}
           captureFrameKey={captureFrameKey()} onCaptureReady={movie.onCaptureReady}
@@ -498,6 +566,12 @@ export function SourcesFields3D(props) {
           resultVectorColorMap={effectiveColorMap()}
           resultNormalizeVectors={normalizeVectors()}
           performanceProfile={performanceProfile()} />
+      </div>
+        <Graph1DCollection entries={graphProfiles()} results={profileResults()} active={activeProfile()} expanded={expandedProfile()}
+          blocked={graphBlocked()} loading={graphBusy()} error={graphError()}
+          onSelect={selectProfile} onExpand={id => { if (!graphBlocked()) { selectProfile(id); setExpandedProfile(id); } }}
+          onCollapse={() => setExpandedProfile(null)} onDelete={id => { if (!graphBlocked()) removeProfiles(p => p.id === id); }}
+          onViewChange={changeProfileView} />
       </div>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep}
         disabled={flightBusy()} onChange={changeTime} />

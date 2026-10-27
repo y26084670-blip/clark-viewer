@@ -10,10 +10,17 @@ for (const [key,value] of Object.entries({ resultElementsQuantity: "J", resultRe
   elementsMode: "all", regionsMode: "all", showLocalSymmetry: true, showPeriodicSymmetry: true, showMirrorSymmetry: true })) createGeometryViewSetting(key,value)[1](value);
 function Fixture() {
   const f = graph3DTask(), [time,setTime] = createSignal(0), [mounted,setMounted] = createSignal(true), [busy,setBusy] = createSignal(false), [working,showWorking] = createSignal(false);
+  const savedKey = "graph-collection-test-settings";
+  f.task.handle = { async getFileHandle(name, options) {
+    if (!options?.create && localStorage.getItem(savedKey) === null) throw Object.assign(new Error("missing"), { name: "NotFoundError" });
+    return { async getFile() { return new File([localStorage.getItem(savedKey) ?? ""], name); }, async createWritable() {
+      let text; return { async write(value) { text = value; }, async close() { localStorage.setItem(savedKey, text); }, async abort() {} };
+    } };
+  } };
   const read = f.task.reader.read; let held = false, waiting = [];
   f.task.reader.read = async request => { if (held) await new Promise(resolve => waiting.push(resolve)); return read(request); };
   let capture;
-  window.graphFixture = { ...f, setTime, setMounted, setBusy, showWorking, capture: () => capture,
+  window.graphFixture = { ...f, saved: () => JSON.parse(localStorage.getItem(savedKey)), setTime, setMounted, setBusy, showWorking, capture: () => capture,
     holdReads: () => { held = true; }, pendingReads: () => waiting.length,
     releaseReads: () => { held = false; waiting.splice(0).forEach(resolve => resolve()); } };
   const props = { task:f.task, elements:[1,2], regions:[1], setElements(){}, setRegions(){}, get time(){return time();}, setTime,

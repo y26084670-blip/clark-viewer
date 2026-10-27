@@ -73,11 +73,11 @@ test("selected and preview contours follow scale/time, stay on their own image, 
   assert.ok(targets.every(m => m.geometry.attributes.uv.count === s.values.length));
   assert.ok(targets[0].getObjectByName("graph-contour")); assert.equal(targets[1].getObjectByName("graph-contour"), undefined);
   const points = () => root.getObjectByName("graph-contour-line").geometry.attributes.instanceStart;
-  const z = points().getZ(0); render(graph, { scale: 2 }); close(points().getZ(0), z * 2);
-  const changed = { ...graph, surfaces: [{ ...s, values: Float64Array.from(s.values, v => v * 3) }, copy] };
-  render(changed); close(points().getZ(0), z * 3);
+  const z = points().getZ(0); render(graph, { scale: 2 }); close(points().getZ(0), (z - .01) * 2 + .01);
+  const changed = { ...graph, surfaces: [{ ...s, minimum: s.minimum * 3, maximum: s.maximum * 3, values: Float64Array.from(s.values, v => v * 3) }, copy] };
+  render(changed); close(points().getZ(0), (z - .01) * 3 + .01);
   render(graph, { contourPreview: { ...contour, direction: 1, index: 2 } });
-  assert.equal(root.getObjectByName("graph-contour").userData.preview, true);
+  assert.ok(targets.length); const previews = []; root.traverse(o => { if (o.name === "graph-contour" && o.userData.preview) previews.push(o); }); assert.equal(previews.length, 1);
   render(); assert.equal(root.getObjectByName("graph-contour").userData.preview, false);
   render(graph, { filters: { objectModes: { regions: "none" } } }); assert.equal(graphSurfaceTargets(root).length, 0);
   let allocated = 0, disposed = 0;

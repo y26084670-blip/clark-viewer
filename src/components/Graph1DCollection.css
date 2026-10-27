@@ -1,0 +1,22 @@
+.source-graph-workspace { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.source-graph-workspace > .embedded-geometry { flex: 1; min-width: 0; }
+.graph-1d-collection { display: flex; flex-direction: column; flex: 0 0 198px; min-height: 0; border-left: 1px solid #bcc7d2; background: #edf1f5; }
+.graph-1d-heading { padding: 7px 10px; font-weight: 600; display: flex; justify-content: space-between; }
+.graph-1d-heading span { color: #617386; font-size: .85em; }
+.graph-1d-scroll { overflow-y: auto; flex: 1; min-height: 0; padding: 0 6px 6px; }
+.graph-1d-miniature { margin-bottom: 6px; border: 2px solid transparent; border-radius: 5px; background: white; }
+.graph-1d-miniature.active { border-color: #d89c15; }
+.graph-1d-actions { display: flex; align-items: center; gap: 3px; padding: 3px 4px 0; font-size: .8rem; }
+.graph-1d-actions span { margin-right: auto; }
+.graph-1d-actions button { padding: 0 7px; font-size: 1rem; }
+.graph-1d-preview { width: 100%; padding: 0 5px 6px; border: 0; border-radius: 0; background: transparent; text-align: left; display: block; }
+.graph-1d-preview svg { display: block; width: 100%; }
+.graph-1d-preview svg text { fill: #617386; font: 11px sans-serif; }
+.graph-1d-preview span, .graph-1d-preview small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-1d-preview small { color: #617386; font-size: 11px; }
+dialog.graph-1d-expanded { position: fixed; inset: 18px; margin: auto; width: calc(100vw - 36px); height: calc(100dvh - 36px); max-width: none; max-height: none; padding: 0; box-sizing: border-box; border: 1px solid #71859a; border-radius: 7px; background: white; color: #23364b; }
+dialog.graph-1d-expanded[open] { display: flex; flex-direction: column; }
+.graph-1d-expanded::backdrop { background: #182c4070; }
+.graph-1d-expanded > header { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #edf1f5; border-bottom: 1px solid #bcc7d2; font-size: .85rem; }
+.graph-1d-expanded > header span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 900px) { .graph-1d-collection { flex-basis: 150px; } }

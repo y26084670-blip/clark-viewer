@@ -12,7 +12,9 @@ import { createResultGraphProcessor } from "./resultGraphProcessor.js";
 export function graphQuantityKey(task, slice, quantities) {
   return quantities[task?.elements?.[slice.recordIndex]?.targ === 3 ? "virtual" : "elements"];
 }
-export const graphRequestKey = request => JSON.stringify([request.regions, request.slices, request.quantities]);
+// Keep the last frame while editing geometry/sections, as when advancing time.
+// The controller still schedules every request; only different physical quantities invalidate its display.
+export const graphRequestKey = request => JSON.stringify(request.quantities);
 const abort = () => Object.assign(new Error("Построение графиков отменено."), { name: "AbortError" });
 const verticesOf = primitive => {
   const flat = primitive.controlVertices ?? primitive.vertices;
@@ -74,10 +76,10 @@ export function createResultGraphReader({ processorFactory = createResultGraphPr
       if (active) throw new Error("Графики ещё строятся.");
       active = true;
       try {
-        const { task, time, slices = [], regions = [], quantities } = request;
+        const { task, time, slices = [], regions = [], quantities, profiles = [] } = request;
         if (owner !== task) { domains.clear(); references.clear(); owner = task; }
         if (currentTime !== time) { domains.clear(); currentTime = time; }
-        if (!slices.length && !regions.length) return { graphs: [], errors: [] };
+        if (!slices.length && !regions.length) return { graphs: [], profiles: [], errors: [] };
         const { model } = buildGeometryTimeModel(task, task.moves, time), scene = buildGeometryScene(model);
         const wanted = [
           ...regions.map(recordIndex => ({ id: `region:${recordIndex}`, kind: "region", source: { schemaId: "regions", recordIndex }, quantityKey: quantities.regions })),
@@ -91,7 +93,7 @@ export function createResultGraphReader({ processorFactory = createResultGraphPr
             if (closed) throw abort();
             loaded.forEach(domain => input.set(domain.key, domain));
             const q = QUANTITIES[descriptor.quantityKey], record = model[descriptor.source.schemaId][descriptor.source.recordIndex];
-            graphs.push({ ...descriptor, source: { ...descriptor.source, name: record.name }, domainKeys: loaded.map(d => d.key),
+            graphs.push({ ...descriptor, profiles: profiles.filter(p => p.graphId === descriptor.id), source: { ...descriptor.source, name: record.name }, domainKeys: loaded.map(d => d.key),
               label: q.label, unit: q.unit, components: q.components, timeIndex: time, time: time * task.general.timeStep });
           } catch (error) { if (error.name === "AbortError") throw error; errors.push({ id: descriptor.id, message: error.message }); }
         }
@@ -105,7 +107,7 @@ export function createResultGraphReader({ processorFactory = createResultGraphPr
         // Retain only the current quantities; direction/component edits reuse full grids.
         const used = new Set(wanted.map(g => `${g.source.schemaId}:${g.source.recordIndex}:${g.quantityKey}`));
         for (const key of domains.keys()) if (!used.has(key)) domains.delete(key);
-        return { graphs: results.filter(g => !g.error), errors };
+        return { graphs: results.filter(g => !g.error), profiles: results.flatMap(g => g.profiles ?? []).filter(p => p.positions), errors };
       } finally { active = false; }
     },
     close() { closed = true; processor?.close(); domains.clear(); references.clear(); },

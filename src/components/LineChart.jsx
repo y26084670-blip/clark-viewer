@@ -10,7 +10,7 @@ const colors = ["#1776bd", "#d94943", "#289447", "#994bbc", "#db8b19", "#15a2a2"
 function drawOverlayLegend(chart, series, position) {
   const area = chart.chartArea;
   const entries = series.flatMap((item, index) => item.points.length
-    ? [{ index, label: item.legendLabel ?? item.label, color: colors[index % colors.length], hidden: !chart.isDatasetVisible(index) }] : []);
+    ? [{ index, label: item.legendLabel ?? item.label, color: item.color ?? colors[index % colors.length], hidden: !chart.isDatasetVisible(index) }] : []);
   if (!area || !entries.length || area.width <= 12 || area.height <= 12) return { hitBoxes: [], bounds: null };
   const hitBoxes = [];
   let bounds;
@@ -65,23 +65,35 @@ function drawOverlayLegend(chart, series, position) {
 }
 
 export function LineChart(props) {
+  const initialView = untrack(() => props.initialViewState) ?? {};
   let canvas, chart, drag, tooltipWindow, skipContextMenu = false, legendHitBoxes = [];
   let currentSeries = [], autoPending = true;
-  let legendBounds = null, legendPosition = { x: 1, y: 0 };
+  let legendBounds = null, legendPosition = initialView.legendPosition ?? { x: 1, y: 0 };
   let movieState = null, renderedFrameKey = null, currentMovieCursor = null, disposed = false;
-  let pendingVisibility = null, drawingFailure = null;
+  let pendingVisibility = initialView.hidden?.length ? new Map(initialView.hidden.map(key => [key, false])) : null, drawingFailure = null;
+  const savedVisibility = new Map(pendingVisibility);
   const renderWaiters = new Set();
   const [capturing, setCapturing] = createSignal(false);
   const [renderError, setRenderError] = createSignal("");
   const [ready, setReady] = createSignal(false);
   const [menu, setMenu] = createSignal(null);
   const [message, setMessage] = createSignal("");
-  const [limits, setLimits] = createSignal({});
-  const [autoScale, setAutoScale] = createSignal(true);
-  const [showLegend, setShowLegend] = createSignal(props.legendMode === "overlay");
+  const [limits, setLimits] = createSignal(initialView.limits ?? {});
+  const [autoScale, setAutoScale] = createSignal(initialView.autoScale !== false);
+  const [showLegend, setShowLegend] = createSignal(initialView.showLegend ?? props.legendMode === "overlay");
+  if (initialView.autoScale === false && Object.values(initialView.limits ?? {}).some(Number.isFinite)) autoPending = false;
   const [selection, setSelection] = createSignal(null);
   const [panning, setPanning] = createSignal(false);
   const [legendHover, setLegendHover] = createSignal(false);
+  function publishView() {
+    if (movieState) return;
+    rememberVisibility();
+    props.onViewStateChange?.({ limits: { ...untrack(limits) }, autoScale: untrack(autoScale), showLegend: untrack(showLegend),
+      legendPosition: { ...legendPosition }, hidden: [...savedVisibility].filter(([, visible]) => !visible).map(([key]) => key) });
+  }
+  function rememberVisibility() {
+    if (props.onViewStateChange && chart) chart.data.datasets.forEach((d, i) => savedVisibility.set(d._seriesKey, chart.isDatasetVisible(i)));
+  }
   // Optional full-cycle bounds are supplied only by FieldLines. Manual scales
   // win; during GIF recording the exact automatic policy is captured once.
   function automaticYRange() {
@@ -131,10 +143,11 @@ export function LineChart(props) {
     autoPending = false;
     setLimits({ xMin: chart.scales.x.min, xMax: chart.scales.x.max,
       yMin: chart.scales.y.min, yMax: chart.scales.y.max });
+    publishView();
   }
   function resetLimits() {
     if (movieState) return;
-    cancelSelection(); autoPending = true; setLimits({});
+    cancelSelection(); autoPending = true; setLimits({}); publishView();
   }
   function toggleAutoScale() {
     if (movieState) return;
@@ -148,11 +161,13 @@ export function LineChart(props) {
       // Before the first valid frame, defer the snapshot until it arrives.
       if (!enabled) captureAutoLimits();
     });
+    publishView();
   }
   function commitManualLimits(range) {
     if (movieState) return;
     autoPending = false;
     batch(() => { if (props.autoScaleToggle) setAutoScale(false); setLimits(range); });
+    publishView();
   }
   // Toggle charts keep frozen limits across quantity/axis changes too. Other
   // charts retain their previous reset-on-axis-change behavior.
@@ -178,10 +193,11 @@ export function LineChart(props) {
     // Track bounds even when manual limits temporarily take precedence.
     props.autoXRange;
     const xLabel = props.xLabel, yLabel = props.yLabel, integerX = props.integerX;
+    props.endpointCoordinates;
     if (!ready()) return;
     try {
       const datasets = series.map((item, index) => ({ _seriesKey: item.key ?? `series:${item.label}:${index}`, label: item.label,
-        data: item.points, borderColor: colors[index % colors.length], backgroundColor: colors[index % colors.length],
+        data: item.points, borderColor: item.color ?? colors[index % colors.length], backgroundColor: item.color ?? colors[index % colors.length],
         showLine: item.showLine ?? true, pointRadius: item.pointRadius ?? (item.points.length === 1 ? 4 : 0),
         pointHitRadius: 5, borderWidth: item.borderWidth ?? 1.6, spanGaps: false,
         order: item.showLine === false ? 1 : 2 }));
@@ -197,11 +213,13 @@ export function LineChart(props) {
           }
         } },
           { id: "movieTimeCursor", afterDatasetsDraw: drawMovieCursor },
+          { id: "endpointCoordinates", afterDraw: drawEndpointCoordinates },
           { id: "overlayLegend", afterDatasetsDraw: current => {
             const legend = untrack(showLegend) ? drawOverlayLegend(current, currentSeries, legendPosition) : { hitBoxes: [], bounds: null };
             legendHitBoxes = legend.hitBoxes; legendBounds = legend.bounds;
           } }], options: {
         responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+        layout: { padding: { bottom: props.endpointCoordinates ? 32 : 0 } },
         onResize: cancelSelection,
         scales: { x: { type: "linear", min: range.xMin, max: range.xMax,
           ticks: integerX ? { precision: 0 } : {}, title: { display: true, text: xLabel } },
@@ -214,6 +232,7 @@ export function LineChart(props) {
         } } },
       } });
       else {
+        rememberVisibility();
         // Keep the canvas, Chart instance and dataset metadata (including visibility).
         const previous = new Map(chart.data.datasets.map(dataset => [dataset._seriesKey, dataset]));
         chart.data.datasets = datasets.map(dataset => Object.assign(previous.get(dataset._seriesKey) ?? {}, dataset));
@@ -221,8 +240,12 @@ export function LineChart(props) {
         chart.options.scales.y.title.text = yLabel;
         chart.options.scales.x.ticks = integerX ? { precision: 0 } : {};
         chart.options.plugins.legend.display = false;
+        chart.options.layout.padding.bottom = props.endpointCoordinates ? 32 : 0;
       }
       applyFrozenVisibility();
+      if (props.onViewStateChange && !movieState) chart.data.datasets.forEach((d, i) => {
+        if (savedVisibility.has(d._seriesKey)) chart.setDatasetVisibility(i, savedVisibility.get(d._seriesKey));
+      });
       // Chart.js animation is disabled. The identity is published only after the
       // corresponding datasets, cursor and exact axes have been drawn.
       if (!applyChartLimits(range)) return;
@@ -313,9 +336,20 @@ export function LineChart(props) {
           && Number.isFinite(point.x) && Number.isFinite(point.y));
         if (!point) return;
         const px = current.scales.x.getPixelForValue(point.x), py = current.scales.y.getPixelForValue(point.y);
-        ctx.fillStyle = colors[index % colors.length]; ctx.strokeStyle = "#161616"; ctx.lineWidth = 1;
+        ctx.fillStyle = series.color ?? colors[index % colors.length]; ctx.strokeStyle = "#161616"; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       });
+    } finally { ctx.restore(); }
+  }
+  function drawEndpointCoordinates(current) {
+    const endpoints = props.endpointCoordinates, area = current.chartArea;
+    if (!endpoints || !area) return;
+    const number = v => Number(v.toPrecision(7)).toString(), xyz = p => `(${p.map(number).join(", ")})`;
+    const ctx = current.ctx; ctx.save();
+    try {
+      ctx.font = "11px Arial, sans-serif"; ctx.fillStyle = "#425365"; ctx.textBaseline = "bottom";
+      ctx.textAlign = "left"; ctx.fillText(`0: ${xyz(endpoints.start)} мм`, area.left, current.height - 17, Math.max(1, area.width));
+      ctx.textAlign = "right"; ctx.fillText(`${number(endpoints.length)}: ${xyz(endpoints.end)} мм`, area.right, current.height - 3, Math.max(1, area.width));
     } finally { ctx.restore(); }
   }
   const captureAdapter = {
@@ -485,6 +519,7 @@ export function LineChart(props) {
         chart.update("none");
       }
       setLegendHover(Boolean(legendAt(point)));
+      publishView();
       return;
     }
     if (drag.mode === "pan") {
@@ -536,7 +571,7 @@ export function LineChart(props) {
         <button type="button" disabled={capturing()} onClick={toggleAutoScale} aria-pressed={props.autoScaleToggle ? autoScale() : undefined}
           title={props.autoScaleToggle ? (autoScale() ? "Автомасштаб включён: нажмите, чтобы сохранить текущие пределы" : "Автомасштаб выключен: нажмите для автоматического подбора пределов") : "Автоматические пределы по обеим осям"}>Авто</button>
         {props.afterAuto}
-        <label title="Щелчок по строке легенды скрывает или возвращает кривую; перетаскивание перемещает легенду"><input type="checkbox" disabled={capturing()} checked={showLegend()} onChange={event => { if (!movieState) setShowLegend(event.currentTarget.checked); }} />Показать легенду</label>
+        <label title="Щелчок по строке легенды скрывает или возвращает кривую; перетаскивание перемещает легенду"><input type="checkbox" disabled={capturing()} checked={showLegend()} onChange={event => { if (!movieState) { setShowLegend(event.currentTarget.checked); publishView(); } }} />Показать легенду</label>
         {props.toolbarLast}
       </div>
     </div>
@@ -551,7 +586,7 @@ export function LineChart(props) {
       <Show when={renderError()}><div class="plot-empty" role="alert">{renderError()}</div></Show>
       <Show when={!renderError() && !(props.series?.length)}><div class="plot-empty">{props.emptyText || "Выберите объект и величину"}</div></Show>
       <Show when={menu()}><div class="chart-menu" style={{ left: `${menu().x}px`, top: `${menu().y}px` }}>
-        <button disabled={Boolean(props.tableUnavailableReason)} title={props.tableUnavailableReason || "Скопировать все кривые этого графика, включая скрытые: общий X и отдельные столбцы Y; при разных X — пары X/Y для каждой кривой"} onClick={copyTable}>Копировать таблицу</button><button title="Скопировать изображение текущего графика в буфер обмена" onClick={copyImage}>Копировать картинку</button>
+        <button disabled={Boolean(props.tableUnavailableReason)} title={props.tableUnavailableReason || "Скопировать все кривые этого графика, включая скрытые: общий X и отдельные столбцы Y; при разных X — пары X/Y для каждой кривой"} onClick={copyTable}>Копировать таблицу</button><button title="Скопировать изображение текущего графика в буфер обмена" onClick={copyImage}>{props.copyImageLabel ?? "Копировать картинку"}</button>
       </div></Show>
       <Show when={message()}><button class="copy-message" title="Закрыть сообщение" onClick={() => setMessage("")}>{message()}</button></Show>
     </div>

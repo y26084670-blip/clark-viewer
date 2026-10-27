@@ -58,6 +58,40 @@ function missingStencil(domain, u) {
   return false;
 }
 
+// Profiles use the original discretization, independently of the display mesh.
+function graphProfiles(graph, input, patch, copy, domain) {
+  const instanceKey = resultInstanceKey(graph.source, copy.instance);
+  return (graph.profiles ?? []).filter(p => (p.instanceKey ?? p.surfaceKey?.replace(/:[^:]+$/, "")) === instanceKey).map(profile => {
+    const run = profile.direction, fixed = 1 - run, counts = patch.nodeCounts;
+    if (![0, 1].includes(run) || profile.index < 0 || profile.index >= counts[fixed]) return { id: profile.id, error: "Сечение вне сетки объекта." };
+    const positions = new Float64Array(counts[run] * 3), values = new Float64Array(positions.length), distances = new Float64Array(counts[run]);
+    const vertices = graph.kind === "slice" ? input.geometryVertices.flat() : null;
+    for (let n = 0; n < counts[run]; n++) {
+      let point, vector;
+      if (graph.kind === "region") {
+        const ij = []; ij[run] = n; ij[fixed] = profile.index;
+        const row = ij[0] * counts[1] + ij[1]; point = pointAt(input.positions, row);
+        vector = input.invalid?.[row] ? [NaN, NaN, NaN] : pointAt(input.vectors, row);
+      } else {
+        const u = [.5, .5, .5]; u[graph.direction] = (graph.discrete - .5) / input.geometryDimensions[graph.direction];
+        u[patch.directions[run]] = (n + .5) / counts[run]; u[patch.directions[fixed]] = (profile.index + .5) / counts[fixed];
+        point = trilinearElementPoint(vertices, ...u);
+        const sample = sampleStreamlineVector(domain, point);
+        vector = !sample || missingStencil(input, sample.u) ? [NaN, NaN, NaN] : sample.vector;
+      }
+      positions.set(applyMatrix4ToPoint(copy.matrix, point), n * 3);
+      values.set(graph.components === 3 ? applyMatrix4ToVector(copy.matrix, vector, copy.sign) : vector, n * 3);
+      if (n) distances[n] = distances[n - 1] + Math.hypot(...sub(pointAt(positions, n), pointAt(positions, n - 1)));
+    }
+    return { id: profile.id, graphId: graph.id, source: graph.source, quantityKey: graph.quantityKey, label: graph.label, unit: graph.unit,
+      components: graph.components, time: graph.time, timeIndex: graph.timeIndex, positions, values, distances,
+      start: pointAt(positions, 0), end: pointAt(positions, counts[run] - 1), length: distances.at(-1),
+      direction: patch.directions?.[run] ?? run, transverseDirection: patch.directions?.[fixed] ?? fixed,
+      index: profile.index, count: counts[fixed], plane: graph.kind === "slice" ? graph.direction : null,
+      discrete: graph.discrete, discreteCount: input.geometryDimensions?.[graph.direction] };
+  });
+}
+
 export function graphSurfaceIndices(dimensions, values) {
   const [n1, n2] = dimensions, indices = [];
   for (let i = 0; i < n1 - 1; i++) for (let j = 0; j < n2 - 1; j++) {
@@ -71,7 +105,7 @@ export function calculateResultGraphs({ domains, graphs }) {
   const byKey = new Map(domains.map(d => [d.key, d])), prepared = new Map();
   return graphs.map(graph => {
     try {
-      const surfaces = [];
+      const surfaces = [], profiles = [];
       let absoluteMaximum = 0;
       for (const key of graph.domainKeys) {
         const input = byKey.get(key);
@@ -90,6 +124,7 @@ export function calculateResultGraphs({ domains, graphs }) {
           }
         }
         for (const copy of input.copies) {
+          profiles.push(...graphProfiles(graph, input, patch, copy, prepared.get(key)));
           const positions = new Float64Array(patch.positions.length), normals = new Float64Array(positions.length), transformed = new Float64Array(positions.length);
           for (let n = 0; n < positions.length / 3; n++) {
             positions.set(applyMatrix4ToPoint(copy.matrix, pointAt(patch.positions, n)), n * 3);
@@ -103,15 +138,15 @@ export function calculateResultGraphs({ domains, graphs }) {
             const values = Float64Array.from({ length: positions.length / 3 }, (_, n) => transformed[n * 3 + component]);
             let minimum = Infinity, maximum = -Infinity;
             for (const v of values) if (Number.isFinite(v)) { minimum = Math.min(minimum, v); maximum = Math.max(maximum, v); }
-            surfaces.push({ key: `${resultInstanceKey(graph.source, copy.instance)}:${component}`, instance: copy.instance,
+            surfaces.push({ key: `${resultInstanceKey(graph.source, copy.instance)}:${component}`, instanceKey: resultInstanceKey(graph.source, copy.instance), instance: copy.instance,
               positions, normals, values, component, dimensions: patch.dimensions,
-              nodeCounts: patch.nodeCounts, nodeLocation: patch.nodeLocation, directions: patch.directions,
+              nodeCounts: patch.nodeCounts, nodeLocation: patch.nodeLocation, directions: patch.directions, planeCount: input.geometryDimensions?.[graph.direction],
               indices: graphSurfaceIndices(patch.dimensions, values), minimum: Number.isFinite(minimum) ? minimum : 0,
               maximum: Number.isFinite(maximum) ? maximum : 0, sampled: patch.sampled });
           }
         }
       }
-      return { ...graph, surfaces, absoluteMaximum };
+      return { ...graph, surfaces, profiles, absoluteMaximum };
     } catch (error) { return { ...graph, surfaces: [], error: error.message }; }
   });
 }

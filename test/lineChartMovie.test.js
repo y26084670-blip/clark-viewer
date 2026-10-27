@@ -25,7 +25,7 @@ const series = (maximum=10) => [
   {label:"one",points:[{x:0,y:0,step:0},{x:maximum,y:maximum*2,step:1}]},
   {label:"two",points:[{x:0,y:-1,step:0},{x:maximum,y:maximum,step:1}]},
 ];
-function runtime({initial=series(), failInit=false, autoScaleToggle=true, ChartImplementation=null}={}) {
+function runtime({initial=series(), failInit=false, autoScaleToggle=true, ChartImplementation=null, view, endpoints, onView}={}) {
   let dispose,api,registered;
   const copies=[], calls=[],captures=new Set(),canvas={width:800,height:400,style:{width:"100%",height:"100%"},
     getBoundingClientRect:()=>({left:0,top:0,width:400,height:200}),
@@ -64,7 +64,7 @@ function runtime({initial=series(), failInit=false, autoScaleToggle=true, ChartI
   createRoot(cleanup=>{
     dispose=cleanup;
     const [data,setSeries]=createSignal(initial),[frame,setFrame]=createSignal({step:0}),[cursor,setCursor]=createSignal(null),[error,setError]=createSignal("");
-    const props={autoScaleToggle,get series(){return data();},get captureFrameKey(){return frame();},get movieCursor(){return cursor();},get captureError(){return error();},xLabel:"time",yLabel:"field",onCaptureReady:value=>{registered=value;}};
+    const props={autoScaleToggle,initialViewState:view,endpointCoordinates:endpoints,onViewStateChange:onView,get series(){return data();},get captureFrameKey(){return frame();},get movieCursor(){return cursor();},get captureError(){return error();},xLabel:"time",yLabel:"field",onCaptureReady:value=>{registered=value;}};
     api=component(props,{batch,createEffect,createSignal,on,onCleanup,onMount,untrack,Chart:ChartImplementation??FakeChart,
       window:{addEventListener(){},removeEventListener(){}},chartPanLimits,chartZoomLimits,clampChartPoint,testCanvas:canvas,
       captureMovieCanvas:(canvas,options)=>{const output={width:canvas.width,height:canvas.height,data:new Uint8ClampedArray(canvas.width*canvas.height*4)};copies.push({canvas,options,output});return output;}});
@@ -238,4 +238,18 @@ test("real Chart.js cancellation restores Auto after the final movie frame chang
     assert.equal(h.autoScale(),true);assert.equal(h.capturing(),false);
     h.publish(series(0.000000026),{step:3});assert.ok(h.chart().scales.x.max<0.000001);
   } finally { h.captureAdapter.restore();h.dispose(); }
+});
+
+
+test("persistent 1D chart restores manual bounds, RGB and hidden components, retains them through missing data and draws endpoint coordinates on the canvas", () => {
+  const initial = ["X", "Y", "Z"].map((key, i) => ({ key, label: key, color: ["#ff0000", "#00ff00", "#0000ff"][i], points: [{x:0,y:i},{x:30,y:i+1}] }));
+  const view = { autoScale: false, showLegend: true, hidden: ["Y"], limits: {xMin:0,xMax:30,yMin:-10,yMax:35}, legendPosition:{x:.2,y:.4} };
+  const saved = [], h = runtime({ initial, view, endpoints: {start:[5,2,7.5],end:[35,2,7.5],length:30}, onView: value => saved.push(value), ChartImplementation: RealChart });
+  assert.equal(h.renderError(), ""); assert.deepEqual(bounds(h.chart()),view.limits); assert.equal(h.autoScale(),false);
+  assert.deepEqual(h.chart().data.datasets.map(d=>d.borderColor),initial.map(d=>d.color)); assert.equal(h.chart().isDatasetVisible(1),false);
+  assert.ok(h.calls.some(call=>call.name==="fillText" && call.args[0]==="0: (5, 2, 7.5) мм"));
+  assert.ok(h.calls.some(call=>call.name==="fillText" && call.args[0]==="30: (35, 2, 7.5) мм"));
+  h.setSeries([]); h.setSeries(initial); assert.equal(h.chart().isDatasetVisible(1),false);
+  h.toggleAutoScale(); assert.deepEqual(saved.at(-1).hidden,["Y"]); assert.equal(saved.at(-1).autoScale,true);
+  assert.deepEqual(saved.at(-1).legendPosition,view.legendPosition); h.dispose();
 });

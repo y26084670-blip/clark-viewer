@@ -51,17 +51,25 @@ test("scalar choice disables component selection and capture prevents slice muta
   assert.equal(ui.graphSlices().length, 1); assert.equal(ui.graphSlices()[0].direction, 0); ui.close();
 });
 
-test("contour choices survive time, hiding and tab remount; changing plane/component or deleting resets the choice", () => {
+test("collection retains sections across graphs, components, time and tab remount; deletion and plane changes remove only affected entries", () => {
   const { ui, props } = setup(); ui.addSlice(1); const id = ui.activeSlice();
-  const contour = { graphId: id, surfaceKey: "elements:0:0", direction: 0, index: 2 };
-  ui.selectGraphContour(contour); props.time = 1; ui.flushEffects();
-  ui.setSliceGraphs(false); assert.deepEqual(ui.graphContour(), contour); ui.close();
-  const next = sourcesFields3DSetup(props); assert.deepEqual(next.graphContour(), contour);
-  next.changeSlice(id, { discrete: 3 }); assert.deepEqual(next.graphContour(), contour);
-  next.changeSlice(id, { direction: 0 }); assert.equal(next.graphContour(), null);
-  next.selectGraphContour(contour); next.changeSlice(id, { component: 1 }); assert.equal(next.graphContour(), null);
-  next.selectGraphContour(contour); props.movieBusy = true; next.selectGraphContour(null); assert.deepEqual(next.graphContour(), contour);
-  props.movieBusy = false; next.deleteSlice(); assert.equal(next.graphContour(), null);
-  next.selectGraphContour({ ...contour, graphId: "region:0" }); props.task = graph3DTask().task; next.flushEffects();
-  assert.equal(next.graphContour(), null); next.close();
+  const selection = { graphId: id, instanceKey: "elements:0:0:0:0:0:0", direction: 0, index: 2 };
+  ui.selectGraphContour(selection); const contour = ui.graphContour();
+  props.time = 1; ui.flushEffects(); ui.setSliceGraphs(false);
+  assert.deepEqual(ui.graphContour(), contour);
+  assert.equal(ui.graphRequest().profiles.length, 1); assert.equal(ui.graphRequest().slices.length, 1, "hidden surfaces still supply 1D values");
+  ui.selectGraphContour({ ...selection, graphId: "region:0", instanceKey: "regions:0:0:0:0:0:0", index: 1 });
+  const area = ui.graphContour(); assert.equal(ui.graphProfiles().length, 2);
+  ui.changeSlice(id, { component: 2 }); assert.deepEqual(ui.graphProfiles()[0], contour);
+  ui.selectProfile(contour.id); ui.selectGraphContour({ ...selection, index: 1 }, { add: false });
+  assert.equal(ui.graphProfiles().length, 2); assert.equal(ui.graphContour().id, contour.id);
+  ui.selectGraphContour({ ...selection, index: 1 }); assert.equal(ui.graphProfiles().length, 2, "duplicate selection reuses entry");
+  ui.close(); const next = sourcesFields3DSetup(props);
+  assert.equal(next.graphProfiles().length, 2); assert.equal(next.graphContour().index, 1);
+  next.changeSlice(id, { discrete: 3 }); assert.equal(next.graphProfiles().length, 2);
+  next.changeSlice(id, { direction: 0 }); assert.deepEqual(next.graphProfiles(), [area]);
+  next.selectGraphContour(selection); props.movieBusy = true; next.selectGraphContour({ ...selection, index: 0 });
+  assert.equal(next.graphContour().index, 2);
+  props.movieBusy = false; next.deleteSlice(); assert.deepEqual(next.graphProfiles(), [area]);
+  props.task = graph3DTask().task; next.flushEffects(); assert.equal(next.graphProfiles().length, 0); next.close();
 });

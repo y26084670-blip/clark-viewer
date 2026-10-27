@@ -13,16 +13,20 @@ const fixture = async () => {
 };
 const surfaces = root => { const result = []; root.traverse(o => { if (o.name === "result-graph-surface") result.push(o); }); return result; };
 
-test("surface graphs use lit RGB/palette meshes over white bases; size changes signed height without mutating field samples", async () => {
+test("surface graphs use lit RGB/palette meshes over white bases; size keeps the minimum gap fixed and changes the height range without mutating field samples", async () => {
   const f = await fixture(); updateGraphScene(THREE, f.root, f.scene, f.graphs, { scale: 1 });
   const rgb = surfaces(f.root).filter(m => String(m.userData.graphId).startsWith("region:"));
   assert.deepEqual(rgb.slice(0,3).map(m => m.material.color.getHex()), [0xff0000,0x00ff00,0x0000ff]);
   assert.ok(rgb.every(m => m.material.isMeshStandardMaterial));
   const before = surfaces(f.root).find(m => m.userData.graphId === 1), data = before.userData.surface, values = data.values.slice();
-  const z = before.geometry.attributes.position.getZ(0), base = data.positions[2];
+  const z = before.geometry.attributes.position.getZ(0), base = data.positions[2], gap = before.userData.gap;
   updateGraphScene(THREE, f.root, f.scene, f.graphs, { scale: 2 });
   const after = surfaces(f.root).find(m => m.userData.graphId === 1);
-  assert.ok(Math.abs(after.geometry.attributes.position.getZ(0) - base - 2 * (z - base)) < 1e-5); assert.deepEqual(data.values, values);
+  assert.ok(Math.abs(after.geometry.attributes.position.getZ(0) - base - gap - 2 * (z - base - gap)) < 1e-5); assert.deepEqual(data.values, values);
+  const heights = mesh => Array.from(mesh.userData.surface.values, (_, n) => mesh.geometry.attributes.position.getZ(n) - mesh.userData.surface.positions[n * 3 + 2]);
+  assert.ok(Math.abs(Math.min(...heights(before)) - gap) < 1e-5);
+  assert.ok(Math.abs(Math.min(...heights(after)) - gap) < 1e-5);
+  assert.ok(Math.abs((Math.max(...heights(after)) - gap) - 2 * (Math.max(...heights(before)) - gap)) < 1e-5);
   let bases = 0; f.root.traverse(o => { if (o.name === "result-graph-base") { assert.equal(o.material.color.getHex(), 0xffffff); assert.equal(o.material.depthWrite, false); bases++; } });
   assert.equal(bases, 6); disposeGraphScene(f.root);
 });

@@ -18,7 +18,7 @@ const source=readFileSync(new URL("../src/components/geometry/ThreeGeometryViewp
 const pickSource=source.slice(source.indexOf("  const pickAtPointer ="),source.indexOf("  const queuePointerPick ="));
 const makePick=new Function("deps",`const {renderer,camera,controls,raycaster,pointerNdc,props,resultLayerStates,vectorHover,viewportLens,
   resultHitScalar,resultHitVector,formatResultScalarTooltip,formatResultVectorTooltip,intersectResultLayers,
-  setHoverTooltip,showTooltip,streamlineRoot}=deps;
+  setHoverTooltip,showTooltip,streamlineRoot,graphRoot}=deps;
   const VIEW_CUBE_MARGIN=8,viewCubeSize=()=>0,worldUnitsPerPixel=()=>.01;
   const activeRenderMode="solid",geometryOpacity=.5,geometryPickTargets=[],resultVectorColorMap=true;
   ${pickSource} return pickAtPointer;`);

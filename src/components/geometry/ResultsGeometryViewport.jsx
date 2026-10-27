@@ -704,6 +704,7 @@ export function ResultsGeometryViewport(props) {
             resultStreamlines={props.resultStreamlines}
             graphResults={props.graphResults} activeGraph={props.activeGraph}
             graphPreview={props.graphPreview} graphSelection={props.graphSelection}
+            graphContour={props.graphContour} onGraphContourChange={props.onGraphContourChange} graphInteractionBlocked={props.graphInteractionBlocked}
             streamlineWidth={props.streamlineWidth}
             streamlineColorMap={props.streamlineColorMap}
             selectedStreamline={props.selectedStreamline}

@@ -50,3 +50,18 @@ test("scalar choice disables component selection and capture prevents slice muta
   props.movieBusy = true; ui.changeSlice(row.id, { direction: 2 }); ui.addSlice(1); ui.deleteSlice();
   assert.equal(ui.graphSlices().length, 1); assert.equal(ui.graphSlices()[0].direction, 0); ui.close();
 });
+
+test("contour choices survive time, hiding and tab remount; changing plane/component or deleting resets the choice", () => {
+  const { ui, props } = setup(); ui.addSlice(1); const id = ui.activeSlice();
+  const contour = { graphId: id, surfaceKey: "elements:0:0", direction: 0, index: 2 };
+  ui.selectGraphContour(contour); props.time = 1; ui.flushEffects();
+  ui.setSliceGraphs(false); assert.deepEqual(ui.graphContour(), contour); ui.close();
+  const next = sourcesFields3DSetup(props); assert.deepEqual(next.graphContour(), contour);
+  next.changeSlice(id, { discrete: 3 }); assert.deepEqual(next.graphContour(), contour);
+  next.changeSlice(id, { direction: 0 }); assert.equal(next.graphContour(), null);
+  next.selectGraphContour(contour); next.changeSlice(id, { component: 1 }); assert.equal(next.graphContour(), null);
+  next.selectGraphContour(contour); props.movieBusy = true; next.selectGraphContour(null); assert.deepEqual(next.graphContour(), contour);
+  props.movieBusy = false; next.deleteSlice(); assert.equal(next.graphContour(), null);
+  next.selectGraphContour({ ...contour, graphId: "region:0" }); props.task = graph3DTask().task; next.flushEffects();
+  assert.equal(next.graphContour(), null); next.close();
+});

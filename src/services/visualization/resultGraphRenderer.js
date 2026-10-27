@@ -2,6 +2,7 @@ import { primitiveVisible, instanceVisible } from "./geometryRenderFilters.js";
 import { graphSlicePatch, graphSurfaceIndices } from "./resultGraphField.js";
 import { resultScalarColor } from "./resultScalarColors.js";
 import { applyMatrix4ToPoint } from "../solver/rotation3d.js";
+import { updateGraphContours } from "./resultGraphContours.js";
 
 const RGB = [0xff0000, 0x00ff00, 0x0000ff];
 const visible = (source, instance, filters) => primitiveVisible({ source }, filters?.objectModes, filters?.selections) && instanceVisible(instance, filters?.symmetry);
@@ -44,6 +45,9 @@ function buildGraph(THREE, graph, options) {
       colors.set(color.toArray(), n * 3);
     }
     const meshGeometry = geometry(THREE, positions, surface.indices);
+    const uv = new Float32Array(surface.values.length * 2), [n1, n2] = surface.dimensions;
+    for (let i = 0; i < n1; i++) for (let j = 0; j < n2; j++) uv.set([i / (n1 - 1), j / (n2 - 1)], (i * n2 + j) * 2);
+    meshGeometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
     const rgb = graph.kind === "region" && graph.components === 3;
     if (!rgb) meshGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     const mesh = new THREE.Mesh(meshGeometry, new THREE.MeshStandardMaterial({ color: rgb ? RGB[surface.component] : 0xffffff,
@@ -79,6 +83,7 @@ export function updateGraphScene(THREE, root, scene, graphs, options = {}) {
     for (const image of group.children) image.visible = visible(image.userData.source, image.userData.instance, settings.filters);
   }
   for (const child of [...root.children]) if (!retained.has(child)) { root.remove(child); dispose(child); }
+  updateGraphContours(THREE, root, settings.contour, settings.contourPreview, settings.resolution);
   if (settings.selected) {
     const primitive = scene?.primitives.find(p => p.source.schemaId === "elements" && p.source.recordIndex === settings.selected.recordIndex);
     if (primitive) {

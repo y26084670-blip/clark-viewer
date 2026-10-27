@@ -60,6 +60,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
       addStreamline, deleteStreamline, streamlineMethod, changeStreamlineMethod, streamlines,
       graphsOnly, setGraphsOnly, areaGraphs, setAreaGraphs, sliceGraphs, setSliceGraphs, graphSlices, activeSlice, setActiveSlice,
       addSlice, setAddElement, changeSlice, deleteSlice, graphResults, graphBusy, graphError, graphRequest, sliceScalar, sliceCount, sliceLabel, sliceChoice,
+      graphContour, selectGraphContour,
       controls: ${controlBindings},
       streamlineControls: ${streamlineBindings},
       globalMinMax, setGlobalMinMax, globalRanges, effectiveGlobalMinMax, resultLayers, timeIndex, selections }; } return SourcesFields3D(props);`);

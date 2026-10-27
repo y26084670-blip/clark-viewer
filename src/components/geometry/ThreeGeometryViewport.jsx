@@ -74,6 +74,9 @@ import { loadStreamlineRenderer, resizeStreamlineMaterials, streamlinePointerHan
 import { captureMovieCanvas } from "../../services/movie/movieCanvas.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../../services/movie/renderedFrameGate.js";
 import { updateGraphScene, disposeGraphScene } from "../../services/visualization/resultGraphRenderer.js";
+import { loadGraphContourRenderer, resizeGraphContours, sameContourSurface } from "../../services/visualization/resultGraphContours.js";
+import { installGraphContourInteraction } from "../../services/visualization/resultGraphContourInteraction.js";
+import "../../services/visualization/resultGraphContours.css";
 
 export const GEOMETRY_INSTANCE_BUDGET = 20_000;
 export const GEOMETRY_DISCRETIZATION_SEGMENT_BUDGET =
@@ -1514,6 +1517,9 @@ export function ThreeGeometryViewport(props) {
   let resultLayers = [];
   let streamlines = [], selectedStreamline = null, streamlineRoot = null;
   let graphRoot, graphsDirty = false;
+  let graphContourInteraction, graphMenuElement;
+  const [graphContourMenu, setGraphContourMenu] = createSignal(null);
+  const [graphContourPreview, setGraphContourPreview] = createSignal(null);
   let streamlineWidth = 2, streamlineColorMap = true;
   let resultLayerStates = new Map();
   let resultVectorScale = 1;
@@ -1752,6 +1758,7 @@ export function ThreeGeometryViewport(props) {
       if (!ready() || disposed || contextLost || error()) throw new Error(error() || "3D-окно ещё не готово");
       if (movieSnapshot) return;
       flightController?.stop();
+      graphContourInteraction?.close();
       renderNow();
       if (error()) throw new Error(error());
       clearHoverTooltip();
@@ -1844,9 +1851,11 @@ export function ThreeGeometryViewport(props) {
     const width = Math.max(1, Math.floor(host.clientWidth));
     const height = Math.max(1, Math.floor(host.clientHeight));
     if (width === viewportWidth && height === viewportHeight) return;
+    graphContourInteraction?.close();
     viewportWidth = width; viewportHeight = height;
     renderer.setSize(viewportWidth, viewportHeight, false);
     resizeStreamlineMaterials(streamlineRoot, viewportWidth, viewportHeight);
+    resizeGraphContours(graphRoot, viewportWidth, viewportHeight);
     resizeCameraProjection(camera, viewportWidth / viewportHeight);
     if (
       props.autoFit === true
@@ -2009,6 +2018,18 @@ export function ThreeGeometryViewport(props) {
       -(y / Math.max(bounds.height, 1)) * 2 + 1,
     );
     raycaster.setFromCamera(pointerNdc, camera);
+    if (action === "graph") {
+      const targets = [];
+      graphRoot?.traverseVisible(object => {
+        if (["result-graph-surface", "result-graph-base"].includes(object.name)) targets.push(object);
+      });
+      const hit = raycaster.intersectObjects(targets, false)[0];
+      if (!hit?.uv || hit.object.name !== "result-graph-surface") return null;
+      const obstruction = activeRenderMode === "solid" && (geometryOpacity ?? 1) >= 1
+        ? raycaster.intersectObjects(geometryPickTargets, false)[0] : null;
+      if (obstruction && obstruction.distance < hit.distance - worldUnitsPerPixel(camera, controls.target, bounds.height)) return null;
+      return { ...hit.object.userData, uv: hit.uv.toArray() };
+    }
     const unitsPerPixel = worldUnitsPerPixel(
       camera,
       controls.target,
@@ -2164,7 +2185,7 @@ export function ThreeGeometryViewport(props) {
   };
 
   const queuePointerPick = (event) => {
-    if (movieSnapshot) return;
+    if (movieSnapshot || graphContourMenu()) return;
     if (controlsInteracting) return;
     pendingPointer = {
       clientX: event.clientX,
@@ -2488,6 +2509,7 @@ export function ThreeGeometryViewport(props) {
     updateGraphScene(THREE, graphRoot, props.scene, props.graphResults ?? [], {
       active: props.activeGraph, preview: props.graphPreview, selected: props.graphSelection,
       scale: props.resultVectorScale ?? 1, palette: props.resultPalette, filters: activeResultFilters,
+      contour: props.graphContour, contourPreview: graphContourPreview(), resolution: [viewportWidth, viewportHeight],
     });
     if (graphRoot.parent !== helperRoot) helperRoot.add(graphRoot);
   };
@@ -2669,6 +2691,7 @@ export function ThreeGeometryViewport(props) {
       import("three"),
       import("three/addons/controls/OrbitControls.js"),
       loadStreamlineRenderer(),
+      loadGraphContourRenderer(),
     ]).then(([threeModule, controlsModule]) => {
       if (disposed || !host) return;
       THREE = threeModule;
@@ -2793,6 +2816,15 @@ export function ThreeGeometryViewport(props) {
       renderer.domElement.addEventListener("pointerdown", handlePointerDown);
       renderer.domElement.addEventListener("click", handleClick);
       renderer.domElement.addEventListener("dblclick", handleDoubleClick);
+      graphContourInteraction = installGraphContourInteraction({
+        element: renderer.domElement,
+        blocked: () => props.graphInteractionBlocked || !props.onGraphContourChange || movieSnapshot || !ready() || contextLost
+          || flightController.state !== "idle" || axisRotationController?.active,
+        pick: event => { renderNow(); return pickAtPointer(event, "graph"); },
+        getSelection: () => props.graphContour, onSelection: selection => props.onGraphContourChange?.(selection),
+        onMenu: menu => { clearHoverTooltip(); setGraphContourMenu(menu); }, onPreview: setGraphContourPreview,
+        menuElement: () => graphMenuElement,
+      });
       threeScene.add(new THREE.AmbientLight(0xffffff, 1.25));
       const light = new THREE.DirectionalLight(0xffffff, 0.55);
       light.position.set(1, -1, 2);
@@ -2912,8 +2944,14 @@ export function ThreeGeometryViewport(props) {
 
   createEffect(() => {
     props.graphResults; props.activeGraph; props.graphPreview; props.graphSelection; props.resultVectorScale; props.resultPalette;
+    props.graphContour; graphContourPreview();
     if (!ready()) return;
     graphsDirty = true; requestRender();
+  });
+
+  createEffect(() => {
+    props.graphResults; props.taskKey; props.graphInteractionBlocked; props.filters; props.resultVectorScale;
+    if (ready()) untrack(() => graphContourInteraction?.close());
   });
 
   createEffect(() => {
@@ -2980,6 +3018,7 @@ export function ThreeGeometryViewport(props) {
   onCleanup(() => {
     rememberCamera();
     disposed = true;
+    graphContourInteraction?.dispose();
     viewportLens?.dispose(); vectorHover?.dispose(); lensVectorDetails?.dispose(); lensHintPreference?.dispose();
     viewCubeControls?.dispose();
     axisRotationController?.dispose();
@@ -3039,6 +3078,36 @@ export function ThreeGeometryViewport(props) {
       aria-label="Трёхмерная геометрия элементов и областей"
       aria-busy={loading()}
     >
+      <Show when={graphContourMenu()} keyed>{menu =>
+        <div class="graph-contour-menu" role="menu" aria-label="Направление 1D графика" ref={element => {
+          graphMenuElement = element;
+          queueMicrotask(() => {
+            if (!element.isConnected) return;
+            element.style.left = `${Math.max(8, Math.min(menu.x, host.clientWidth - element.offsetWidth - 8))}px`;
+            element.style.top = `${Math.max(8, Math.min(menu.y, host.clientHeight - element.offsetHeight - 8))}px`;
+          });
+        }}
+          style={{ left: `${Math.max(8, Math.min(menu.x, viewportWidth - Math.min(340, viewportWidth - 16) - 8))}px`,
+            top: `${Math.max(8, Math.min(menu.y, viewportHeight - 100))}px` }}
+          onPointerLeave={() => graphContourInteraction?.clearPreview()}
+          onPointerDown={event => event.stopPropagation()} onContextMenu={event => event.preventDefault()}
+          onKeyDown={event => {
+            if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+            event.preventDefault(); event.stopPropagation();
+            const buttons = [...event.currentTarget.querySelectorAll("button")], index = buttons.indexOf(event.target);
+            const step = event.key === "ArrowUp" ? -1 : 1;
+            buttons[event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + step + buttons.length) % buttons.length]?.focus();
+          }}>
+          <For each={[0, 1]}>{direction => <button type="button" role="menuitemradio"
+            aria-checked={sameContourSurface(menu.hit, props.graphContour) && props.graphContour?.direction === direction}
+            title="Наведение показывает контур через ближайший ряд узлов. Нажмите для выбора направления; затем щёлкайте по этой поверхности для переноса контура. Esc закрывает меню."
+            onPointerEnter={() => graphContourInteraction?.preview(direction)}
+            onFocus={() => graphContourInteraction?.preview(direction)}
+            onClick={() => graphContourInteraction?.choose(direction)}>
+            Выбор 1D графика в направлении {direction + 1}{menu.hit.surface.directions ? ` (DV${menu.hit.surface.directions[direction] + 1})` : ""}
+          </button>}</For>
+        </div>
+      }</Show>
       <Show when={props.enableLens === true && ready() && !error() && showLensHint()}>
         <span class="viewport-lens-hint" style={{ "--viewport-lens-hint-left": `${VIEW_CUBE_SIZE + VIEW_CUBE_MARGIN + 8}px` }}>Щелкни и нажми Пробел !</span>
       </Show>

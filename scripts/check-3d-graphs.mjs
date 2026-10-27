@@ -15,11 +15,22 @@ const inspect = { name: "surface-graph-inspection", enforce: "pre", configureSer
   });
 }, transform(code, id) {
   if (id.endsWith("/src/tabs/SourcesFields3D.jsx")) return code.replace('  return <div class="results-layout">',
-    '  window.graphUI = { slices: graphSlices, active: activeSlice, results: graphResults, only: graphsOnly, busy: graphBusy, error: graphError };\n  return <div class="results-layout">');
+    '  window.graphUI = { slices: graphSlices, active: activeSlice, results: graphResults, only: graphsOnly, busy: graphBusy, error: graphError, contour: graphContour };\n  return <div class="results-layout">');
+  if (id.endsWith("/src/tabs/WorkingPoints.jsx")) return code.replace('  // Axis transforms use different coordinates:',
+    '  window.workingPointUI = { series, count: () => displayed().count, omitted: () => displayed().omittedZeros, log: () => props.logarithmic };\n  // Axis transforms use different coordinates:');
   if (id.endsWith("/src/components/geometry/ThreeGeometryViewport.jsx")) return code.replace('  return (\n    <div',
-    `  window.graphScene = { ready: () => ready(), snapshot: () => {
+    `  window.graphScene = { ready: () => ready(), point: (id, component, u, v, ps = 0) => {
+      renderNow();
+      let mesh; graphRoot?.traverseVisible(o=>{if(o.name==="result-graph-surface" && o.userData.graphId===id && o.userData.component===component && o.userData.surface.instance.ps===ps)mesh=o;});
+      if(!mesh)throw new Error("missing surface");
+      const [n1,n2]=mesh.userData.surface.dimensions, x=u*(n1-1),y=v*(n2-1),i=Math.min(n1-2,Math.floor(x)),j=Math.min(n2-2,Math.floor(y)),a=i*n2+j,b=(i+1)*n2+j,c=b+1,d=a+1,du=x-i,dv=y-j;
+      const ids=du>=dv?[a,b,c]:[a,c,d],weights=du>=dv?[1-du,du-dv,dv]:[1-dv,du,dv-du],p=new THREE.Vector3();
+      ids.forEach((n,k)=>p.addScaledVector(new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position,n),weights[k]));
+      p.project(camera);const box=renderer.domElement.getBoundingClientRect();return {x:box.left+(p.x+1)*box.width/2,y:box.top+(1-p.y)*box.height/2};
+    }, snapshot: () => {
       const meshes=[];graphRoot?.traverse(o=>{if(o.name==="result-graph-surface")meshes.push({id:o.userData.graphId,component:o.userData.component,visible:o.parent.visible,color:o.material.color.getHexString(),lit:o.material.isMeshStandardMaterial,palette:o.material.vertexColors,factor:o.userData.factor,positions:Array.from(o.geometry.attributes.position.array.slice(0,9)),basePositions:Array.from(o.userData.surface.positions.slice(0,9))});});
-      return {meshes,preview:graphRoot?.getObjectByName("graph-slice-preview")?.children.length??0,previewSpec:props.graphPreview,previewPoint:graphRoot?.getObjectByName("graph-slice-preview")?.children[0]?.geometry.attributes.position.array.slice(0,3),selectionTypes:graphRoot?.getObjectByName("graph-selected-element")?.children.map(o=>o.type)??[],selected:graphRoot?.getObjectByName("graph-selected-element")?.children.length??0,
+      const contours=[];graphRoot?.traverse(o=>{if(o.name==="graph-contour")contours.push({selection:o.userData.selection,preview:o.userData.preview,positions:Array.from(o.children[0].geometry.attributes.instanceStart.array)});});
+      return {meshes,contours,preview:graphRoot?.getObjectByName("graph-slice-preview")?.children.length??0,previewSpec:props.graphPreview,previewPoint:graphRoot?.getObjectByName("graph-slice-preview")?.children[0]?.geometry.attributes.position.array.slice(0,3),selectionTypes:graphRoot?.getObjectByName("graph-selected-element")?.children.map(o=>o.type)??[],selected:graphRoot?.getObjectByName("graph-selected-element")?.children.length??0,
         camera:[camera?.position.toArray(),camera?.quaternion.toArray(),controls?.target.toArray()],direction:camera?.position.clone().sub(controls.target).normalize().toArray(),layers:[...resultLayerStates.values()].reduce((n,s)=>n+(s.vectorRoot?.children.length??0)+(s.scalarRoot?.children.length??0),0)};
     }};\n  return (\n    <div`);
 } };
@@ -64,6 +75,44 @@ try {
   await page.waitForFunction(() => graphScene.snapshot().meshes.length === 3); await waitGraphs();
   const rgb = (await scene()).meshes; assert.deepEqual(rgb.map(m => m.color), ["ff0000", "00ff00", "0000ff"]); assert.ok(rgb.every(m => m.lit && !m.palette));
   pass("Area graphs build three lit RGB surfaces in the real worker");
+  assert.ok((await page.getByRole("button",{name:"Графики",exact:true}).boundingBox()).x < (await page.getByRole("button",{name:"Векторные линии",exact:true}).boundingBox()).x);
+  const surfacePoint = (id,component,u,v,ps=0) => page.evaluate(args=>graphScene.point(...args),[id,component,u,v,ps]);
+  const clickSurface = async (id,component,u,v,button="left",ps=0) => {const p=await surfacePoint(id,component,u,v,ps);await page.mouse.click(p.x,p.y,{button});};
+  await page.getByRole("button",{name:"Графики",exact:true}).click();
+  await page.keyboard.press("z"); await page.waitForFunction(()=>graphScene.snapshot().direction[2]>.999);
+  const contourMenu = page.getByRole("menu",{name:"Направление 1D графика",exact:true});
+  await clickSurface("region:0",1,.4,.4,"right"); await contourMenu.waitFor();
+  const cameraBefore = (await scene()).camera, contourReads = await page.evaluate(()=>graphFixture.reads.length);
+  for(const direction of [0,1]) {
+    await contourMenu.getByRole("menuitemradio").nth(direction).hover();
+    await page.waitForFunction(d=>graphScene.snapshot().contours[0]?.preview && graphScene.snapshot().contours[0].selection.direction===d,direction);
+    assert.equal(await page.evaluate(()=>graphUI.contour()),null);
+  }
+  await page.screenshot({path:path.join(out,"contour-preview.png"),fullPage:true});
+  await page.keyboard.press("Escape"); await contourMenu.waitFor({state:"hidden"});
+  await page.waitForFunction(()=>graphScene.snapshot().contours.length===0);
+  await clickSurface("region:0",1,.4,.4,"right");
+  await contourMenu.getByRole("menuitemradio").nth(0).click();
+  await page.waitForFunction(()=>graphScene.snapshot().contours[0] && !graphScene.snapshot().contours[0].preview);
+  assert.equal(await page.evaluate(()=>graphUI.contour().index),1);
+  await clickSurface("region:0",1,.4,.9); await page.waitForFunction(()=>graphUI.contour().index===3);
+  const fixedContour=await page.evaluate(()=>graphUI.contour());
+  await page.mouse.move(1100,500); assert.deepEqual((await scene()).camera,cameraBefore);
+  assert.deepEqual(await page.evaluate(()=>graphUI.contour()),fixedContour);
+  assert.equal(await page.evaluate(()=>graphFixture.reads.length),contourReads);
+  await page.screenshot({path:path.join(out,"contour-selected.png"),fullPage:true});
+  pass("Graph button precedes lines; right-click hover previews both area directions, Escape cancels, clicks pin/move a single contour without camera sticking or HDF5 reads");
+  await page.setViewportSize({width:960,height:640}); await page.waitForTimeout(100);
+  await clickSurface("region:0",1,.9,.9,"right"); await contourMenu.waitFor();
+  const menuBox=await contourMenu.boundingBox(), viewportBox=await page.locator(".three-geometry-viewport").boundingBox();
+  assert.ok(menuBox.x>=viewportBox.x && menuBox.y>=viewportBox.y && menuBox.x+menuBox.width<=viewportBox.x+viewportBox.width && menuBox.y+menuBox.height<=viewportBox.y+viewportBox.height);
+  await contourMenu.getByRole("menuitemradio").first().focus(); await page.keyboard.press("ArrowDown");
+  await page.waitForFunction(()=>graphScene.snapshot().contours[0]?.preview && graphScene.snapshot().contours[0].selection.direction===1);
+  await page.keyboard.press("Escape"); assert.deepEqual(await page.evaluate(()=>graphUI.contour()),fixedContour);
+  await page.setViewportSize({width:1920,height:1080}); await page.waitForTimeout(100);
+  pass("Context menu stays inside a smaller viewport; keyboard preview and Escape preserve the selected contour");
+  await open();
+
 
   await graphs.getByRole("button", { name: "Добавить", exact: true }).click();
   const add = graphs.locator(".source-slice-add");
@@ -116,6 +165,24 @@ try {
   await page.waitForFunction(() => graphUI.results().find(g => g.id === 1)?.component === 1);
   assert.equal(await page.evaluate(() => graphFixture.reads.length), reads);
   pass("Height, palette, direction and component update immediately; editing a slice reuses cached HDF5 data");
+  await page.getByRole("button",{name:"Графики",exact:true}).click();
+  await transparency.evaluate(el=>{el.value="100";el.dispatchEvent(new Event("input",{bubbles:true}));});
+  await page.keyboard.press("z"); await page.waitForFunction(()=>graphScene.snapshot().direction[2]>.999);
+  await clickSurface(1,1,.35,.45,"right");
+  assert.match(await contourMenu.getByRole("menuitemradio").nth(0).innerText(),/направлении 1 \(DV1\)/);
+  assert.match(await contourMenu.getByRole("menuitemradio").nth(1).innerText(),/направлении 2 \(DV2\)/);
+  await contourMenu.getByRole("menuitemradio").nth(0).hover();
+  await page.waitForFunction(()=>graphScene.snapshot().contours[0]?.preview);
+  await contourMenu.getByRole("menuitemradio").nth(0).click();
+  await page.waitForFunction(()=>graphUI.contour()?.graphId===1);
+  await clickSurface(1,1,.35,.92); await page.waitForFunction(()=>graphUI.contour().index===2);
+  const sliceContour=await page.evaluate(()=>graphUI.contour());
+  await clickSurface(1,1,.35,.05,"left",1); assert.deepEqual(await page.evaluate(()=>graphUI.contour()),sliceContour);
+  assert.equal((await scene()).contours.length,1);
+  await page.screenshot({path:path.join(out,"slice-contour.png"),fullPage:true});
+  pass("Slice menu names the two actual DV axes; clicks snap to EO rows and cannot move the selection onto a different symmetry image");
+  await open();
+
 
   await graphs.getByRole("checkbox", { name: "Срезы в элементах", exact: true }).uncheck(); await page.waitForFunction(() => graphScene.snapshot().meshes.length === 3);
   assert.equal(await graphs.locator("tbody tr").count(), 1);
@@ -124,7 +191,9 @@ try {
   await page.evaluate(() => { graphFixture.holdReads(); graphFixture.setTime(1); }); await page.waitForFunction(() => graphFixture.pendingReads() > 0);
   assert.equal((await scene()).meshes.length, 5); assert.ok(await page.evaluate(() => graphUI.results().every(g => g.timeIndex === 0)));
   await page.evaluate(() => graphFixture.releaseReads()); await page.waitForFunction(() => !graphUI.busy() && graphUI.results().every(g => g.timeIndex === 1));
-  pass("Hiding retains table rows; time changes retain visible surfaces until their replacement is ready");
+  assert.deepEqual(await page.evaluate(()=>graphUI.contour()),sliceContour);
+  await page.waitForFunction(()=>graphScene.snapshot().contours.length===1);
+  pass("Hiding retains rows and contour; time changes retain old surfaces then update the selected contour with the new frame");
 
   await open(); await graphs.getByRole("button", { name: "Добавить", exact: true }).click();
   await add.getByRole("combobox", { name: "Элемент для среза", exact: true }).selectOption("1");
@@ -165,6 +234,16 @@ try {
   await page.screenshot({ path: path.join(out, "surfaces.png"), fullPage: true });
   pass("X/Y/Z and Ctrl+X/Y/Z face the requested sides, the cube has three help lines, and camera drag ends on mouse release");
 
+  await page.keyboard.press("z"); await page.waitForFunction(()=>graphScene.snapshot().direction[2]>.999);
+  await clickSurface("region:0",1,.4,.55,"right"); await contourMenu.getByRole("menuitemradio").nth(1).click();
+  await page.waitForFunction(()=>graphScene.snapshot().contours.length===1);
+  await clickSurface("region:0",1,.4,.55,"right"); await contourMenu.getByRole("menuitemradio").nth(0).hover();
+  await page.waitForFunction(()=>graphScene.snapshot().contours[0]?.preview);
+  await page.evaluate(async()=>{const adapter=graphFixture.capture();await adapter.prepare();await adapter.capture(1);await adapter.restore(1);});
+  await contourMenu.waitFor({state:"hidden"});
+  assert.equal((await scene()).contours[0].preview,false);
+  pass("Capture preparation removes an uncommitted preview and records the selected contour even without a movie-busy flag");
+  await page.keyboard.press("Control+a");
   const movie = await page.evaluate(async () => {
     const { createMovieExportController } = await import("/src/services/movie/movieExportController.js");
     const { createMovieWebmEncoder } = await import("/src/services/movie/movieWebmEncoder.js"); const samples = [];
@@ -173,7 +252,7 @@ try {
       return { addFrame(frame, options) {
         let color = 0, white = 0;
         for (let i = 0; i < frame.data.length; i += 4) { const [r,g,b] = frame.data.subarray(i,i+3); if (Math.max(r,g,b) > 150 && Math.max(r,g,b) - Math.min(r,g,b) > 100) color++; if (r > 245 && g > 245 && b > 245) white++; }
-        samples.push({ times: graphUI.results().map(g => g.timeIndex), meshes: graphScene.snapshot().meshes.length, color, white }); return encoder.addFrame(frame, options);
+        samples.push({ times: graphUI.results().map(g => g.timeIndex), meshes: graphScene.snapshot().meshes.length, contours: graphScene.snapshot().contours.length, color, white }); return encoder.addFrame(frame, options);
       }, finish: () => encoder.finish(), close: () => encoder.close() };
     } });
     controller.register(graphFixture.capture()); graphFixture.setBusy(true);
@@ -185,10 +264,10 @@ try {
   });
   await writeFile(path.join(out, "surfaces.webm"), new Uint8Array(movie.bytes)); delete movie.bytes;
   assert.equal(movie.frames, 3); assert.deepEqual(movie.decoded, [movie.width, movie.height]);
-  movie.samples.forEach((sample, index) => { assert.deepEqual(sample.times, [index,index]); assert.equal(sample.meshes, 5); assert.ok(sample.color > 100 && sample.white > 100, JSON.stringify(sample)); });
+  movie.samples.forEach((sample, index) => { assert.deepEqual(sample.times, [index,index]); assert.equal(sample.meshes, 5); assert.equal(sample.contours, 1); assert.ok(sample.color > 100 && sample.white > 100, JSON.stringify(sample)); });
   assert.ok(await page.evaluate(() => graphUI.results().every(g => g.timeIndex === 1)));
   await writeFile(path.join(out, "movie.json"), JSON.stringify(movie, null, 2));
-  pass("Real moview encodes and decodes WebM with refreshed area/slice surfaces in every frame and restores time");
+  pass("Real moview encodes and decodes WebM with refreshed area/slice surfaces and the selected contour in every frame and restores time");
   await page.setViewportSize({ width: 1440, height: 900 }); await open(); const panel = await graphs.boundingBox();
   assert.ok(panel.x >= 0 && panel.x + panel.width <= 1440 && panel.y + panel.height <= 900);
   for (const recordIndex of [0,1]) for (const direction of [0,1,2]) {
@@ -203,6 +282,27 @@ try {
   assert.equal(textColor, "rgb(237, 242, 247)");
   await page.screenshot({ path: path.join(out, "panel.png"), fullPage: true });
   pass("The graph panel fits 1440px and the slice table has its own vertical scroll");
+  await page.evaluate(()=>{
+    graphFixture.buffers.JE[0].fill(0,3,6); graphFixture.buffers.JE[0].fill(0,15,18);
+    graphFixture.setTime(0);graphFixture.showWorking(true);
+  });
+  await page.getByRole("tab",{name:"J(E)",exact:true}).click();
+  await page.waitForFunction(()=>workingPointUI.count()>0);
+  const linear = await page.evaluate(()=>({count:workingPointUI.count(),points:workingPointUI.series().flatMap(s=>s.points).map(p=>({x:p.x,y:p.y}))}));
+  const logarithmic=page.getByRole("checkbox",{name:"логарифмическая",exact:true});
+  assert.equal(await logarithmic.isChecked(),false);
+  assert.equal(await page.getByRole("checkbox",{name:/^log\([EJ]\)$/}).count(),0);
+  await logarithmic.check();await page.waitForFunction(()=>workingPointUI.log());
+  const logarithms=await page.evaluate(()=>({count:workingPointUI.count(),omitted:workingPointUI.omitted(),points:workingPointUI.series().flatMap(s=>s.points).map(p=>({x:p.x,y:p.y}))}));
+  assert.equal(logarithms.omitted,2);assert.equal(logarithms.count,linear.count-2);
+  const positive=linear.points.filter(p=>p.x>0&&p.y>0);assert.equal(positive.length,logarithms.points.length);
+  positive.forEach((p,i)=>{assert.ok(Math.abs(Math.log10(p.x)-logarithms.points[i].x)<1e-10);assert.ok(Math.abs(Math.log10(p.y)-logarithms.points[i].y)<1e-10);});
+  await page.screenshot({path:path.join(out,"working-point-log.png"),fullPage:true});
+  await page.evaluate(()=>graphFixture.setBusy(true));assert.equal(await logarithmic.isDisabled(),true);await page.evaluate(()=>graphFixture.setBusy(false));
+  await page.getByRole("tab",{name:"M(H)",exact:true}).click();assert.equal(await page.getByRole("checkbox",{name:"логарифмическая",exact:true}).count(),0);
+  await page.getByRole("tab",{name:"J(E)",exact:true}).click();assert.equal(await logarithmic.isChecked(),true);
+  await logarithmic.uncheck();await page.waitForFunction(()=>!workingPointUI.log());assert.equal(await page.evaluate(()=>workingPointUI.count()),linear.count);
+  pass("One logarithmic checkbox transforms both data and material curves, omits either zero coordinate, persists across M/J and is locked during recording");
   assert.deepEqual(errors, []); await writeFile(path.join(out, "browser.json"), JSON.stringify({ checks, errors }, null, 2)); console.log("BROWSER_OK " + checks.length);
 } catch (error) {
   await page?.screenshot({ path: path.join(out, "failure.png"), fullPage: true }).catch(() => {});

@@ -32,7 +32,8 @@ export function graphSlicePatch(vertices, direction, counts = [2, 2, 2], discret
     if (dot(normal, derivative(direction)) < 0) normal = normal.map(v => -v);
     const n = i * dimensions[1] + j; positions.set(position(u), n * 3); normals.set(normal, n * 3);
   }
-  return { positions, normals, dimensions, sampled: varying.some(k => counts[k] > GRAPH_SURFACE_MAX_INTERVALS) };
+  return { positions, normals, dimensions, nodeCounts: varying.map(k => counts[k]), nodeLocation: "centres", directions: varying,
+    sampled: varying.some(k => counts[k] > GRAPH_SURFACE_MAX_INTERVALS) };
 }
 
 function regionPatch(domain) {
@@ -45,7 +46,7 @@ function regionPatch(domain) {
     const b = sub(pointAt(positions, i * n2 + Math.min(n2 - 1, j + 1)), pointAt(positions, i * n2 + Math.max(0, j - 1)));
     normals.set(unit(cross(a, b)), (i * n2 + j) * 3);
   }
-  return { positions, normals, dimensions: [n1, n2] };
+  return { positions, normals, dimensions: [n1, n2], nodeCounts: [n1, n2], nodeLocation: "nodes" };
 }
 
 function missingStencil(domain, u) {
@@ -104,6 +105,7 @@ export function calculateResultGraphs({ domains, graphs }) {
             for (const v of values) if (Number.isFinite(v)) { minimum = Math.min(minimum, v); maximum = Math.max(maximum, v); }
             surfaces.push({ key: `${resultInstanceKey(graph.source, copy.instance)}:${component}`, instance: copy.instance,
               positions, normals, values, component, dimensions: patch.dimensions,
+              nodeCounts: patch.nodeCounts, nodeLocation: patch.nodeLocation, directions: patch.directions,
               indices: graphSurfaceIndices(patch.dimensions, values), minimum: Number.isFinite(minimum) ? minimum : 0,
               maximum: Number.isFinite(maximum) ? maximum : 0, sampled: patch.sampled });
           }

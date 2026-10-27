@@ -55,10 +55,11 @@ export function SourcesFields3D(props) {
   const [sliceGraphs, setSliceGraphs] = createSignal(savedGraphs?.showSlices ?? false);
   const [graphSlices, setGraphSlices] = createSignal(savedGraphs?.slices ?? []);
   const [activeSlice, setActiveSlice] = createSignal(savedGraphs?.active ?? null);
+  const [graphContour, setGraphContour] = createSignal(savedGraphs?.contour ?? null);
   const [addingSlice, setAddingSlice] = createSignal(false), [addElement, setAddElement] = createSignal(0);
   const [directionMenu, setDirectionMenu] = createSignal(null), [previewSlice, setPreviewSlice] = createSignal(null);
   let graphTask = props.task, nextSliceId = Math.max(0, ...graphSlices().map(s => s.id)) + 1;
-  const graphSession = () => ({ only: graphsOnly(), areas: areaGraphs(), showSlices: sliceGraphs(), slices: graphSlices(), active: activeSlice() });
+  const graphSession = () => ({ only: graphsOnly(), areas: areaGraphs(), showSlices: sliceGraphs(), slices: graphSlices(), active: activeSlice(), contour: graphContour() });
   const graphBlocked = () => props.movieBusy || flightBusy();
   const selectedSlice = () => graphSlices().find(s => s.id === activeSlice());
   const graphQuantities = () => ({ elements: elementsQuantity(), regions: regionsQuantity(), virtual: virtualQuantity() });
@@ -77,6 +78,7 @@ export function SourcesFields3D(props) {
       const saved = task && graphSessions.get(task);
       setGraphsOnly(saved?.only ?? false); setAreaGraphs(saved?.areas ?? false); setSliceGraphs(saved?.showSlices ?? false);
       setGraphSlices(saved?.slices ?? []); setActiveSlice(saved?.active ?? null);
+      setGraphContour(saved?.contour ?? null);
       nextSliceId = Math.max(0, ...graphSlices().map(s => s.id)) + 1; closeGraphChoice();
     });
   });
@@ -104,14 +106,21 @@ export function SourcesFields3D(props) {
       const direction = update.direction ?? s.direction, count = sliceCount(s.recordIndex, direction);
       const discrete = direction !== s.direction ? middleGraphDiscrete(count) : update.discrete ?? s.discrete;
       if (!Number.isSafeInteger(discrete) || discrete < 1 || discrete > count) return s;
+      if (graphContour()?.graphId === id && (direction !== s.direction || (update.component !== undefined && update.component !== s.component))) setGraphContour(null);
       return { ...s, ...update, direction, discrete };
     }));
     setActiveSlice(id);
   }
   function deleteSlice() {
     if (graphBlocked()) return;
+    if (graphContour()?.graphId === activeSlice()) setGraphContour(null);
     const remaining = graphSlices().filter(s => s.id !== activeSlice());
     setGraphSlices(remaining); setActiveSlice(remaining.at(-1)?.id ?? null); closeGraphChoice();
+  }
+  function selectGraphContour(contour) {
+    if (graphBlocked()) return;
+    setGraphContour(contour);
+    if (graphSlices().some(slice => slice.id === contour?.graphId)) setActiveSlice(contour.graphId);
   }
   function DirectionChoices(p) {
     return <div class="source-slice-directions" role="menu" aria-label="Направление среза"
@@ -342,47 +351,6 @@ export function SourcesFields3D(props) {
 
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
-            aria-expanded={openSourceMenu() === "lines"} aria-label="Векторные линии"
-            title="Настроить метод и толщину, выбрать или удалить векторные линии"
-            onClick={() => toggleSourceMenu("lines")}>Векторные линии</button>
-          <Show when={openSourceMenu() === "lines"}>
-            <div class="source-toolbar-menu-panel source-lines-panel">
-              <label class="source-line-method">Метод построения
-                <select aria-label="Метод построения" value={streamlineMethod()} disabled={props.movieBusy}
-                  title="Выбрать метод построения векторных линий" onChange={changeStreamlineMethod}>
-                  <For each={Object.entries(STREAMLINE_METHODS)}>{([key, label]) =>
-                    <option value={key}>{label}</option>}
-                  </For>
-                </select>
-              </label>
-              <label class="source-presentation-slider">Толщина
-                <input type="range" min="1" max="10" step="1"
-                  value={streamlineWidth()} aria-label="Толщина линий"
-                  onInput={event => setStreamlineWidth(event.currentTarget.valueAsNumber)} />
-                <span>{streamlineWidth()} px</span>
-              </label>
-              <Show when={streamlineSeeds().length} fallback={<div class="source-toolbar-empty">Нет линий</div>}>
-                <For each={streamlineSeeds()}>{seed =>
-                  <div class="source-line-row" classList={{ selected: selectedStreamline() === seed.id }}>
-                    <button type="button" class="source-line-select"
-                      title={streamlines().find(line => line.id === seed.id)?.notice || "Выбрать линию и её симметричные образы"}
-                      onClick={() => setSelectedStreamline(seed.id)}>
-                      №{seed.id} · {QUANTITIES[seed.quantityKey]?.label} · Элемент №{seed.source.recordIndex + 1}
-                    </button>
-                    <button type="button" class="source-line-delete"
-                      aria-label={`Удалить линию №${seed.id}`}
-                      title="Удалить линию"
-                      onClick={() => deleteStreamline(seed.id)}>×</button>
-                  </div>}
-                </For>
-              </Show>
-              <Show when={streamlineNotice()}><div class="source-toolbar-empty">{streamlineNotice()}</div></Show>
-            </div>
-          </Show>
-        </div>
-
-        <div class="source-toolbar-menu">
-          <button type="button" class="source-toolbar-menu-button"
             aria-expanded={openSourceMenu() === "graphs"} aria-label="Графики"
             title="Открыть панель графиков"
             onClick={() => toggleSourceMenu("graphs")}>Графики</button>
@@ -463,6 +431,47 @@ export function SourcesFields3D(props) {
             </div>
           </Show>
         </div>
+        <div class="source-toolbar-menu">
+          <button type="button" class="source-toolbar-menu-button"
+            aria-expanded={openSourceMenu() === "lines"} aria-label="Векторные линии"
+            title="Настроить метод и толщину, выбрать или удалить векторные линии"
+            onClick={() => toggleSourceMenu("lines")}>Векторные линии</button>
+          <Show when={openSourceMenu() === "lines"}>
+            <div class="source-toolbar-menu-panel source-lines-panel">
+              <label class="source-line-method">Метод построения
+                <select aria-label="Метод построения" value={streamlineMethod()} disabled={props.movieBusy}
+                  title="Выбрать метод построения векторных линий" onChange={changeStreamlineMethod}>
+                  <For each={Object.entries(STREAMLINE_METHODS)}>{([key, label]) =>
+                    <option value={key}>{label}</option>}
+                  </For>
+                </select>
+              </label>
+              <label class="source-presentation-slider">Толщина
+                <input type="range" min="1" max="10" step="1"
+                  value={streamlineWidth()} aria-label="Толщина линий"
+                  onInput={event => setStreamlineWidth(event.currentTarget.valueAsNumber)} />
+                <span>{streamlineWidth()} px</span>
+              </label>
+              <Show when={streamlineSeeds().length} fallback={<div class="source-toolbar-empty">Нет линий</div>}>
+                <For each={streamlineSeeds()}>{seed =>
+                  <div class="source-line-row" classList={{ selected: selectedStreamline() === seed.id }}>
+                    <button type="button" class="source-line-select"
+                      title={streamlines().find(line => line.id === seed.id)?.notice || "Выбрать линию и её симметричные образы"}
+                      onClick={() => setSelectedStreamline(seed.id)}>
+                      №{seed.id} · {QUANTITIES[seed.quantityKey]?.label} · Элемент №{seed.source.recordIndex + 1}
+                    </button>
+                    <button type="button" class="source-line-delete"
+                      aria-label={`Удалить линию №${seed.id}`}
+                      title="Удалить линию"
+                      onClick={() => deleteStreamline(seed.id)}>×</button>
+                  </div>}
+                </For>
+              </Show>
+              <Show when={streamlineNotice()}><div class="source-toolbar-empty">{streamlineNotice()}</div></Show>
+            </div>
+          </Show>
+        </div>
+
         </div>
         <ProtocolCheck context={props} entryKey="sources" title="Источники / Поле 3D" adapter={movie.adapter}
           disabled={flightBusy() || result().loading || graphBusy()}
@@ -481,6 +490,7 @@ export function SourcesFields3D(props) {
           resultError={[result().error, ...(value()?.errors ?? []).map(error => error.message)].filter(Boolean).join(" · ")}
           resultStreamlines={graphsOnly() ? [] : streamlines()} selectedStreamline={selectedStreamline()}
           graphResults={graphResults()} activeGraph={activeSlice()} graphPreview={previewSlice()} graphSelection={selectedSlice()}
+          graphContour={graphContour()} onGraphContourChange={selectGraphContour} graphInteractionBlocked={graphBlocked() || graphBusy()}
           streamlineWidth={streamlineWidth()} streamlineColorMap={true}
           onSelectStreamline={setSelectedStreamline} onResultNodeDoubleClick={addStreamline}
           captureFrameKey={captureFrameKey()} onCaptureReady={movie.onCaptureReady}

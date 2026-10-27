@@ -17,8 +17,7 @@ import "./WorkingPoints.css";
 
 export function WorkingPoints(props) {
   const [mode, setMode] = createGeometryViewSetting("workingPointMode", "M");
-  const [logE, setLogE] = createGeometryViewSetting("workingPointLogE", false);
-  const [logJ, setLogJ] = createGeometryViewSetting("workingPointLogJ", false);
+  const [logarithmic, setLogarithmic] = createGeometryViewSetting("workingPointLogarithmic", false);
   const records = createMemo(() => workingPointRecords(props.task));
   const eligible = createMemo(() => workingPointEligibleIds(records(), mode()));
   const selected = createMemo(() => {
@@ -46,7 +45,7 @@ export function WorkingPoints(props) {
     </div>
     <section class="plot-panel" role="tabpanel" id="working-points-plot" aria-labelledby={`working-points-tab-${mode()}`}>
       <Show when={mode()} keyed>{value => <WorkingPointPlot {...props} mode={value} selected={selected()}
-        logE={logE()} setLogE={setLogE} logJ={logJ()} setLogJ={setLogJ} />}</Show>
+        logarithmic={logarithmic()} setLogarithmic={setLogarithmic} />}</Show>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
     </section>
   </div>;
@@ -130,18 +129,18 @@ function WorkingPointPlot(props) {
   const value = createMemo(() => frame()?.value ?? empty);
   const warnings = createMemo(() => [result().error, ...value().warnings].filter(Boolean).join(" · "));
   const displayed = createMemo(() => magnetic ? value()
-    : currentWorkingPointView(value().series, props.logE, props.logJ));
+    : currentWorkingPointView(value().series, props.logarithmic, props.logarithmic));
   const displayedCurves = createMemo(() => magnetic ? value().curves
-    : currentWorkingPointView(value().curves, props.logE, props.logJ).series);
+    : currentWorkingPointView(value().curves, props.logarithmic, props.logarithmic).series);
   const series = createMemo(() => [...displayedCurves(), ...displayed().series]);
-  const zeroAxes = () => [props.logE && "|E| = 0", props.logJ && "|J| = 0"].filter(Boolean).join(" или ");
+  const zeroAxes = () => props.logarithmic ? "|E| = 0 или |J| = 0" : "";
   const zeroNotice = () => displayed().omittedZeros
     ? `Не показаны точки с ${zeroAxes()}: ${displayed().omittedZeros}` : "";
-  const currentTitle = () => `${props.logJ ? "log J" : "J"}(${props.logE ? "log E" : "E"})`;
+  const currentTitle = () => props.logarithmic ? "log J(log E)" : "J(E)";
   const movieFrame = createMemo(() => ({ frame: frame(),
-    logE: !magnetic && props.logE, logJ: !magnetic && props.logJ }));
+    logarithmic: !magnetic && props.logarithmic }));
   const movie = createMovieTabAdapter(props, { title: `Рабочие точки ${title}`,
-    filenamePrefix: () => magnetic ? "mh" : `${props.logJ ? "logj" : "j"}-${props.logE ? "loge" : "e"}`, readFrame: index => {
+    filenamePrefix: () => magnetic ? "mh" : props.logarithmic ? "logj-loge" : "j-e", readFrame: index => {
     if (!selected().length) return { error: emptyText };
     const current = completedMovieFrame(result(), { task: props.task, index });
     if (!current.ready) return current;
@@ -149,19 +148,15 @@ function WorkingPointPlot(props) {
       ? { error: zeroNotice() || "Нет рабочих точек" } : { ready: true, value: movieFrame() };
   } });
   // Axis transforms use different coordinates: give each fresh zoom bounds.
-  return <Show when={magnetic ? "mh" : `${props.logE}-${props.logJ}`} keyed>{_scale =>
+  return <Show when={magnetic ? "mh" : String(props.logarithmic)} keyed>{_scale =>
       <LineChart series={series()} autoScaleToggle={true} autoYRange={magnetic ? globalYRange() : null}
         legendMode={magnetic ? undefined : "overlay"}
         captureFrameKey={movieFrame()} onCaptureReady={movie.onCaptureReady} captureError={warnings()}
         toolbar={<><strong>{title}</strong><Show when={magnetic} fallback={<>
           <span class="chart-toolbar-note" title="Заданная зависимость — линия; расчётные рабочие точки — маркеры. При постоянном Jc степенной закон прямолинеен в log(J)–log(E).">Линия — задано; точки — расчёт</span>
-          <label title="Десятичный логарифм |E| в В/м; точки с E = 0 не отображаются">
-            <input type="checkbox" aria-label="log(E)" checked={props.logE} disabled={props.movieBusy}
-              onChange={event => !props.movieBusy && props.setLogE(event.currentTarget.checked)} />log(E)
-          </label>
-          <label title="Десятичный логарифм |J| в А/мм²; точки с J = 0 не отображаются">
-            <input type="checkbox" aria-label="log(J)" checked={props.logJ} disabled={props.movieBusy}
-              onChange={event => !props.movieBusy && props.setLogJ(event.currentTarget.checked)} />log(J)
+          <label title="Десятичные логарифмы обеих осей: |E| в В/м и |J| в А/мм². Точки с E = 0 или J = 0 не отображаются.">
+            <input type="checkbox" aria-label="логарифмическая" checked={props.logarithmic} disabled={props.movieBusy}
+              onChange={event => !props.movieBusy && props.setLogarithmic(event.currentTarget.checked)} />логарифмическая
           </label></>}><span class="chart-toolbar-note"
           title="Изотропные ФММ: модули · Анизотропные: проекции на ось намагничивания">
           Изотропные ФММ: модули · Анизотропные: проекции на ось намагничивания
@@ -180,8 +175,8 @@ function WorkingPointPlot(props) {
           title={`Рабочие точки ${magnetic ? title : currentTitle()}`} adapter={movie.adapter}
           disabled={result().loading} comment={`Элементы: ${selected().map(row => row.id).join(", ")}`} />}
         status={[warnings(), zeroNotice(), ...value().notes].filter(Boolean).join(" · ")}
-        xLabel={magnetic ? "H, кА/м" : props.logE ? "log₁₀(|E| / (1 В/м))" : "|E|, В/м"}
-        yLabel={magnetic ? "M, кА/м" : props.logJ ? "log₁₀(|J| / (1 А/мм²))" : "|J|, А/мм²"}
+        xLabel={magnetic ? "H, кА/м" : props.logarithmic ? "log₁₀(|E| / (1 В/м))" : "|E|, В/м"}
+        yLabel={magnetic ? "M, кА/м" : props.logarithmic ? "log₁₀(|J| / (1 А/мм²))" : "|J|, А/мм²"}
         emptyText={warnings() || zeroNotice() || emptyText} />
     }</Show>;
 }

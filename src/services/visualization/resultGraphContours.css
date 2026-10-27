@@ -1,0 +1,15 @@
+.graph-contour-menu {
+  position: absolute; z-index: 18; width: min(340px, calc(100% - 16px));
+  box-sizing: border-box; padding: 5px; border: 1px solid #8cbaed; border-radius: 5px;
+  background: #1d3048; color: #f0f4f7; box-shadow: 0 4px 14px #0008;
+  max-height: calc(100% - 16px); overflow-y: auto;
+}
+.graph-contour-menu button {
+  display: block; width: 100%; padding: 8px; border: 1px solid transparent;
+  background: transparent; color: inherit; font: 13px/1.35 Arial, sans-serif;
+  text-align: left; white-space: normal; cursor: pointer;
+}
+.graph-contour-menu button:hover, .graph-contour-menu button:focus-visible {
+  background: #3d5878; border-color: #8cbaed; outline: none;
+}
+.graph-contour-menu button[aria-checked="true"] { color: #ffdd38; }

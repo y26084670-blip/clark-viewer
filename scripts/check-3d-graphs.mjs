@@ -87,24 +87,29 @@ try {
   const sourceMenu = page.locator(".source-toolbar-menu-panel");
   const geometryCount = (await scene()).geometryCount;
   await page.evaluate(n=>{window.toolbarGeometryCount=n;graphFixture.setElements([1]);},geometryCount);
-  for(const [label,key,separators] of [["Элементы","elements",[/Не показывать/,/Плотность энергии/,/Относительная электропроводность/]], ["Области","regions",[/Не показывать/,/Векторный потенциал/]]]) {
+  for(const [label,key,separators] of [["Элементы","elements",[/Относительная электропроводность/]], ["Области","regions",[/Векторный потенциал/]]]) {
     await page.getByRole("button",{name:label,exact:true}).click();
     const preceding = await sourceMenu.locator("hr").evaluateAll(els=>els.map(el=>el.previousElementSibling.textContent));
     assert.equal(preceding.length,separators.length); preceding.forEach((text,i)=>assert.match(text,separators[i]));
-    assert.deepEqual((await sourceMenu.locator("label").allTextContents()).slice(-3),["Показать все","Выделенные в списке","Кроме выделенных"]);
+    assert.deepEqual((await sourceMenu.locator("label").allTextContents()).slice(-4),["Показать все","Выделенные в списке","Кроме выделенных","Не показывать"]);
+    const quantity = await sourceMenu.locator(`label:has(input[name="source-quantity-${key}"]:checked)`).innerText();
     await sourceMenu.getByRole("radio",{name:"Кроме выделенных",exact:true}).check();
     await page.waitForFunction(key=>graphScene.snapshot().filters.objectModes[key]==="exceptSelected" && graphScene.snapshot().geometryCount<window.toolbarGeometryCount,key);
     await sourceMenu.getByRole("radio",{name:"Выделенные в списке",exact:true}).check();
     await page.waitForFunction(key=>graphScene.snapshot().filters.objectModes[key]==="selected",key);
+    await sourceMenu.getByRole("radio",{name:"Не показывать",exact:true}).check();
+    await page.waitForFunction(key=>graphScene.snapshot().filters.objectModes[key]==="none" && graphScene.snapshot().geometryCount<window.toolbarGeometryCount,key);
+    assert.equal(await sourceMenu.locator(`label:has(input[name="source-quantity-${key}"]:checked)`).innerText(),quantity);
     await sourceMenu.getByRole("radio",{name:"Показать все",exact:true}).check();
     await page.waitForFunction(n=>graphScene.snapshot().geometryCount===n,geometryCount);
     await closeMenus();
   }
   await page.evaluate(()=>graphFixture.setElements([1,2]));
-  pass("Elements/Regions contain separators and independent quantity/visibility radios; selection filters really remove and restore geometry");
+  pass("Elements/Regions have one separator and four visibility radios with Hide last; hiding removes the group while retaining its quantity and list selection");
 
   await page.getByRole("button",{name:"Симметрии",exact:true}).click();
-  assert.equal(await sourceMenu.getByRole("radio").count(),3);
+  assert.equal(await sourceMenu.getByRole("radio").count(),0);
+  assert.equal(await sourceMenu.locator("hr").count(),0);
   assert.deepEqual(await sourceMenu.locator("label:has(input[type=checkbox])").allTextContents(),["Локальная","Азимутальная","Периодическая","Зеркальная"]);
   for (const [label,key] of [["Локальная","local"],["Азимутальная","axial"],["Периодическая","periodic"],["Зеркальная","mirror"]]) {
     const checkbox=sourceMenu.getByRole("checkbox",{name:label,exact:true}); const initial=await checkbox.isChecked();
@@ -114,7 +119,7 @@ try {
   }
   await page.waitForFunction(n=>graphScene.snapshot().geometryCount===n,geometryCount);
   await closeMenus();
-  pass("Symmetries preserves virtual quantity choices and all four display switches; periodic images hide and return");
+  pass("Symmetries contains only four display switches; periodic images hide and return");
 
   await page.getByRole("button",{name:"Представление",exact:true}).click();
   assert.equal(await page.locator(".source-presentation-panel > :last-child").innerText(),"Графики");
@@ -366,12 +371,22 @@ try {
   assert.equal(await graphs.locator("tbody tr").count(), 1);
   await graphs.getByRole("checkbox", { name: "Срезы в элементах", exact: true }).check(); await waitGraphs();
   await page.waitForFunction(() => graphScene.snapshot().meshes.length === 5);
+  const sizeBeforeTime = await size.inputValue();
+  await size.evaluate(el => {
+    window.sizeBeforeTime = el; window.sizeDisabledChanges = [];
+    window.sizeTimeObserver = new MutationObserver(records => window.sizeDisabledChanges.push(...records));
+    window.sizeTimeObserver.observe(el, { attributes: true, attributeFilter: ["disabled"] });
+  });
   await page.evaluate(() => { graphFixture.holdReads(); graphFixture.setTime(1); }); await page.waitForFunction(() => graphFixture.pendingReads() > 0);
+  assert.equal(await size.isDisabled(),false); assert.equal(await size.inputValue(),sizeBeforeTime);
+  assert.equal(await size.evaluate(el => el === window.sizeBeforeTime),true);
   assert.equal((await scene()).meshes.length, 5); assert.ok(await page.evaluate(() => graphUI.results().every(g => g.timeIndex === 0)));
   await page.evaluate(() => graphFixture.releaseReads()); await page.waitForFunction(() => !graphUI.busy() && graphUI.results().every(g => g.timeIndex === 1));
+  assert.equal(await size.evaluate(el => el === window.sizeBeforeTime),true);
+  assert.equal(await page.evaluate(() => { sizeTimeObserver.disconnect(); return sizeDisabledChanges.length; }),0);
   assert.deepEqual(await page.evaluate(()=>{const {view,...selection}=graphUI.contour();return selection;}),sliceContour);
   await page.waitForFunction(()=>graphScene.snapshot().contours.length===2);
-  pass("Hiding retains rows and contour; time changes retain old surfaces then update the selected contour with the new frame");
+  pass("Hiding retains rows and contour; time changes update surfaces without replacing, disabling or resetting Size");
 
   await open(); await graphs.getByRole("button", { name: "Добавить", exact: true }).click();
   await add.getByRole("combobox", { name: "Элемент для среза", exact: true }).selectOption("1");
@@ -388,6 +403,11 @@ try {
   await page.getByRole("button", { name: "Элементы", exact: true }).click(); await page.getByRole("radio", { name: /Потери на токи проводимости/ }).check();
   await open(); await waitGraphs(); assert.equal(await graphs.locator("tbody select").isDisabled(), true);
   assert.equal(await page.evaluate(() => graphUI.results().find(g => g.kind === "slice").components), 1);
+  await page.getByRole("button", { name: "Представление", exact: true }).click();
+  const scalarMap = page.getByRole("checkbox", { name: "Карта", exact: true });
+  assert.equal(await scalarMap.isDisabled(),false); await scalarMap.check(); await scalarMap.uncheck();
+  assert.equal(await scalarMap.isChecked(),false);
+  await open(); await waitGraphs();
   pass("One table row selects its highlighted element; Delete removes that row and scalar quantities disable component selection");
 
   await graphs.getByRole("checkbox", { name: "Срезы в элементах", exact: true }).uncheck();

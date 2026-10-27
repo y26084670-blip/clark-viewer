@@ -43,6 +43,22 @@ test("rapid changes coalesce; writes serialize across remount and dispose flushe
   await Promise.all([first, closing]); await next.dispose();
 });
 
+test("legacy hidden quantities become hidden groups and preserve the saved collection", async () => {
+  const previous = { ...settings, view: { ...settings.view, resultElementsQuantity: "none", resultRegionsQuantity: "none",
+    resultVirtualQuantity: "Av", elementsMode: "selected", regionsMode: "all" } };
+  const d = disk(JSON.stringify({ version: 1, settings: previous }));
+  const store = createGraphSettingsStore({ ...graph3DTask().task, handle: d.handle });
+  const restored = await store.ready;
+  assert.equal(restored.view.resultElementsQuantity, "M"); assert.equal(restored.view.resultRegionsQuantity, "Bs");
+  assert.equal(restored.view.elementsMode, "none"); assert.equal(restored.view.regionsMode, "none");
+  assert.equal(restored.view.resultVirtualQuantity, "Av"); assert.equal(restored.profiles.length, 1);
+  assert.equal(restored.profiles[0].id, settings.profiles[0].id);
+  assert.deepEqual(restored.profiles[0].view, settings.profiles[0].view);
+  store.save(restored); await store.flush(); await store.dispose();
+  const reopened = createGraphSettingsStore({ ...graph3DTask().task, handle: d.handle });
+  assert.deepEqual(await reopened.ready, restored); await reopened.dispose();
+});
+
 test("corrupt, unsupported and read-only files give a notice and never silently replace the previous file", async () => {
   for (const original of ["broken JSON", JSON.stringify({ version: 2, settings })]) {
     const d = disk(original), messages = [], store = createGraphSettingsStore({ ...graph3DTask().task, handle: d.handle }, { onNotice: text => messages.push(text) });

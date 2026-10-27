@@ -10,6 +10,18 @@ export const GRAPH_VIEW_DEFAULTS = Object.freeze({ resultVectorScale: 1, resultP
 const integer = n => Number.isSafeInteger(n) && n >= 0;
 const validId = n => Number.isSafeInteger(n) && n > 0;
 
+// Older menus stored hiding as a quantity. Keep that choice in the visibility
+// group while leaving a usable quantity selected for the next time it is shown.
+export function migrateGraphVisibility(view = {}) {
+  const next = { ...view };
+  for (const [group, quantity] of [["Elements", "M"], ["Regions", "Bs"]]) {
+    if (next[`result${group}Quantity`] !== "none") continue;
+    next[`result${group}Quantity`] = quantity;
+    next[`${group.toLowerCase()}Mode`] = "none";
+  }
+  return next;
+}
+
 export function normalizeGraphChartView(view = {}) {
   const limits = Object.fromEntries(["xMin", "xMax", "yMin", "yMax"].filter(k => Number.isFinite(view.limits?.[k])).map(k => [k, view.limits[k]]));
   for (const axis of ["x", "y"]) if (!(limits[`${axis}Min`] < limits[`${axis}Max`])) { delete limits[`${axis}Min`]; delete limits[`${axis}Max`]; }
@@ -54,7 +66,7 @@ export function normalizeGraphSettings(value, task) {
   }
   const selections = Object.fromEntries(["elements", "regions"].map(key => [key,
     Array.isArray(s.selections?.[key]) ? s.selections[key].filter(id => task[key]?.some(r => r.id === id)) : undefined]));
-  return { only: s.only === true, areas: s.areas === true, showSlices: s.showSlices === true, slices, profiles, view, selections,
+  return { only: s.only === true, areas: s.areas === true, showSlices: s.showSlices === true, slices, profiles, view: migrateGraphVisibility(view), selections,
     active: sliceIds.has(s.active) ? s.active : slices.at(-1)?.id ?? null,
     activeProfile: profileIds.has(s.activeProfile) ? s.activeProfile : profiles.at(-1)?.id ?? null,
     expandedProfile: profileIds.has(s.expandedProfile) ? s.expandedProfile : null };

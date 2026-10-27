@@ -18,7 +18,7 @@ import { STREAMLINE_METHODS, STREAMLINE_DEFAULT_TOLERANCE } from "../services/vi
 import { GRAPH_SLICE_DIRECTIONS, graphSliceCount, middleGraphDiscrete } from "../services/visualization/resultGraphField.js";
 import { RESULT_SIZE_SCALE } from "../services/visualization/resultVectorScale.js";
 import { createResultGraphReader, graphQuantityKey, graphRequestKey } from "../services/results/resultGraphRequests.js";
-import { createGraphSettingsStore, GRAPH_VIEW_DEFAULTS } from "../services/results/graphSettingsStore.js";
+import { createGraphSettingsStore, GRAPH_VIEW_DEFAULTS, migrateGraphVisibility } from "../services/results/graphSettingsStore.js";
 import { graphContourIdentity } from "../services/visualization/resultGraphContours.js";
 import { Graph1DCollection } from "../components/Graph1DCollection.jsx";
 import "./SourcesFields3D.css";
@@ -194,7 +194,7 @@ export function SourcesFields3D(props) {
   const conductivityAvailable = createMemo(() => assignedHtsElements(props.task).length > 0);
   const unavailableConductivity = (quantity = elementsQuantity()) => quantity === "sigmaRelative" && !conductivityAvailable();
   function changeColorMap(checked) {
-    if (hasScalars() || props.movieBusy) return;
+    if (props.movieBusy) return;
     setColorMap(checked);
     if (checked) setNormalizeVectors(false);
   }
@@ -221,13 +221,17 @@ export function SourcesFields3D(props) {
   const [elementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode] = createGeometryViewSetting("regionsMode", "all");
   const graphView = Object.fromEntries(Object.entries(GRAPH_VIEW_DEFAULTS).map(([key, initial]) => [key, createGeometryViewSetting(key, initial)]));
+  untrack(() => {
+    const view = Object.fromEntries(Object.entries(graphView).map(([key, [read]]) => [key, read()]));
+    for (const [key, value] of Object.entries(migrateGraphVisibility(view))) graphView[key][1](value);
+  });
   function restoreGraphs(saved, restoreVisibility = true) {
     setGraphsOnly(restoreVisibility && (saved?.only ?? false));
     setAreaGraphs(restoreVisibility && (saved?.areas ?? false));
     setSliceGraphs(restoreVisibility && (saved?.showSlices ?? false));
     setGraphSlices(saved?.slices ?? []); setActiveSlice(saved?.active ?? null);
     setGraphProfiles(saved?.profiles ?? []); setActiveProfile(saved?.activeProfile ?? null); setExpandedProfile(saved?.expandedProfile ?? null);
-    for (const [key, value] of Object.entries(saved?.view ?? {})) graphView[key]?.[1](value);
+    for (const [key, value] of Object.entries(migrateGraphVisibility(saved?.view))) graphView[key]?.[1](value);
     if (saved?.selections?.elements) props.setElements?.(saved.selections.elements);
     if (saved?.selections?.regions) props.setRegions?.(saved.selections.regions);
     nextSliceId = Math.max(0, ...graphSlices().map(s => s.id)) + 1;
@@ -275,9 +279,8 @@ export function SourcesFields3D(props) {
   const hasScalars = createMemo(() => RESULT_LAYER_GROUPS.some(group =>
     QUANTITIES[quantities[group.key].read()]?.components === 1
       && !(quantities[group.key].read() === "sigmaRelative" && !conductivityAvailable())));
-  // Scalars require a color map, but must not replace the user's vector-mode
-  // preference when a later quantity selection contains only vectors again.
-  const effectiveColorMap = createMemo(() => hasScalars() || colorMap());
+  // Scalar samples retain their value colours without forcing vector maps.
+  const effectiveColorMap = colorMap;
   const volumeMode = createMemo(() => effectiveColorMap() && scale() >= RESULT_SIZE_SCALE.maximum * (1 - 1e-9));
   const requestedLayers = createMemo(() => RESULT_LAYER_GROUPS.map(group => {
     const records = group.key === "regions" ? props.task?.regions ?? []
@@ -388,12 +391,12 @@ export function SourcesFields3D(props) {
               title={{
                 elements: "Выбрать величину для объемных элементов",
                 regions: "Выбрать величину для областей интересов",
-                virtual: "Выбрать величину для виртуальных элементов",
+                virtual: "Настроить показ образов симметрии",
               }[key]}
               onClick={() => toggleSourceMenu(key)}>{label}</button>
             <Show when={openSourceMenu() === key}>
               <div class="source-toolbar-menu-panel" ref={positionSourcePanel}>
-                <For each={group.quantities}>{quantityKey => <>
+                <For each={key === "virtual" ? [] : group.quantities.filter(quantity => quantity !== "none")}>{quantityKey => <>
                   <label class="source-toolbar-option">
                     <input type="radio" name={`source-quantity-${key}`}
                       checked={quantities[key].read() === quantityKey}
@@ -402,7 +405,7 @@ export function SourcesFields3D(props) {
                       onChange={() => quantities[key].write(quantityKey)} />
                     <span>{quantityText(quantityKey)}</span>
                   </label>
-                  <Show when={(key === "elements" ? ["none", "MHdot", "sigmaRelative"] : key === "regions" ? ["none", "As"] : ["Av"]).includes(quantityKey)}>
+                  <Show when={quantityKey === (key === "elements" ? "sigmaRelative" : "As")}>
                     <hr class="source-menu-separator" />
                   </Show>
                 </>}</For>
@@ -413,7 +416,7 @@ export function SourcesFields3D(props) {
                       onChange={event => graphView[setting][1](event.currentTarget.checked)} />{label}</label>
                   }</For>
                 }>
-                  <For each={[["all", "Показать все"], ["selected", "Выделенные в списке"], ["exceptSelected", "Кроме выделенных"]]}>{([mode, label]) =>
+                  <For each={[["all", "Показать все"], ["selected", "Выделенные в списке"], ["exceptSelected", "Кроме выделенных"], ["none", "Не показывать"]]}>{([mode, label]) =>
                     <label class="source-toolbar-option"><input type="radio" name={`source-visibility-${key}`}
                       checked={graphView[`${key}Mode`][0]() === mode} disabled={graphBlocked()}
                       onChange={() => graphView[`${key}Mode`][1](mode)} />{label}</label>
@@ -431,7 +434,7 @@ export function SourcesFields3D(props) {
             onClick={() => toggleSourceMenu("presentation")}>Представление</button>
           <Show when={openSourceMenu() === "presentation"}>
             <div class="source-toolbar-menu-panel source-presentation-panel" ref={positionSourcePanel}>
-              <label><input type="checkbox" aria-label="Карта" checked={effectiveColorMap()} disabled={hasScalars()}
+              <label><input type="checkbox" aria-label="Карта" checked={effectiveColorMap()} disabled={props.movieBusy}
                 onChange={event => changeColorMap(event.currentTarget.checked)} /> Карта</label>
               <label title="Одинаковая длина векторов; цвет соответствует исходному модулю">
                 <input type="checkbox" aria-label="Нормализовать вектора" checked={normalizeVectors()}
@@ -588,6 +591,7 @@ export function SourcesFields3D(props) {
           onOpen={() => setOpenSourceMenu(null)} />
         <ResultsGeometryViewport toolbarMount={geometryToolbarHost()} cameraState={cameraState()} onCameraStateChange={rememberCamera} open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           allowFlight={true} flightBlocked={props.movieBusy || graphBusy()} flightDisabledReason={flightDisabledReason()}
+          resultScaleBlocked={props.movieBusy || flightBusy()}
           onFlightStateChange={setFlightState}
           cameraRequest={cameraRequest()}
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={timeIndex()}

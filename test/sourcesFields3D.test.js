@@ -28,7 +28,7 @@ const selections = layers => Object.fromEntries(layers.map(layer => [layer.key, 
 
 // These tests execute the production setup and its real request/display functions.
 // The UI labels/options are owned by the same descriptor rendered by its <For>.
-test("3D quantity groups expose exact independent choices and M/none/none defaults", () => {
+test("3D quantity defaults migrate hidden regions into visibility without changing list selection", () => {
   assert.deepEqual(RESULT_LAYER_GROUPS.map(group => [group.key, group.defaultQuantity, [...group.quantities]]), [
     ["elements", "M", ["none", "M", "H", "MHdot", "J", "E", "JEdot", "sigmaRelative"]],
     ["regions", "none", ["none", "Bs", "As"]],
@@ -36,8 +36,11 @@ test("3D quantity groups expose exact independent choices and M/none/none defaul
   ]);
   assert.equal(RESULT_LAYER_QUANTITY_LABELS.H, "Напряженность МП");
   assert.equal(RESULT_LAYER_QUANTITY_LABELS.E, "Напряженность ЭП");
-  const props = fixture(), ui = sourcesFields3DSetup(props);
-  assert.deepEqual(ui.request().layers.map(layer => layer.quantityKey), ["M", "none", "none"]);
+  const props = fixture(), settings = {}, ui = sourcesFields3DSetup(props, settings);
+  assert.deepEqual(ui.request().layers.map(layer => layer.quantityKey), ["M", "Bs", "none"]);
+  assert.deepEqual(ui.request().layers[1].selected, []);
+  assert.equal(settings.regionsMode, "none");
+  settings.regionsMode = "all";
   ui.quantities.regions.write("As"); ui.quantities.virtual.write("Bv");
   assert.deepEqual(ui.request().layers.map(layer => layer.quantityKey), ["M", "As", "Bv"]);
   assert.deepEqual(selections(ui.request().layers), { elements: [1, 3], regions: [1, 2], virtual: [2] });
@@ -73,21 +76,21 @@ test("line width persists while streamline colour map is permanently enabled", (
   ui.close();
 });
 
-test("scalar maps expose size controls, force every active layer to color mode and preserve the vector preference", () => {
+test("scalar quantities keep Map switchable and preserve its choice across quantities", () => {
   const settings = { resultElementsQuantity: "MHdot", resultRegionsQuantity: "Bs", resultVirtualQuantity: "Av",
     resultVectorScale: 1, resultVectorColorMap: false };
   const ui = sourcesFields3DSetup(fixture(), settings);
   assert.equal(ui.hasVectors(), true); assert.equal(ui.hasScalars(), true);
-  assert.equal(ui.effectiveColorMap(), true);
+  assert.equal(ui.effectiveColorMap(), false);
   assert.equal(ui.colorMap(), false);
   assert.equal(ui.controls().visible, true);
   assert.equal(ui.controls().label, "Размер");
-  assert.equal(ui.controls().checked, true);
-  assert.equal(ui.controls().disabled, true);
-  assert.equal(ui.controls().viewportColorMap, true);
+  assert.equal(ui.controls().checked, false);
+  assert.equal(ui.controls().disabled, false);
+  assert.equal(ui.controls().viewportColorMap, false);
   assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [false, false, false]);
   ui.controls().onChange({ currentTarget: { checked: true } });
-  assert.equal(settings.resultVectorColorMap, false, "forced scalar mode must not overwrite the vector preference");
+  assert.equal(settings.resultVectorColorMap, true);
   ui.controls().onInput({ currentTarget: { valueAsNumber: 3 } });
   assert.equal(ui.scale(), 1000);
   assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [true, true, true]);
@@ -97,6 +100,9 @@ test("scalar maps expose size controls, force every active layer to color mode a
   assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [true, false, false]);
   ui.quantities.elements.write("JEdot");
   assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [true, false, false]);
+  ui.controls().onChange({ currentTarget: { checked: false } });
+  assert.equal(ui.controls().checked, false);
+  assert.deepEqual(ui.request().layers.map(layer => layer.volumeMode), [false, false, false]);
   ui.quantities.elements.write("M");
   assert.equal(ui.controls().checked, false);
   assert.equal(ui.controls().disabled, false);
@@ -131,7 +137,7 @@ test("published layers retain their units and shared time while a newer frame is
   ui.close();
 });
 
-test("all disabled quantities immediately hide results and follow time without changing geometry selection", async () => {
+test("hidden groups immediately hide results and follow time without changing list selection or reading HDF5", async () => {
   const props = fixture(); let metadataReads = 0;
   Object.defineProperty(props.task, "metadata", { get() { metadataReads++; throw new Error("No HDF5 required"); } });
   const ui = sourcesFields3DSetup(props, { resultElementsQuantity: "none" });
@@ -141,7 +147,7 @@ test("all disabled quantities immediately hide results and follow time without c
   assert.equal(ui.timeIndex(), 9);
   assert.deepEqual(ui.selections(), { elements: [0, 1, 2], regions: [0, 1] });
   const disabled = await ui.load(ui.request());
-  assert.ok(disabled.layers.every(layer => layer.state === "disabled"));
+  assert.deepEqual(disabled.layers.map(layer => layer.state), ["empty", "empty", "disabled"]);
   assert.equal(metadataReads, 0);
   ui.close();
 });
@@ -197,8 +203,10 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
     set("resultElementsQuantity", "MHdot");
     assert.equal(requests.length, 4);
     assert.equal(requests.at(-1).layers[0].volumeMode, false);
-    assert.equal(ui.controls().checked, true);
+    assert.equal(ui.controls().checked, false);
     set("resultVectorScale", 8);
+    assert.equal(requests.length, 4);
+    set("resultVectorColorMap", true);
     assert.equal(requests.length, 4);
     set("resultVectorScale", 1000);
     assert.equal(requests.length, 5);
@@ -208,6 +216,10 @@ test("Solid subscriptions reread data only when point/volume mode changes, not f
     assert.equal(requests.at(-1).layers[0].volumeMode, true);
     set("resultElementsQuantity", "M");
     assert.equal(requests.length, 7);
+    assert.equal(requests.at(-1).layers[0].volumeMode, true);
+    assert.equal(ui.controls().checked, true);
+    set("resultVectorColorMap", false);
+    assert.equal(requests.length, 8);
     assert.equal(requests.at(-1).layers[0].volumeMode, false);
     assert.equal(ui.controls().checked, false);
     ui.close(); dispose();
@@ -271,7 +283,7 @@ test("compact 3D toolbar buttons expose concise explanatory tooltips",()=>{
   for(const text of [
     "Выбрать величину для объемных элементов",
     "Выбрать величину для областей интересов",
-    "Выбрать величину для виртуальных элементов",
+    "Настроить показ образов симметрии",
     "Настроить карту, нормализацию и минимакс",
     "Настроить метод и толщину, выбрать или удалить векторные линии",
     "Выбрать метод построения векторных линий",
@@ -292,10 +304,13 @@ test("relative conductivity is unavailable without HTS without blocking other ma
   assert.equal(ui.hasScalars(), false);
   props.task.elements[0].model = 2; props.task.elements[0].xapName = "HTS";
   assert.equal(ui.conductivityAvailable(), true); assert.equal(ui.requestedLayers()[0].quantityKey, "sigmaRelative");
+  assert.equal(ui.controls().disabled, false);
+  ui.changeColorMap(true); assert.equal(ui.controls().checked, true);
+  ui.changeColorMap(false); assert.equal(ui.controls().checked, false);
   ui.close();
 });
 
-test("normalized vectors retain scalar maps, select arrows over vector maps and freeze during capture", () => {
+test("normalization and Map stay mutually exclusive with scalars and freeze during capture", () => {
   const props = fixture(), settings = { resultElementsQuantity: "J", resultRegionsQuantity: "Bs", resultVectorScale: 1000, resultVectorColorMap: true };
   const ui = sourcesFields3DSetup(props, settings);
   ui.changeNormalizeVectors(true);
@@ -305,9 +320,12 @@ test("normalized vectors retain scalar maps, select arrows over vector maps and 
   assert.equal(ui.normalizeVectors(), false); assert.equal(ui.colorMap(), true);
   settings.resultElementsQuantity = "JEdot";
   ui.changeNormalizeVectors(true);
-  assert.equal(ui.effectiveColorMap(), true); assert.equal(ui.normalizeVectors(), true);
-  assert.equal(ui.requestedLayers()[0].volumeMode, true); assert.equal(ui.requestedLayers()[1].volumeMode, false);
-  ui.changeColorMap(false); assert.equal(ui.effectiveColorMap(), true);
+  assert.equal(ui.effectiveColorMap(), false); assert.equal(ui.normalizeVectors(), true);
+  assert.ok(ui.requestedLayers().every(layer => !layer.volumeMode));
+  ui.changeColorMap(true); assert.equal(ui.effectiveColorMap(), true); assert.equal(ui.normalizeVectors(), false);
+  assert.equal(ui.requestedLayers()[0].volumeMode, true); assert.equal(ui.requestedLayers()[1].volumeMode, true);
+  ui.changeColorMap(false); ui.changeNormalizeVectors(true);
   props.movieBusy = true; ui.changeNormalizeVectors(false); assert.equal(ui.normalizeVectors(), true);
+  ui.changeColorMap(true); assert.equal(ui.effectiveColorMap(), false);
   ui.close();
 });

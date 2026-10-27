@@ -411,7 +411,7 @@ export function ResultsGeometryViewport(props) {
               <span>Размер <output>{Number((props.resultVectorScale ?? 1).toPrecision(3))}×</output></span>
               <span class="geometry-size-range" style={{ "--nominal-position": `${RESULT_SIZE_SCALE.nominalPercent}%` }}><i aria-hidden="true" title="Номинальный размер: 1×" />
                 <input type="range" min={RESULT_SIZE_SCALE.logMinimum} max={RESULT_SIZE_SCALE.logMaximum} step={RESULT_SIZE_SCALE.logStep} value={Math.log10(props.resultVectorScale ?? 1)}
-                  aria-label="Размер представления" disabled={props.flightBlocked}
+                  aria-label="Размер представления" disabled={props.resultScaleBlocked ?? props.flightBlocked}
                   aria-valuetext={`${Number((props.resultVectorScale ?? 1).toPrecision(3))} от номинального размера`}
                   onInput={event => props.onResultVectorScaleChange?.(10 ** event.currentTarget.valueAsNumber)} />
               </span>

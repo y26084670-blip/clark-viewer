@@ -1,6 +1,6 @@
 import { createGeometryViewSetting } from "../services/visualization/geometryViewSettings.js";
 import { ProtocolCheck } from "../components/protocol/ProtocolCheck.jsx";
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
 import { installSourcesFieldsKeyboard } from "../services/sourcesFieldsKeyboard.js";
 import { ObjectList } from "../components/ObjectList.jsx";
 import { ELEMENT_SELECTION_PRESETS, selectElementPreset } from "../services/elementSelectionPresets.js";
@@ -33,7 +33,7 @@ export function SourcesFields3D(props) {
   const flightBusy = () => flightState() !== "idle";
   const changeTime = index => { if (!flightBusy()) props.setTime(index); };
   onMount(()=>{
-    const remove=installSourcesFieldsKeyboard(window,{blocked:()=>props.movieBusy || Boolean(graphState().mode) || graphBusy(),flightBusy,
+    const remove=installSourcesFieldsKeyboard(window,{blocked:()=>props.movieBusy || Boolean(graphState().mode),flightBusy,
       time:()=>props.time,maxTime:()=>props.task?.general.countTimeSteps??0,setTime:changeTime,
       view:command=>setCameraRequest(previous=>({command,sequence:(previous?.sequence??0)+1}))});
     const closeMenus = event => {
@@ -62,6 +62,8 @@ export function SourcesFields3D(props) {
   const [graphViewRequest, setGraphViewRequest] = createSignal(null);
   let graphReader = createResultGraphReader({ initialTask: props.task, initialResults: savedGraphs?.results }), graphTask = props.task;
   let graphRevision = 0, graphTime = props.time, deleteAxisDialog;
+  let graphPending = null, graphBuildPromise = null, graphAlive = true, graphAutoTask, graphAutoTime;
+  let graphRequestedIds = new Set(savedGraphs?.requestedIds ?? savedGraphs?.results?.map(g => g.id) ?? []);
   const graphBlocked = () => props.movieBusy || flightBusy() || graphBusy();
   const graphQuantities = () => ({ elements: elementsQuantity(), regions: regionsQuantity(), virtual: virtualQuantity() });
   const activeGraphAxis = () => graphState().axes.find(a => a.id === graphState().active);
@@ -71,24 +73,32 @@ export function SourcesFields3D(props) {
   };
   const currentGraphResults = () => graphResults().filter(result => {
     const axis = graphState().axes.find(a => a.id === result.id);
-    return axis && result.signature === graphResultSignature(axis, props.time, graphQuantityKey(props.task, axis, graphQuantities()), streamlineMethod());
+    // Keep the last complete curve, with its own time label, until its replacement
+    // is ready. Geometry/quantity/method changes still invalidate incompatible data.
+    return axis && result.signature === graphResultSignature(axis, result.timeIndex ?? props.time, graphQuantityKey(props.task, axis, graphQuantities()), streamlineMethod());
   });
-  const graphSession = () => ({ axes: graphState().axes, results: graphResults(), only: graphsOnly(), show: showGraphs(), components: graphComponents(), background: graphBackground() });
+  const builtGraphAxes = () => graphState().axes.filter(a => graphRequestedIds.has(a.id));
+  const graphSession = () => ({ axes: graphState().axes, results: graphResults(), requestedIds: builtGraphAxes().map(a => a.id),
+    only: graphsOnly(), show: showGraphs(), components: graphComponents(), background: graphBackground() });
   createEffect(() => {
-    if (props.task !== graphTask) {
-      if (graphTask) graphSessions.set(graphTask, graphSession());
-      graphRevision++; graphReader.close(); graphTask = props.task;
-      const saved = graphTask && graphSessions.get(graphTask);
-      graphController.reset(saved?.axes ?? []); setGraphResults(saved?.results ?? []);
-      setGraphsOnly(saved?.only ?? true); setShowGraphs(saved?.show ?? true);
-      setGraphComponents(saved?.components ?? { X: true, Y: true, Z: true }); setGraphBackground(saved?.background ?? "#ffffff");
-      graphReader = createResultGraphReader({ initialTask: graphTask, initialResults: saved?.results });
-      setGraphBusy(false); setGraphError(""); setGraphViewRequest(null);
-    }
-    if (props.time !== graphTime) { graphTime = props.time; graphController.cancel(); }
+    const task = props.task, time = props.time;
+    untrack(() => {
+      if (task !== graphTask) {
+        if (graphTask) graphSessions.set(graphTask, graphSession());
+        graphRevision++; graphPending = null; graphReader.close(); graphTask = task;
+        const saved = graphTask && graphSessions.get(graphTask);
+        graphRequestedIds = new Set(saved?.requestedIds ?? saved?.results?.map(g => g.id) ?? []);
+        graphController.reset(saved?.axes ?? []); setGraphResults(saved?.results ?? []);
+        setGraphsOnly(saved?.only ?? true); setShowGraphs(saved?.show ?? true);
+        setGraphComponents(saved?.components ?? { X: true, Y: true, Z: true }); setGraphBackground(saved?.background ?? "#ffffff");
+        graphReader = createResultGraphReader({ initialTask: graphTask, initialResults: saved?.results });
+        setGraphBusy(false); setGraphError(""); setGraphViewRequest(null);
+      }
+      if (time !== graphTime) { graphTime = time; graphController.cancel(); }
+    });
   });
   onCleanup(() => {
-    graphRevision++; graphReader.close();
+    graphAlive = false; graphRevision++; graphPending = null; graphReader.close();
     if (graphTask) graphSessions.set(graphTask, graphSession());
   });
   createEffect(() => {
@@ -98,19 +108,64 @@ export function SourcesFields3D(props) {
     else if (deleting == null && deleteAxisDialog.open) deleteAxisDialog.close();
   });
   async function buildGraphs() {
-    if (graphBlocked() || !graphState().axes.length) return;
-    graphController.cancel(); setGraphError(""); setGraphBusy(true);
-    const version = ++graphRevision, task = props.task, time = props.time, method = streamlineMethod(), quantities = graphQuantities(), axes = graphState().axes;
-    try {
-      const results = await graphReader.read({ task, time, method, quantities, axes });
-      if (version !== graphRevision) return;
-      if (task !== props.task || time !== props.time || method !== streamlineMethod()
-        || JSON.stringify(quantities) !== JSON.stringify(graphQuantities()) || axes.map(graphAxisKey).join("|") !== graphState().axes.map(graphAxisKey).join("|")) {
-        setGraphError("Параметры изменились. Нажмите «Построить» ещё раз."); return;
+    if (graphBlocked() || !graphState().axes.length) return graphBuildPromise;
+    graphController.cancel();
+    graphState().axes.forEach(a => graphRequestedIds.add(a.id));
+    return requestGraphBuild(graphState().axes);
+  }
+  function requestGraphBuild(axes) {
+    if (!axes.length || !graphAlive) return;
+    graphPending = { version: ++graphRevision, reader: graphReader, task: props.task, time: props.time,
+      method: streamlineMethod(), quantities: graphQuantities(), axes };
+    setGraphError(""); setGraphBusy(true);
+    // One running read plus one replaceable request: fast time changes do not
+    // queue every intermediate step or invoke the reader concurrently.
+    graphBuildPromise ??= drainGraphBuilds().finally(() => { graphBuildPromise = null; });
+    return graphBuildPromise;
+  }
+  async function drainGraphBuilds() {
+    while (graphPending && graphAlive) {
+      const request = graphPending; graphPending = null;
+      const { version, reader, task, time, method, quantities, axes } = request;
+      try {
+        const results = await reader.read(request);
+        if (!graphAlive || version !== graphRevision) continue;
+        const axesChanged = axes.some(axis => {
+          const current = graphState().axes.find(a => a.id === axis.id);
+          return !current || graphAxisKey(axis) !== graphAxisKey(current);
+        });
+        if (task !== props.task || time !== props.time || method !== streamlineMethod()
+          || JSON.stringify(quantities) !== JSON.stringify(graphQuantities())
+          || axesChanged) {
+          setGraphError("Параметры изменились. Нажмите «Построить» ещё раз."); continue;
+        }
+        const previous = currentGraphResults();
+        setGraphResults(results.map(result => result.error ? previous.find(g => g.id === result.id && !g.error) ?? result : result));
+        setGraphError(results.filter(g => g.error).map(g => `Ось №${g.id}: ${g.error}`).join(" · "));
+      } catch (error) { if (graphAlive && version === graphRevision && error.name !== "AbortError") setGraphError(error.message); }
+    }
+    if (graphAlive) setGraphBusy(false);
+  }
+  function refreshTimedGraphs(task, time) {
+    if (task !== graphTask || (task === graphAutoTask && time === graphAutoTime)) return;
+    graphAutoTask = task; graphAutoTime = time;
+    const axes = builtGraphAxes();
+    if (graphBuildPromise || axes.some(axis => !graphResults().some(g => g.id === axis.id
+      && g.signature === graphResultSignature(axis, time, graphQuantityKey(task, axis, graphQuantities()), streamlineMethod())))) {
+      requestGraphBuild(axes);
+    }
+  }
+  function graphCaptureStatus(index) {
+    const axes = builtGraphAxes();
+    if (showGraphs() && axes.length) {
+      if (graphBusy() || graphAutoTime !== index) return { ready: false };
+      if (graphError()) return { error: graphError() };
+      if (axes.some(axis => !graphResults().some(g => !g.error && g.id === axis.id
+        && g.signature === graphResultSignature(axis, index, graphQuantityKey(props.task, axis, graphQuantities()), streamlineMethod())))) {
+        return { error: "Сначала постройте графики для выбранных параметров." };
       }
-      setGraphResults(results);
-    } catch (error) { if (version === graphRevision && error.name !== "AbortError") setGraphError(error.message); }
-    finally { if (version === graphRevision) setGraphBusy(false); }
+    }
+    return { ready: true };
   }
   let nextStreamlineId = savedStreamlines?.nextId ?? 1, streamlineTask = props.task;
   createEffect(() => {
@@ -146,6 +201,10 @@ export function SourcesFields3D(props) {
   const [elementsQuantity, setElementsQuantity] = createGeometryViewSetting("resultElementsQuantity", "M");
   const [regionsQuantity, setRegionsQuantity] = createGeometryViewSetting("resultRegionsQuantity", "none");
   const [virtualQuantity, setVirtualQuantity] = createGeometryViewSetting("resultVirtualQuantity", "none");
+  createEffect(() => {
+    const task = props.task, time = props.time;
+    untrack(() => refreshTimedGraphs(task, time));
+  });
   const [scale, setScale] = createGeometryViewSetting("resultVectorScale", 1);
   const [colorMap, setColorMap] = createGeometryViewSetting("resultVectorColorMap", false);
   const [normalizeVectors, setNormalizeVectors] = createGeometryViewSetting("resultNormalizeVectors", false);
@@ -234,12 +293,18 @@ export function SourcesFields3D(props) {
   const selections = createMemo(() => ({
     elements: props.elements.map(id => id - 1), regions: props.regions.map(id => id - 1),
   }));
+  const captureFrameKey = createMemo(() => {
+    const frame = displayed(), graphs = showGraphs() ? currentGraphResults().filter(g => !g.error) : [];
+    return graphs.length ? { frame, graphs } : frame;
+  });
   const movie = createMovieTabAdapter(props, { title: "Источники / Поле 3D",
     filenamePrefix: () => movie3DFilenamePrefix(requestedLayers(), streamlines()), readFrame: index => {
     const status = completedMovieFrame(result(), { task: props.task, index });
     if (!status.ready) return status;
+    const graphs = graphCaptureStatus(index);
+    if (!graphs.ready) return graphs;
     const errors = status.value.value.errors ?? [];
-    return errors.length ? { error: errors.map(item => item.message).join(" · ") } : status;
+    return errors.length ? { error: errors.map(item => item.message).join(" · ") } : { ready: true, value: captureFrameKey() };
   } });
   const quantityText = key => key === "none"
     ? RESULT_LAYER_QUANTITY_LABELS.none
@@ -423,7 +488,7 @@ export function SourcesFields3D(props) {
           graphViewRequest={graphViewRequest()} graphBlocked={graphBlocked()}
           streamlineWidth={streamlineWidth()} streamlineColorMap={true}
           onSelectStreamline={setSelectedStreamline} onResultNodeDoubleClick={addStreamline}
-          captureFrameKey={displayed()} onCaptureReady={movie.onCaptureReady}
+          captureFrameKey={captureFrameKey()} onCaptureReady={movie.onCaptureReady}
           resultVectorScale={scale()} resultPickingOnly={!graphsOnly()}
           resultVectorColorMap={effectiveColorMap()}
           resultNormalizeVectors={normalizeVectors()}

@@ -10,8 +10,8 @@ export function installGraphAxisInteraction({ THREE, element, controller, getCam
     return { x: box.left + (scratch.x + 1) * box.width / 2, y: box.top + (1 - scratch.y) * box.height / 2, z: scratch.z };
   };
   function pickNode(event, lock) {
-    const box = element.getBoundingClientRect(), camera = getCamera(), { positions, ranges } = getPoints();
-    let best, distance = 12 ** 2, depth = Infinity;
+    const box = element.getBoundingClientRect(), camera = getCamera(), { positions, ranges, size = 8 } = getPoints();
+    let best, distance = Math.max(6, size / 2 + 4) ** 2, depth = Infinity;
     for (const range of ranges) for (let image = 0; image < range.instances.length; image++) {
       if (lock && !sameGraphObject(lock, { source: range.source, instance: range.instances[image] })) continue;
       const first = range.start + image * range.sourcePointCount;
@@ -96,7 +96,10 @@ export function installGraphAxisInteraction({ THREE, element, controller, getCam
       controller.point(point, up); onPreview(null);
     } else if (previous.mode === "delete" && previous.hit) controller.grab(previous.hit.id, previous.hit.end);
     else if (!previous.mode) { const id = selectAxis(event); if (id != null) {
-      handledAt = event.timeStamp; consume(event); controller.select(id); onChange?.();
+      // OrbitControls received pointerdown and must also receive pointerup.
+      // Suppress the following click only; swallowing the release leaves the
+      // camera in its drag state and makes it follow a released mouse.
+      handledAt = event.timeStamp; controller.select(id); onChange?.();
     } }
   }
   const suppressClick = event => { if (controller.state.mode || event.timeStamp - handledAt < 500) consume(event); };

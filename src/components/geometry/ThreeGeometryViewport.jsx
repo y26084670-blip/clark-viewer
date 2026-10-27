@@ -2208,6 +2208,7 @@ export function ThreeGeometryViewport(props) {
     ], geometryOpacity, geometryMaterialDefaults);
     if (discretizationPoints) {
       discretizationPoints.material.depthTest = !props.graphState?.mode;
+      discretizationPoints.material.size = DISCRETIZATION_POINT_SIZE * (props.graphState?.mode ? prescribedSourceScale(props.resultVectorScale) : 1);
       discretizationPoints.renderOrder = props.graphState?.mode ? 34 : 21;
       if (props.graphState?.mode) {
         discretizationPoints.visible = true; discretizationPoints.material.opacity = 1;
@@ -2508,8 +2509,8 @@ export function ThreeGeometryViewport(props) {
     if (!start || !end) { if (graphPreview?.visible) { graphPreview.visible = false; requestRender(); } return; }
     if (!graphPreview) {
       graphPreview = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
-        new THREE.LineBasicMaterial({ color: 0xffb42e, transparent: true, depthTest: false, depthWrite: false }));
-      graphPreview.name = "graph-axis-preview"; graphPreview.renderOrder = 33;
+        new THREE.LineBasicMaterial({ color: 0xff0000, transparent: true, depthTest: false, depthWrite: false }));
+      graphPreview.name = "graph-axis-preview"; graphPreview.renderOrder = 35;
     }
     const positions = graphPreview.geometry.attributes.position;
     positions.setXYZ(0, ...start); positions.setXYZ(1, ...end); positions.needsUpdate = true;
@@ -2838,7 +2839,7 @@ export function ThreeGeometryViewport(props) {
       if (props.graphController) graphInteraction = installGraphAxisInteraction({ THREE, element: renderer.domElement,
         controller: props.graphController, getCamera: () => camera, getControls: () => controls,
         getAxes: () => graphFrames, getPlanes: () => graphRoot?.children.flatMap(g => g.children.filter(c => c.name === "result-graph-plane")) ?? [],
-        getPoints: () => { materializeDiscretizationPoints(); return { positions: discretizationWorldPositions, ranges: discretizationPointRanges }; },
+        getPoints: () => { materializeDiscretizationPoints(); return { positions: discretizationWorldPositions, ranges: discretizationPointRanges, size: discretizationPoints?.material.size }; },
         getNodePosition: node => resolveGraphNode(props.scene, node).position,
         blocked: () => disposed || contextLost || Boolean(movieSnapshot) || props.graphBlocked || flightController.state !== "idle",
         onPreview: previewGraphAxis, onChange: requestRender,
@@ -2956,6 +2957,7 @@ export function ThreeGeometryViewport(props) {
     streamlineWidth = props.streamlineWidth ?? 2;
     streamlineColorMap = props.streamlineColorMap !== false;
     if (!ready()) return;
+    updateGeometryOpacity();
     vectorsDirty = true;
     requestRender();
   });

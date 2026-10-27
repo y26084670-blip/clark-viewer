@@ -39,22 +39,77 @@ test("hide/show and tab remount preserve axes and sampled data without reading t
     assert.equal(ui.showGraphs(), false); assert.deepEqual(ui.graphState().axes, [f.axis]);
     assert.equal(ui.currentGraphResults()[0], graph);
     ui.setShowGraphs(true); await ui.buildGraphs(); assert.equal(f.reads.length, 1);
-    f.props.time = 1; ui.flushEffects(); assert.deepEqual(ui.currentGraphResults(), []);
-    await ui.buildGraphs(); assert.equal(ui.currentGraphResults()[0].timeIndex, 1); assert.equal(f.reads.length, 2);
+    f.props.time = 1; ui.flushEffects(); assert.equal(ui.currentGraphResults()[0], graph);
+    await ui.whenGraphsReady(); assert.equal(ui.currentGraphResults()[0].timeIndex, 1); assert.equal(f.reads.length, 2);
   } finally { ui.close(); }
 });
 
-test("a late computation cannot publish a curve for a previous time or a previous task", async () => {
-  const f = setup(); let finish;
-  const ui = sourcesFields3DSetup(f.props, f.settings, { ...options,
-    graphReaderFactory: () => ({ read: () => new Promise(resolve => { finish = resolve; }), close() {} }) });
+const tick = () => new Promise(resolve => setImmediate(resolve));
+function holdReads(f) {
+  const read = f.task.reader.read, waiting = [], started = [];
+  f.task.reader.read = async request => { started.push(request.step); await new Promise(resolve => waiting.push(resolve)); return read(request); };
+  return { waiting, started, release: () => { assert.ok(waiting.length); waiting.shift()(); } };
+}
+
+test("rapid time changes keep the last graph and compute only the running and latest requested steps", async () => {
+  const f = setup(), ui = sourcesFields3DSetup(f.props, f.settings, options);
   try {
-    ui.graphController.reset([f.axis]);
-    const oldTime = ui.buildGraphs(); assert.equal(ui.graphBusy(), true);
-    f.props.time = 1; ui.flushEffects(); finish([{ id: 1, signature: "stale" }]); await oldTime;
-    assert.deepEqual(ui.graphResults(), []); assert.equal(ui.graphBusy(), false);
-    const oldTask = ui.buildGraphs(); f.props.task = graph3DTask().task; ui.flushEffects();
-    finish([{ id: 1, signature: "wrong task" }]); await oldTask;
+    ui.graphController.reset([f.axis]); await ui.buildGraphs();
+    const graph = ui.currentGraphResults()[0], hold = holdReads(f);
+    f.props.time = 1; ui.flushEffects(); assert.equal(ui.graphBusy(), true);
+    f.props.time = 0; ui.flushEffects(); f.props.time = 2; ui.flushEffects();
+    assert.equal(ui.currentGraphResults()[0], graph); assert.deepEqual(hold.started, [1]);
+    hold.release(); await tick(); assert.deepEqual(hold.started, [1, 2]);
+    assert.equal(ui.currentGraphResults()[0], graph, "superseded step must never replace the old curve");
+    hold.release(); await ui.whenGraphsReady();
+    assert.equal(ui.currentGraphResults()[0].timeIndex, 2); assert.equal(ui.graphBusy(), false);
+  } finally { ui.close(); }
+});
+
+test("changing time during the first Build finishes at the latest time; a late old task cannot publish", async () => {
+  const f = setup(), hold = holdReads(f), ui = sourcesFields3DSetup(f.props, f.settings, options);
+  try {
+    ui.graphController.reset([f.axis]); const build = ui.buildGraphs();
+    f.props.time = 2; ui.flushEffects(); hold.release(); await tick();
+    assert.deepEqual(ui.graphResults(), []); assert.deepEqual(hold.started, [0, 2]);
+    hold.release(); await build; assert.equal(ui.currentGraphResults()[0].timeIndex, 2);
+    f.props.time = 1; ui.flushEffects(); const oldTask = ui.whenGraphsReady();
+    f.props.task = graph3DTask().task; ui.flushEffects(); hold.release(); await oldTask;
     assert.deepEqual(ui.graphState().axes, []); assert.deepEqual(ui.graphResults(), []); assert.equal(ui.graphBusy(), false);
+  } finally { ui.close(); }
+});
+
+test("a missing step retains its previous labelled curve and reports an error; the next valid time recovers", async () => {
+  const f = setup(), ui = sourcesFields3DSetup(f.props, f.settings, options);
+  try {
+    ui.graphController.reset([f.axis]); await ui.buildGraphs(); const graph = ui.currentGraphResults()[0];
+    f.props.time = 9; ui.flushEffects(); await ui.whenGraphsReady();
+    assert.equal(ui.currentGraphResults()[0], graph); assert.match(ui.graphError(), /Нет сохранённого момента/);
+    assert.match(ui.graphCaptureStatus(9).error, /Нет сохранённого момента/);
+    f.props.time = 1; ui.flushEffects(); await ui.whenGraphsReady();
+    assert.equal(ui.currentGraphResults()[0].timeIndex, 1); assert.equal(ui.graphError(), "");
+  } finally { ui.close(); }
+});
+
+test("hidden graphs update in time; a newly added unbuilt axis is not computed implicitly", async () => {
+  const f = setup(), ui = sourcesFields3DSetup(f.props, f.settings, options);
+  try {
+    ui.graphController.reset([f.axis]); await ui.buildGraphs(); ui.setShowGraphs(false);
+    ui.graphController.reset([f.axis, { ...f.axis, id: 2, points: [2,20] }]);
+    f.props.time = 1; ui.flushEffects(); await ui.whenGraphsReady();
+    assert.equal(ui.showGraphs(), false); assert.equal(ui.currentGraphResults().length, 1);
+    assert.equal(ui.currentGraphResults()[0].timeIndex, 1); assert.equal(f.reads.length, 2);
+    ui.setShowGraphs(true); assert.equal(f.reads.length, 2);
+  } finally { ui.close(); }
+});
+
+test("movie capture waits for updated graph data even while manual controls are blocked", async () => {
+  const f = setup(), ui = sourcesFields3DSetup(f.props, f.settings, options);
+  try {
+    ui.graphController.reset([f.axis]); await ui.buildGraphs(); const hold = holdReads(f);
+    f.props.movieBusy = true; f.props.time = 1; ui.flushEffects();
+    assert.deepEqual(ui.graphCaptureStatus(1), { ready: false }); assert.equal(ui.currentGraphResults()[0].timeIndex, 0);
+    hold.release(); await ui.whenGraphsReady();
+    assert.deepEqual(ui.graphCaptureStatus(1), { ready: true }); assert.equal(ui.currentGraphResults()[0].timeIndex, 1);
   } finally { ui.close(); }
 });

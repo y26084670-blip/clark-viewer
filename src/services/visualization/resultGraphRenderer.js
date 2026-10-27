@@ -84,10 +84,10 @@ export function updateGraphScene(THREE, root, scene, axes, graphs, { active, com
     if (group.userData.key !== key || group.userData.graph !== graph) {
       disposeGraphScene(group);
       const geometry = new THREE.BufferGeometry().setFromPoints([frame.start, frame.end].map(p => new THREE.Vector3(...p)));
-      const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: active === axis.id ? 0xffb42e : 0x4ed6ed, transparent: true, depthTest: false, depthWrite: false }));
-      line.renderOrder = 31; group.add(line);
-      const marker = new THREE.Points(geometry.clone(), new THREE.PointsMaterial({ color: active === axis.id ? 0xffb42e : 0x4ed6ed,
-        size: 12, sizeAttenuation: false, transparent: true, depthTest: false, depthWrite: false })); marker.renderOrder = 32; group.add(marker);
+      const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xff0000, transparent: true, depthTest: false, depthWrite: false }));
+      line.renderOrder = 35; group.add(line);
+      const marker = new THREE.Points(geometry.clone(), new THREE.PointsMaterial({ color: 0xff0000,
+        size: 12, sizeAttenuation: false, transparent: true, depthTest: false, depthWrite: false })); marker.renderOrder = 36; group.add(marker);
       if (graph) {
         const canvas = document.createElement("canvas"), layout = graphPlotLayout(graph, components);
         drawGraph(canvas, graph, layout, background, active === axis.id);

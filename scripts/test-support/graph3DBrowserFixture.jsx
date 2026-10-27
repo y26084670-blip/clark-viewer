@@ -9,8 +9,12 @@ for (const [key,value] of Object.entries({ resultElementsQuantity: "J", resultRe
   elementsMode: "all", regionsMode: "all", showLocalSymmetry: true, showPeriodicSymmetry: true, showMirrorSymmetry: true })) createGeometryViewSetting(key,value)[1](value);
 function Fixture() {
   const f = graph3DTask(), [time,setTime] = createSignal(0), [mounted,setMounted] = createSignal(true), [busy,setBusy] = createSignal(false);
+  const read = f.task.reader.read; let held = false, waiting = [];
+  f.task.reader.read = async request => { if (held) await new Promise(resolve => waiting.push(resolve)); return read(request); };
   let capture;
-  window.graphFixture = { ...f, setTime, setMounted, setBusy, capture: () => capture };
+  window.graphFixture = { ...f, setTime, setMounted, setBusy, capture: () => capture,
+    holdReads: () => { held = true; }, pendingReads: () => waiting.length,
+    releaseReads: () => { held = false; waiting.splice(0).forEach(resolve => resolve()); } };
   const props = { task:f.task, elements:[1,2], regions:[1], setElements(){}, setRegions(){}, get time(){return time();}, setTime,
     get movieBusy(){return busy();}, registerMovieAdapter:adapter => { capture=adapter;return ()=>{}; } };
   return <div class="app-container"><header class="task-info-bar">Графики на отрезках — проверка</header>

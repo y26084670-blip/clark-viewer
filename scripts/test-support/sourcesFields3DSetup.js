@@ -51,11 +51,12 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_METHODS", "streamlineSessions", "cameraSessions",
     "QUANTITIES", "assignedHtsElements", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
     "createMovieTabAdapter", "completedMovieFrame", "onMount", "applyResultGlobalRange", "resultGlobalScale",
-    "createGraphAxesController", "graphAxisKey", "createResultGraphReader", "graphQuantityKey", "graphResultSignature", "graphSessions",
+    "createGraphAxesController", "graphAxisKey", "createResultGraphReader", "graphQuantityKey", "graphResultSignature", "graphSessions", "untrack",
     `${setup} return { cameraState, rememberCamera, quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
       colorMap, effectiveColorMap, normalizeVectors, changeNormalizeVectors, changeColorMap, conductivityAvailable, unavailableConductivity, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
       addStreamline, deleteStreamline, streamlineMethod, changeStreamlineMethod, streamlines,
       graphsOnly, setGraphsOnly, showGraphs, setShowGraphs, graphController, graphState, buildGraphs, currentGraphResults, graphResults, graphBusy,
+      graphCaptureStatus, graphError, whenGraphsReady: () => graphBuildPromise,
       controls: ${controlBindings},
       streamlineControls: ${streamlineBindings},
       globalMinMax, setGlobalMinMax, globalRanges, effectiveGlobalMinMax, resultLayers, timeIndex, selections }; } return SourcesFields3D(props);`);
@@ -67,7 +68,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     RESULT_LAYER_GROUPS, options.readerFactory ?? createResultLayerReader,
     (source, reader) => { requestSource = source; load = reader; options.observeRequest?.(source); return () => state; },
     options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame, () => {}, applyResultGlobalRange, resultGlobalScale,
-    createGraphAxesController, graphAxisKey, options.graphReaderFactory ?? createResultGraphReader, graphQuantityKey, graphResultSignature, graphSessions);
+    createGraphAxesController, graphAxisKey, options.graphReaderFactory ?? createResultGraphReader, graphQuantityKey, graphResultSignature, graphSessions, options.untrack ?? (read => read()));
   // Existing field-display cases explicitly keep result visualization enabled.
   if (options.graphsOnly !== true) api.setGraphsOnly(false);
   return { ...api, request: () => requestSource(), load: request => load(request),

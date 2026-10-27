@@ -28,15 +28,28 @@
 }
 .sources-fields-toolbar .geometry-viewer-transparency {
   display: flex; flex-direction: column; align-items: stretch; gap: 2px;
-  width: 150px; min-width: 150px; flex: 0 0 150px; margin-inline: 12px;
+  width: 100px; min-width: 100px; flex: 0 0 100px; margin-inline: 8px;
   color: #263b4d; font-size: 11px;
 }
 .sources-fields-toolbar .geometry-viewer-transparency input[type="range"] { width: 100%; }
+.sources-fields-toolbar .geometry-viewer-transparency > span { gap: 3px; }
 .sources-fields-toolbar .geometry-size-range > i { border-top-color: #344b60; }
 .source-menu-separator { margin: 2px 0; width: 100%; border: 0; border-top: 1px solid #596774; }
 
-.sources-fields-toolbar > .geometry-material-help-button {
-  margin-left: auto;
+.source-geometry-viewport { position: relative; }
+.source-geometry-viewport > .geometry-material-help-button {
+  position: absolute; top: 8px; left: 8px; z-index: 5;
+}
+.source-geometry-viewport .geometry-performance-overlay {
+  left: 44px;
+  min-width: min(255px, calc(100% - 52px));
+  max-width: min(420px, calc(100% - 52px));
+}
+
+@media (max-width: 1500px) {
+  .plot-toolbar.sources-fields-toolbar { --source-toolbar-menu-width: 10em; gap: 4px; }
+  .sources-fields-toolbar-controls > .source-toolbar-menu > .source-toolbar-menu-button,
+  .source-geometry-controls .geometry-viewer-menu-button { padding-inline: 3px; }
 }
 
 .source-toolbar-menu {

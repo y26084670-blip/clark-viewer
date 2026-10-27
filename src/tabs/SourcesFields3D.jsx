@@ -427,7 +427,7 @@ export function SourcesFields3D(props) {
         <div class="source-toolbar-menu">
           <button type="button" class="source-toolbar-menu-button"
             aria-expanded={["presentation", "graphs"].includes(openSourceMenu())} aria-label="Представление"
-            title="Настроить карту, нормализацию и минимакс"
+            title="Настроить карту, нормализацию и минимакс; построить линейные графики в 3D окне"
             onClick={() => toggleSourceMenu("presentation")}>Представление</button>
           <Show when={openSourceMenu() === "presentation"}>
             <div class="source-toolbar-menu-panel source-presentation-panel" ref={positionSourcePanel}>
@@ -581,11 +581,11 @@ export function SourcesFields3D(props) {
           disabled={flightBusy() || result().loading || graphBusy()}
           comment={requestedLayers().filter(layer => layer.quantityKey !== "none").map(layer =>
             `${QUANTITIES[layer.quantityKey]?.label}: объекты ${layer.selected.join(", ")}`).join("; ")} />
-        <GeometryMaterialLegend buttonClass="source-toolbar-menu-button"
-          onOpen={() => setOpenSourceMenu(null)} />
       </div>
       <Show when={graphSaveNotice()}><div class="plot-status" role="status">{graphSaveNotice()}</div></Show>
-      <div class="source-graph-workspace"><div class="embedded-geometry">
+      <div class="source-graph-workspace"><div class="embedded-geometry source-geometry-viewport">
+        <GeometryMaterialLegend buttonClass="source-toolbar-menu-button"
+          onOpen={() => setOpenSourceMenu(null)} />
         <ResultsGeometryViewport toolbarMount={geometryToolbarHost()} cameraState={cameraState()} onCameraStateChange={rememberCamera} open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           allowFlight={true} flightBlocked={props.movieBusy || graphBusy()} flightDisabledReason={flightDisabledReason()}
           onFlightStateChange={setFlightState}
@@ -604,11 +604,13 @@ export function SourcesFields3D(props) {
           resultNormalizeVectors={normalizeVectors()}
           performanceProfile={performanceProfile()} />
       </div>
+      <Show when={areaGraphs() || sliceGraphs()}>
         <Graph1DCollection entries={graphProfiles()} results={profileResults()} active={activeProfile()} expanded={expandedProfile()}
           blocked={graphBlocked()} loading={graphBusy()} error={graphError()}
           onSelect={selectProfile} onExpand={id => { if (!graphBlocked()) { selectProfile(id); setExpandedProfile(id); } }}
           onCollapse={() => setExpandedProfile(null)} onDelete={id => { if (!graphBlocked()) removeProfiles(p => p.id === id); }}
           onViewChange={changeProfileView} />
+      </Show>
       </div>
       <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep}
         disabled={flightBusy()} onChange={changeTime} />

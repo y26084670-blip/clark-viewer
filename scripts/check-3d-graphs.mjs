@@ -62,15 +62,27 @@ try {
     const buttonSizes = await topButtons.evaluateAll(els=>els.map(el=>({width:el.getBoundingClientRect().width,clipped:el.scrollWidth>el.clientWidth})));
     assert.ok(buttonSizes.every(b=>Math.abs(b.width-buttonSizes[0].width)<1 && !b.clipped),JSON.stringify(buttonSizes));
     const spacing = await toolbar.locator(".geometry-viewer-transparency").evaluateAll(els=>els.map(el=>{const s=getComputedStyle(el);return [parseFloat(s.marginLeft),parseFloat(s.marginRight),el.getBoundingClientRect().width];}));
-    assert.deepEqual(spacing,[[12,12,150],[12,12,150]]);
+    assert.deepEqual(spacing,[[8,8,100],[8,8,100]]);
+    assert.equal(await toolbar.locator(".geometry-material-help-button").count(),0);
+    const helpBox=await page.getByRole("button",{name:"Цвета объёмных элементов",exact:true}).boundingBox();
+    const sceneBox=await page.locator(".three-geometry-viewport").boundingBox();
+    assert.ok(Math.abs(helpBox.x-sceneBox.x-8)<1 && Math.abs(helpBox.y-sceneBox.y-8)<1,JSON.stringify({helpBox,sceneBox}));
     const boxes = await toolbar.locator(".source-toolbar-menu > button, .source-geometry-controls button, .geometry-viewer-transparency, .protocol-check-wrap").evaluateAll(els => els.map(el => { const r=el.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom}; }));
     assert.ok(boxes.every(box => box.x>=0 && box.right<=width), JSON.stringify({width,boxes}));
     for (let i=1;i<boxes.length;i++) assert.ok(boxes[i].y>=boxes[i-1].bottom || boxes[i].x>=boxes[i-1].right, JSON.stringify({width,boxes}));
-    if(width>=1920) assert.ok(Math.max(...boxes.map(b=>b.y))-Math.min(...boxes.map(b=>b.y))<12, JSON.stringify({width,boxes}));
+    if(width>=1440) assert.ok(Math.max(...boxes.map(b=>b.y))-Math.min(...boxes.map(b=>b.y))<12, JSON.stringify({width,boxes}));
+    if(width===1440) await page.screenshot({path:path.join(out,"toolbar-1440.png"),fullPage:true});
   }
   await page.screenshot({path:path.join(out,"toolbar-960.png"),fullPage:true});
   await page.setViewportSize({width:1920,height:1080});
-  pass("Unified toolbar has six equal-width buttons and wider, spaced Size/Transparency before Protocol; no duplicate inner toolbar, no overlaps at 960/1440/1920px");
+  pass("Six equal-width buttons, 100px sliders and Protocol fit one row at 1440/1920px; help sits at the upper-left of 3D, with no overlaps at 960px");
+
+  const help=page.getByRole("button",{name:"Цвета объёмных элементов",exact:true});
+  const helpCamera=(await scene()).camera;await help.click();
+  const materialDialog=page.getByRole("dialog",{name:"Цвета объёмных элементов",exact:true});await materialDialog.waitFor();
+  assert.equal(await materialDialog.locator(".geometry-material-legend-row").count(),10);
+  await page.keyboard.press("Escape");await materialDialog.waitFor({state:"hidden"});
+  assert.equal(await help.evaluate(el=>el===document.activeElement),true);assert.deepEqual((await scene()).camera,helpCamera);
 
   const sourceMenu = page.locator(".source-toolbar-menu-panel");
   const geometryCount = (await scene()).geometryCount;
@@ -155,6 +167,10 @@ try {
   assert.ok(order.at(-3).includes("палитра")); assert.ok(order.at(-2).includes("Производительность")); assert.equal(order.at(-1), "Полёт");
   assert.ok(await general.evaluate(el => el.scrollHeight <= el.clientHeight + 1));
   await page.screenshot({ path: path.join(out, "general-options.png"), fullPage: true });
+  await general.getByRole("checkbox",{name:"Производительность",exact:true}).check();
+  const performance=page.locator(".geometry-performance-overlay");await performance.waitFor();
+  assert.ok((await performance.boundingBox()).x>=(await help.boundingBox()).x+(await help.boundingBox()).width);
+  await general.getByRole("checkbox",{name:"Производительность",exact:true}).uncheck();
   pass("Logarithmic size covers 0.01–1000 with the nominal marker at 40%; equal-width sliders and General options without scrolling");
 
   await open(); await graphs.getByRole("checkbox", { name: "Графики над площадками", exact: true }).check();
@@ -458,9 +474,16 @@ try {
   const savedSettings=await page.evaluate(()=>graphFixture.saved().settings);
   assert.deepEqual([savedSettings.only,savedSettings.areas,savedSettings.showSlices],[true,true,true]);
   await page.reload(); await page.waitForFunction(()=>window.graphUI?.ready() && window.graphScene?.ready() && !graphUI.busy());
-  await persistedDialog.waitFor(); await page.waitForFunction(()=>profileChart.chart()?.data.datasets.length===3);
+  assert.equal(await collection.count(),0); assert.equal(await persistedDialog.count(),0);
   assert.equal(await page.evaluate(()=>graphUI.profiles().length),savedSettings.profiles.length);
   assert.deepEqual(await page.evaluate(()=>graphUI.slices()),savedSettings.slices);
+  await open();
+  for (const label of ["Только графики", "Графики над площадками", "Срезы в элементах"]) assert.equal(await graphs.getByRole("checkbox",{name:label,exact:true}).isChecked(),false);
+  assert.equal(await graphs.locator("tbody tr").count(),savedSettings.slices.length);
+  await page.waitForFunction(()=>graphScene.snapshot().meshes.every(mesh=>!mesh.visible) && graphScene.snapshot().layers>0);
+  await graphs.getByRole("checkbox",{name:"Графики над площадками",exact:true}).check();
+  await persistedDialog.waitFor(); await page.waitForFunction(()=>profileChart.chart()?.data.datasets.length===3);
+  assert.equal(await collection.count(),1);
   assert.equal(await page.evaluate(()=>profileChart.chart().isDatasetVisible(2)),false);
   assert.equal(await page.evaluate(()=>profileChart.view().auto),false);
   assert.equal(Math.round((await persistedDialog.boundingBox()).width),1040);assert.equal(Math.round((await persistedDialog.boundingBox()).height),680);
@@ -471,9 +494,14 @@ try {
   await page.screenshot({path:path.join(out,"restored-profile.png"),fullPage:true});
   await persistedDialog.getByRole("button",{name:"Свернуть",exact:true}).click();
   await open();
-  for (const label of ["Только графики", "Графики над площадками", "Срезы в элементах"]) assert.equal(await graphs.getByRole("checkbox",{name:label,exact:true}).isChecked(),false);
-  assert.equal(await graphs.locator("tbody tr").count(),savedSettings.slices.length);
-  await page.waitForFunction(()=>graphScene.snapshot().meshes.every(mesh=>!mesh.visible) && graphScene.snapshot().layers>0);
+  await graphs.getByRole("checkbox",{name:"Графики над площадками",exact:true}).uncheck();
+  assert.equal(await collection.count(),0);
+  await graphs.getByRole("checkbox",{name:"Только графики",exact:true}).check();
+  assert.equal(await collection.count(),0);
+  assert.equal(await page.evaluate(()=>graphUI.profiles().length),savedSettings.profiles.length);
+  await graphs.getByRole("checkbox",{name:"Срезы в элементах",exact:true}).check();
+  await collection.waitFor();
+  assert.equal(await collection.locator(".graph-1d-miniature").count(),savedSettings.profiles.length);
   await closeMenus();
   await page.getByRole("button", { name: "Общие опции отображения", exact: true }).click();
   assert.equal(await page.getByRole("combobox", { name: "Палитра результатов", exact: true }).inputValue(),"Turbo");
@@ -481,7 +509,7 @@ try {
   for(const id of storedIds) await page.getByRole("button",{name:`Удалить 1D график №${id}`,exact:true}).click();
   await page.waitForFunction(()=>graphUI.profiles().length===0 && graphScene.snapshot().contours.length===0 && graphFixture.saved()?.settings.profiles.length===0);
   assert.equal(await collection.count(),0); assert.equal(await page.evaluate(()=>graphUI.slices().length),savedSettings.slices.length);
-  pass("Full page reload resets all three graph checkboxes while restoring task-owned slices, collection, size, palette, expanded state/window size, hidden components and manual axes; deleting thumbnails clears only 1D sections and saves automatically");
+  pass("Full page reload resets all three graph checkboxes and hides the retained 1D collection until areas or slices are enabled; either flag restores thumbnails, only-graphs alone does not; chart settings persist and deleting thumbnails clears only 1D sections");
 
   await page.evaluate(()=>{
     graphFixture.buffers.JE[0].fill(0,3,6); graphFixture.buffers.JE[0].fill(0,15,18);

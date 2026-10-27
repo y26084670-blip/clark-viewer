@@ -456,6 +456,7 @@ try {
   await persistedDialog.getByRole("button",{name:"Авто",exact:true}).click();
   await page.waitForFunction(()=>graphFixture.saved()?.settings.expandedProfile===1 && graphFixture.saved()?.settings.profiles.find(p=>p.id===1)?.view?.hidden.includes("Z"));
   const savedSettings=await page.evaluate(()=>graphFixture.saved().settings);
+  assert.deepEqual([savedSettings.only,savedSettings.areas,savedSettings.showSlices],[true,true,true]);
   await page.reload(); await page.waitForFunction(()=>window.graphUI?.ready() && window.graphScene?.ready() && !graphUI.busy());
   await persistedDialog.waitFor(); await page.waitForFunction(()=>profileChart.chart()?.data.datasets.length===3);
   assert.equal(await page.evaluate(()=>graphUI.profiles().length),savedSettings.profiles.length);
@@ -469,13 +470,18 @@ try {
   assert.equal(await size.inputValue(),"0.5");
   await page.screenshot({path:path.join(out,"restored-profile.png"),fullPage:true});
   await persistedDialog.getByRole("button",{name:"Свернуть",exact:true}).click();
+  await open();
+  for (const label of ["Только графики", "Графики над площадками", "Срезы в элементах"]) assert.equal(await graphs.getByRole("checkbox",{name:label,exact:true}).isChecked(),false);
+  assert.equal(await graphs.locator("tbody tr").count(),savedSettings.slices.length);
+  await page.waitForFunction(()=>graphScene.snapshot().meshes.every(mesh=>!mesh.visible) && graphScene.snapshot().layers>0);
+  await closeMenus();
   await page.getByRole("button", { name: "Общие опции отображения", exact: true }).click();
   assert.equal(await page.getByRole("combobox", { name: "Палитра результатов", exact: true }).inputValue(),"Turbo");
   const storedIds=await page.evaluate(()=>graphUI.profiles().map(p=>p.id));
   for(const id of storedIds) await page.getByRole("button",{name:`Удалить 1D график №${id}`,exact:true}).click();
   await page.waitForFunction(()=>graphUI.profiles().length===0 && graphScene.snapshot().contours.length===0 && graphFixture.saved()?.settings.profiles.length===0);
   assert.equal(await collection.count(),0); assert.equal(await page.evaluate(()=>graphUI.slices().length),savedSettings.slices.length);
-  pass("Full page reload restores task-owned slices, collection, size, palette, expanded state/window size, hidden components and manual axes; deleting thumbnails clears only 1D sections and saves automatically");
+  pass("Full page reload resets all three graph checkboxes while restoring task-owned slices, collection, size, palette, expanded state/window size, hidden components and manual axes; deleting thumbnails clears only 1D sections and saves automatically");
 
   await page.evaluate(()=>{
     graphFixture.buffers.JE[0].fill(0,3,6); graphFixture.buffers.JE[0].fill(0,15,18);

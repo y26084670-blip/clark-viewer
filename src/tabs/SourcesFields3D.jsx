@@ -221,8 +221,10 @@ export function SourcesFields3D(props) {
   const [elementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode] = createGeometryViewSetting("regionsMode", "all");
   const graphView = Object.fromEntries(Object.entries(GRAPH_VIEW_DEFAULTS).map(([key, initial]) => [key, createGeometryViewSetting(key, initial)]));
-  function restoreGraphs(saved) {
-    setGraphsOnly(saved?.only ?? false); setAreaGraphs(saved?.areas ?? false); setSliceGraphs(saved?.showSlices ?? false);
+  function restoreGraphs(saved, restoreVisibility = true) {
+    setGraphsOnly(restoreVisibility && (saved?.only ?? false));
+    setAreaGraphs(restoreVisibility && (saved?.areas ?? false));
+    setSliceGraphs(restoreVisibility && (saved?.showSlices ?? false));
     setGraphSlices(saved?.slices ?? []); setActiveSlice(saved?.active ?? null);
     setGraphProfiles(saved?.profiles ?? []); setActiveProfile(saved?.activeProfile ?? null); setExpandedProfile(saved?.expandedProfile ?? null);
     for (const [key, value] of Object.entries(saved?.view ?? {})) graphView[key]?.[1](value);
@@ -241,7 +243,9 @@ export function SourcesFields3D(props) {
       graphStore = createGraphSettingsStore(task, { onNotice: text => { if (revision === graphRevision) setGraphSaveNotice(text); } });
       graphStore.ready.then(value => {
         if (revision !== graphRevision) return;
-        if (!saved && value) restoreGraphs(value);
+        // A new project starts with graph overlays off; tab remounts use the
+        // in-memory session above and retain the user's current checkboxes.
+        if (!saved && value) restoreGraphs(value, false);
         setGraphReady(true);
       });
     });
@@ -448,22 +452,30 @@ export function SourcesFields3D(props) {
             <div class="source-toolbar-menu-panel source-graphs-panel" ref={positionSourcePanel} role="dialog" aria-label="Графики в 3D" onKeyDown={event => {
               if (event.key === "Escape") { event.stopPropagation(); closeGraphChoice(); }
             }}>
-              <label class="source-toolbar-option" title="Оставить геометрию и включённые поверхности графиков; скрыть расчётные векторы, карты и векторные линии."><input type="checkbox" checked={graphsOnly()} disabled={graphBlocked()}
-                onChange={event => setGraphsOnly(event.currentTarget.checked)} /> Только графики</label>
-              <label class="source-toolbar-option" title="Показать над видимыми площадками поверхности выбранной величины областей: X — красная, Y — зелёная, Z — синяя. Снятие флажка скрывает поверхности."><input type="checkbox" checked={areaGraphs()} disabled={graphBlocked()}
-                onChange={event => {
-                  if (event.currentTarget.checked && regionsQuantity() === "none") setRegionsQuantity(props.task.metadata.HS ? "Bs" : "As");
-                  setAreaGraphs(event.currentTarget.checked);
-                }} /> Графики над площадками</label>
-              <div class="source-slice-actions">
-                <label class="source-toolbar-option" title="Показать или скрыть все добавленные срезы. Скрытие сохраняет строки таблицы и выбранные дискреты."><input type="checkbox" checked={sliceGraphs()} disabled={graphBlocked()}
-                  onChange={event => setSliceGraphs(event.currentTarget.checked)} /> Срезы в элементах</label>
-                <button type="button" aria-expanded={addingSlice()} disabled={graphBlocked() || !props.task?.elements?.length}
-                  title="Добавить график среза: выберите элемент, наведите на направление для предпросмотра и нажмите на плоскость. Создаётся центральный слой; номер дискрета меняется в таблице. Повторное нажатие закрывает выбор."
-                  onClick={() => { setAddingSlice(!addingSlice()); setDirectionMenu(null); setPreviewSlice(null);
-                    setAddElement(selectedSlice()?.recordIndex ?? Math.max(0, props.task.elements.findIndex(r => props.elements.includes(r.id)))); }}>Добавить</button>
-                <button type="button" disabled={graphBlocked() || !selectedSlice()} onClick={deleteSlice}
-                  title="Удалить выбранную строку таблицы и её график во всех симметричных образах. Сначала выберите строку щелчком; элемент и файлы результатов сохраняются.">Удалить</button>
+              <div class="source-graphs-header">
+                <div class="source-graphs-controls">
+                  <label class="source-toolbar-option" title="Оставить геометрию и включённые поверхности графиков; скрыть расчётные векторы, карты и векторные линии."><input type="checkbox" checked={graphsOnly()} disabled={graphBlocked()}
+                    onChange={event => setGraphsOnly(event.currentTarget.checked)} /> Только графики</label>
+                  <label class="source-toolbar-option" title="Показать над видимыми площадками поверхности выбранной величины областей: X — красная, Y — зелёная, Z — синяя. Снятие флажка скрывает поверхности."><input type="checkbox" checked={areaGraphs()} disabled={graphBlocked()}
+                    onChange={event => {
+                      if (event.currentTarget.checked && regionsQuantity() === "none") setRegionsQuantity(props.task.metadata.HS ? "Bs" : "As");
+                      setAreaGraphs(event.currentTarget.checked);
+                    }} /> Графики над площадками</label>
+                  <div class="source-slice-actions">
+                    <label class="source-toolbar-option" title="Показать или скрыть все добавленные срезы. Скрытие сохраняет строки таблицы и выбранные дискреты."><input type="checkbox" checked={sliceGraphs()} disabled={graphBlocked()}
+                      onChange={event => setSliceGraphs(event.currentTarget.checked)} /> Срезы в элементах</label>
+                    <button type="button" aria-expanded={addingSlice()} disabled={graphBlocked() || !props.task?.elements?.length}
+                      title="Добавить график среза: выберите элемент, наведите на направление для предпросмотра и нажмите на плоскость. Создаётся центральный слой; номер дискрета меняется в таблице. Повторное нажатие закрывает выбор."
+                      onClick={() => { setAddingSlice(!addingSlice()); setDirectionMenu(null); setPreviewSlice(null);
+                        setAddElement(selectedSlice()?.recordIndex ?? Math.max(0, props.task.elements.findIndex(r => props.elements.includes(r.id)))); }}>Добавить</button>
+                    <button type="button" disabled={graphBlocked() || !selectedSlice()} onClick={deleteSlice}
+                      title="Удалить выбранную строку таблицы и её график во всех симметричных образах. Сначала выберите строку щелчком; элемент и файлы результатов сохраняются.">Удалить</button>
+                  </div>
+                </div>
+                <aside class="source-graphs-reminder" aria-label="Напоминание о графиках" lang="ru">
+                  <p>Текущие настройки и наборы графиков автосохраняются для следующих сессий.</p>
+                  <p>Используйте выпадающее меню над поверхностью 2D графика для добавления 1D графиков.</p>
+                </aside>
               </div>
               <Show when={addingSlice()}>
                 <div class="source-slice-add">

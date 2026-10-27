@@ -149,6 +149,16 @@
   overflow: auto;
 }
 
+.source-graphs-header { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 12px; }
+.source-graphs-controls { display: grid; align-content: start; gap: 6px; }
+.source-graphs-reminder {
+  min-width: 0; padding: 6px 8px; border: 1px solid #697683;
+  background: #303943; color: #edf2f7; font-size: 11px; line-height: 1.2;
+  display: flex; flex-direction: column; justify-content: center; gap: 4px;
+  text-align: justify; hyphens: auto; overflow-wrap: break-word;
+}
+.source-graphs-reminder p { margin: 0; }
+
  .source-slice-actions { display: flex; align-items: center; gap: 6px; }
 .source-slice-actions button { padding: 4px 7px; }
 .source-graph-error { color: #ffd091; white-space: normal; }

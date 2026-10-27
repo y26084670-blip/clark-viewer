@@ -44,6 +44,36 @@ test("hiding preserves rows; task-bound choices survive tab remount and do not l
   props.task = graph3DTask().task; remount.flushEffects(); assert.equal(remount.graphSlices().length, 0); assert.equal(remount.areaGraphs(), false); remount.close();
 });
 
+test("opening a project resets all three graph flags from disk but keeps collections and same-session tab choices", async () => {
+  const slices = [{ id: 1, recordIndex: 0, direction: 2, discrete: 1, component: 0 }];
+  let text = JSON.stringify({ version: 1, settings: { only: true, areas: true, showSlices: true, slices,
+    profiles: [{ id: 1, graphId: 1, instanceKey: "elements:0:0:0:0:0:0", direction: 0, index: 1 }] } });
+  const handle = { async getFileHandle() { return {
+    async getFile() { return { size: text.length, text: async () => text }; },
+    async createWritable() { let next; return { async write(value) { next = value; }, async close() { text = next; } }; },
+  }; } };
+  const props = { task: { ...graph3DTask().task, handle }, elements: [1,2], regions: [1], time: 0 };
+  const open = () => sourcesFields3DSetup(props, {}, { graphsOnly: true });
+  const ready = async ui => {
+    for (let n = 0; n < 20 && !ui.graphReady(); n++) await new Promise(resolve => setImmediate(resolve));
+    assert.equal(ui.graphReady(), true);
+  };
+  const flags = ui => [ui.graphsOnly(), ui.areaGraphs(), ui.sliceGraphs()];
+  let ui = open();
+  try {
+    await ready(ui);
+    assert.deepEqual(flags(ui), [false, false, false]); assert.deepEqual(ui.graphSlices(), slices);
+    assert.equal(ui.graphProfiles().length, 1);
+    ui.setGraphsOnly(true); ui.setAreaGraphs(true); ui.setSliceGraphs(true); ui.close();
+    ui = open(); await ready(ui);
+    assert.deepEqual(flags(ui), [true, true, true]); assert.deepEqual(ui.graphSlices(), slices);
+    ui.close(); props.task = { ...graph3DTask().task, handle };
+    ui = open(); await ready(ui);
+    assert.deepEqual(flags(ui), [false, false, false]); assert.deepEqual(ui.graphSlices(), slices);
+    assert.equal(ui.graphProfiles().length, 1);
+  } finally { ui.close(); }
+});
+
 test("scalar choice disables component selection and capture prevents slice mutations", () => {
   const { ui, props } = setup(); ui.addSlice(0); const row = ui.graphSlices()[0]; assert.equal(ui.sliceScalar(row), false);
   ui.quantities.elements.write("JEdot"); assert.equal(ui.sliceScalar(row), true);

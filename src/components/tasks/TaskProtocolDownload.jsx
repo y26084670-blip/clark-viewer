@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { readProtocolDownload, scanTaskProtocolDownloads } from "../../services/protocol/protocolDownloads.js";
 import "./TaskProtocolDownload.css";
 
@@ -8,9 +8,18 @@ export function useTaskProtocolDownloads(source, refreshKey) {
     const tasks = source();
     refreshKey?.();
     const controller = new AbortController();
-    setRecords(new Map());
+    setRecords(previous => {
+      const handles = new Set(tasks.map(task => task.handle));
+      const retained = new Map([...previous].filter(([handle]) => handles.has(handle)));
+      return retained.size === previous.size ? previous : retained;
+    });
     void scanTaskProtocolDownloads(tasks, { signal: controller.signal }).then(value => {
-      if (!controller.signal.aborted) setRecords(value);
+      if (!controller.signal.aborted) setRecords(previous => {
+        const same = (a, b) => a && b && a.error === b.error && a.files.length === b.files.length
+          && a.files.every((file, i) => file.name === b.files[i].name && file.size === b.files[i].size && file.lastModified === b.files[i].lastModified);
+        const next = new Map([...value].map(([handle, record]) => [handle, same(record, previous.get(handle)) ? previous.get(handle) : record]));
+        return next.size === previous.size && [...next].every(([handle, record]) => previous.get(handle) === record) ? previous : next;
+      });
     }).catch(() => { /* A replaced task list cancels its scan. Per-task errors are in records. */ });
     onCleanup(() => controller.abort());
   });
@@ -28,18 +37,17 @@ function details(entry) {
 export function TaskProtocolDownload(props) {
   const [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
   let dialog, opener, controller, disposed = false;
-  const files = () => props.record?.files ?? [];
+  const record = createMemo(() => props.record);
+  const files = () => record()?.files ?? [];
   const title = () => files().length === 1 ? `Скачать протокол · ${files()[0].name}\n${details(files()[0])}`
     : `Скачать протокол · файлов: ${files().length}\nВыбрать HTML из DOCS`;
   const close = () => { dialog?.close(); opener?.focus(); };
   createEffect(() => {
-    props.record; props.taskHandle;
-    const disabled = props.disabled;
+    record(); props.taskHandle;
     controller?.abort(); controller = null;
     setBusy(false); setError("");
     // Refreshing metadata or changing tasks invalidates an open chooser.
     if (dialog?.open) dialog.close();
-    if (disabled) opener = null;
   });
   onCleanup(() => { disposed = true; controller?.abort(); });
 
@@ -65,7 +73,7 @@ export function TaskProtocolDownload(props) {
     } finally { if (!disposed && controller === request) setBusy(false); }
   }
 
-  return <span class="task-protocol-download" title={props.record?.error ? `Не удалось проверить протоколы: ${props.record.error}` : undefined}
+  return <span class="task-protocol-download" title={record()?.error ? `Не удалось проверить протоколы: ${record().error}` : undefined}
     onClick={event => event.stopPropagation()} onDblClick={event => event.stopPropagation()}>
     <Show when={files().length}>
       <button type="button" class="task-protocol-download-button" title={title()} aria-label={title()}

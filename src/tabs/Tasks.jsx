@@ -352,7 +352,6 @@ export function Tasks(props) {
           title="Выбрать каталог проектов, проект и задание в открытом Editor; браузер может ограничить переключение вкладки"
           onClick={showInEditor}>Выбрать в Editor</button>
         </div>
-        <Show when={props.loadedHandle === candidate()?.handle && props.loadedHandle}><div class="loaded-note">✓ Задание загружено</div></Show>
         <Show when={lastTaskNotice()}><div class="task-last-opened-notice" role="status">{lastTaskNotice()}</div></Show>
         <Show when={error() || props.error || info.value()?.error}><div class="task-error" role="alert">{error() || props.error || info.value()?.error}</div></Show>
       </div>

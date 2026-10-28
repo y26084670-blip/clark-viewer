@@ -1,0 +1,24 @@
+.task-status-name { display: flex; align-items: center; gap: 6px; }
+.task-status-label { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.task-protocol-download { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; }
+.task-protocol-download-button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 2px;
+    min-width: 28px; min-height: 28px; padding: 2px 3px;
+    border: 1px solid #7699ad; background: #243543; color: #a5e2ff;
+}
+.task-protocol-download-button:hover:not(:disabled) { background: #476078; color: #fff; }
+.task-protocol-download-button svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.task-protocol-download-count { font-size: 11px; font-weight: 700; }
+.task-protocol-download-error { max-width: 250px; font-size: 12px; font-weight: 400; color: #ffb5b5; overflow-wrap: anywhere; white-space: normal; }
+.task-protocol-download-dialog {
+    width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto;
+    padding: 16px; border: 1px solid #7699ad; border-radius: 5px;
+    background: #202932; color: #eef3f7; color-scheme: dark; font-size: 14px;
+    box-shadow: 0 8px 28px #0008;
+}
+.task-protocol-download-dialog[open] { display: flex; flex-direction: column; gap: 12px; }
+.task-protocol-download-dialog::backdrop { background: #0008; }
+.task-protocol-download-dialog > strong { overflow-wrap: anywhere; }
+.task-protocol-download-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; max-height: 50dvh; }
+.task-protocol-download-list button { display: flex; flex-direction: column; gap: 4px; text-align: left; overflow-wrap: anywhere; }
+.task-protocol-download-list small { font-weight: 400; }

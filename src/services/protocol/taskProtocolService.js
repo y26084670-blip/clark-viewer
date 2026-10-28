@@ -1,4 +1,5 @@
-import { newProtocol, parseProtocol, PROTOCOL_MAX_BYTES, serializeProtocol } from "./protocolDocument.js";
+import { appendProtocolBlocks, newProtocol, parseProtocol, PROTOCOL_MAX_BYTES, PROTOCOL_SIZE_ERROR, serializeProtocol } from "./protocolDocument.js";
+import { readProtocolVideos } from "./protocolMedia.js";
 const missing = error => error?.name === "NotFoundError";
 export function protocolFilename(value) {
   const name = String(value).trim();
@@ -27,7 +28,7 @@ export async function readTaskProtocol(task, filename) {
   try { handle = await directory.getFileHandle(name); }
   catch (error) { if (missing(error)) return null; throw error; }
   const file = await handle.getFile();
-  if (file.size > PROTOCOL_MAX_BYTES) throw new Error("Протокол превышает 64 МиБ.");
+  if (file.size > PROTOCOL_MAX_BYTES) throw new Error(PROTOCOL_SIZE_ERROR);
   const html = await file.text();
   return { name, html, document: parseProtocol(html) };
 }
@@ -40,7 +41,8 @@ export async function readProtocolConditions(task) {
       comment: "Содержимое файла на момент добавления в протокол.", text: await file.text() };
   } catch (error) { if (missing(error)) return null; throw error; }
 }
-export async function createTaskProtocol(task) {
+export async function createTaskProtocol(task, snapshots = [], { signal } = {}) {
+  signal?.throwIfAborted();
   let path = task.plotLabel || task.name || task.handle.name;
   const root = task.workspace?.rootHandle;
   if (root) {
@@ -49,7 +51,14 @@ export async function createTaskProtocol(task) {
     path = [root.name, ...parts].join("/");
   }
   const conditions = await readProtocolConditions(task);
-  return newProtocol(path, conditions ? [conditions] : []);
+  signal?.throwIfAborted();
+  const draft = newProtocol(path, [...(conditions ? [conditions] : []), ...snapshots]);
+  const baseBytes = new TextEncoder().encode(serializeProtocol(draft)).length;
+  const videos = await readProtocolVideos(task, PROTOCOL_MAX_BYTES - baseBytes, { signal });
+  const document = appendProtocolBlocks(draft, videos);
+  // Check the exact serialized size, including names, comments and JSON.
+  serializeProtocol(document);
+  return document;
 }
 export async function saveTaskProtocol(task, filename, document, expectedHtml, { signal } = {}) {
   // Ask in the click handler's activation, before asynchronous reads.

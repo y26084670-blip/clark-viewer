@@ -4,7 +4,7 @@ import { createTaskProtocol, listTaskProtocols, readProtocolConditions, readTask
 import "./Protocol.css";
 
 export function TaskProtocolDialog(props) {
-  let dialog, revision = 0, saved = null, saveAbort, previewUrl;
+  let dialog, revision = 0, saved = null, readAbort, saveAbort, previewUrl;
   const [doc, setDoc] = createSignal(null);
   const [filename, setFilename] = createSignal("protocol.html"), [selected, setSelected] = createSignal("");
   const [loading, setLoading] = createSignal(false), [saving, setSaving] = createSignal(false);
@@ -14,6 +14,8 @@ export function TaskProtocolDialog(props) {
   const title = () => props.initialFilename ? "Редактировать протокол" : "Создать протокол";
   function discardPreview() { if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null; }
   async function read(name = "") {
+    readAbort?.abort();
+    const controller = new AbortController(); readAbort = controller;
     const current = ++revision, task = props.task;
     setLoading(true); setError(""); setNotice(""); setDoc(null); saved = null; setSelected(name);
     try {
@@ -21,7 +23,8 @@ export function TaskProtocolDialog(props) {
       if (current !== revision) return;
       const existing = name ? await readTaskProtocol(task, name) : null;
       if (name && !existing) throw new Error("Протокол удалён или перемещён. Обновите список файлов.");
-      const draft = existing?.document ?? appendProtocolBlocks(await createTaskProtocol(task), pending());
+      const draft = existing?.document ?? await createTaskProtocol(task, pending(), { signal: controller.signal });
+      controller.signal.throwIfAborted();
       if (current !== revision || !props.open || task !== props.task) return;
       saved = existing; setDoc(draft);
       let next = "protocol.html", suffix = 2;
@@ -33,10 +36,10 @@ export function TaskProtocolDialog(props) {
   }
   createEffect(on(() => [props.open, props.task, props.initialFilename], ([open]) => {
     if (open && props.task) { if (!dialog.open) dialog.showModal(); void read(props.initialFilename || ""); }
-    else { revision++; if (dialog.open) dialog.close(); discardPreview(); }
+    else { revision++; readAbort?.abort(); if (dialog.open) dialog.close(); discardPreview(); }
   }));
-  onCleanup(() => { revision++; saveAbort?.abort(); discardPreview(); if (dialog?.open) dialog.close(); });
-  function close() { if (!saving()) { revision++; props.onClose(); } }
+  onCleanup(() => { revision++; readAbort?.abort(); saveAbort?.abort(); discardPreview(); if (dialog?.open) dialog.close(); });
+  function close() { if (!saving()) { revision++; readAbort?.abort(); props.onClose(); } }
   function changeComment(id, comment) {
     setNotice(""); setDoc(previous => ({ ...previous, blocks: previous.blocks.map(block => block.id === id ? { ...block, comment } : block) }));
   }
@@ -85,6 +88,7 @@ export function TaskProtocolDialog(props) {
     aria-busy={loading() || saving()} onCancel={event => { event.preventDefault(); close(); }}>
     <h2>{title()}</h2>
     <p class="viewer-movie-note">Один HTML-файл в DOCS: автономный просмотр и повторное редактирование блоков в Viewer.</p>
+    <p class="viewer-movie-note">Все WebM из output3XX/demo автоматически добавляются в конец нового протокола и включаются внутрь HTML.</p>
     <fieldset disabled={loading() || saving()} style={{ border: "0", padding: "0", margin: "0" }}>
       <Show when={selected()}><p class="viewer-movie-note">Файл: DOCS/{selected()} <button type="button" onClick={() => void read(selected())}>Перечитать</button></p>
         <p class="viewer-movie-note">«Перечитать» отменяет несохранённые правки в этом окне.</p></Show>
@@ -102,6 +106,7 @@ export function TaskProtocolDialog(props) {
           return <section class="protocol-block" data-block-id={id}>
             <div class="protocol-block-header"><strong>{block()?.title}</strong><button type="button" onClick={() => remove(id)}>Удалить блок</button></div>
             <Show when={block()?.kind === "image"}><img src={block()?.dataUrl} alt={block()?.title} /></Show>
+            <Show when={block()?.kind === "video"}><video src={block()?.dataUrl} controls preload="metadata" playsinline aria-label={block()?.filename} /></Show>
             <Show when={block()?.kind === "text"}><pre>{block()?.text}</pre></Show>
             <Show when={block()?.kind === "table"}><div class="protocol-table"><table>
               <thead><tr><For each={block()?.table.headers}>{header => <th>{header}</th>}</For></tr></thead>

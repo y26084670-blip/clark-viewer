@@ -318,7 +318,7 @@ export function ViewerToolsMenu(props) {
           <button ref={menuItem} type="button" role="menuitem" aria-disabled={!props.eligible}
             onClick={openSetup}>Создать moview</button>
           <button ref={taskProtocolMenuItem} type="button" role="menuitem" disabled={!canEditProtocol()}
-            onClick={() => { if (canEditProtocol()) { closeMenu(); props.onCreateProtocol?.(trigger); } }}>Создать протокол</button>
+            onClick={() => { if (canEditProtocol()) { closeMenu(); props.onCreateProtocol?.(trigger); } }}>Протокол</button>
           <button ref={protocolsMenuItem} type="button" role="menuitem" disabled={Boolean(protocolsDisabledReason())}
             aria-disabled={Boolean(protocolsDisabledReason())}
             onClick={openProtocols}>Протоколы тестов</button>

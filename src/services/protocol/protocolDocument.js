@@ -58,14 +58,36 @@ export function newProtocol(taskPath, blocks = [], date = new Date().toISOString
 
 export function appendProtocolBlocks(doc, blocks) {
   const ids = new Set(doc.blocks.map(block => block.id));
-  const combined = [...doc.blocks, ...blocks.filter(block => {
+  const additions = blocks.filter(block => {
     if (ids.has(block.id)) return false;
     ids.add(block.id); return true;
-  })];
+  });
+  // Insert selected views in the content section. Existing blocks and their
+  // relative order remain intact, including documents with older layouts.
+  const contentStart = doc.blocks.findLastIndex(block => block.source === "summary") + 1;
+  const boundary = doc.blocks.findIndex((block, index) => index >= contentStart && (block.source === "docs" || block.kind === "video"));
+  const at = boundary < 0 ? doc.blocks.length : boundary;
+  const combined = [...doc.blocks.slice(0, at), ...additions.filter(block => block.kind !== "video"),
+    ...doc.blocks.slice(at), ...additions.filter(block => block.kind === "video")];
   return validateProtocol({ ...doc, version: combined.some(block => block.kind === "scene") ? 3
     : combined.some(block => block.kind === "video") ? Math.max(2, doc.version) : doc.version,
-    blocks: [...combined.filter(block => block.kind !== "video" && block.source !== "docs"),
-      ...combined.filter(block => block.source === "docs"), ...combined.filter(block => block.kind === "video")] });
+    blocks: combined });
+}
+
+export function refreshProtocolDraft(draft, base, latest) {
+  if (!latest) return draft;
+  if (!base || draft.id !== latest.id) throw new Error("Файл заменён другим протоколом. Сохраните черновик под другим именем.");
+  const original = new Map(base.blocks.map(block => [block.id, block]));
+  const edited = new Map(draft.blocks.map(block => [block.id, block]));
+  const removed = new Set(base.blocks.filter(block => !edited.has(block.id)).map(block => block.id));
+  const currentIds = new Set(latest.blocks.map(block => block.id));
+  const blocks = latest.blocks.filter(block => !removed.has(block.id)).map(block => {
+    const local = edited.get(block.id);
+    return local && local.comment !== original.get(block.id)?.comment ? { ...block, comment: local.comment } : block;
+  });
+  const additions = draft.blocks.filter(block => !currentIds.has(block.id)
+    && (!original.has(block.id) || block.comment !== original.get(block.id).comment));
+  return appendProtocolBlocks({ ...latest, blocks }, additions);
 }
 
 function blockHtml(block, index) {

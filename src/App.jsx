@@ -49,6 +49,18 @@ export default function App() {
   const [time, setTime] = createSignal(0), [elements, setElements] = createSignal([]), [regions, setRegions] = createSignal([]);
   const [plotRecipes, setPlotRecipes] = createSignal([]);
   const [protocolEntries, setProtocolEntries] = createSignal({});
+  const [protocolSession, setProtocolSession] = createSignal({ handle: null, files: new Map(), lastFilename: "protocol.html" });
+  let protocolTaskHandle;
+  createEffect(() => {
+    const handle = task()?.handle, previous = protocolTaskHandle;
+    if (!handle || handle === previous) return;
+    protocolTaskHandle = handle;
+    void (async () => {
+      let same = false;
+      try { same = Boolean(previous?.isSameEntry && await previous.isSameEntry(handle)); } catch { /* Separate task. */ }
+      if (!same && task()?.handle === handle) setProtocolSession({ handle, files: new Map(), lastFilename: "protocol.html" });
+    })();
+  });
   const [protocolRequest, setProtocolRequest] = createSignal(null), [docsRevision, setDocsRevision] = createSignal(0);
   const [plotSources, setPlotSources] = createSignal([]);
   const [activePlotId, setActivePlotId] = createSignal(null);
@@ -189,8 +201,8 @@ export default function App() {
       </Show>
     </main>
     <Portal><TaskProtocolDialog open={Boolean(protocolRequest())} task={protocolRequest()?.task}
-      initialFilename={protocolRequest()?.filename ?? ""} entries={protocolDialogEntries()}
+      initialFilename={protocolRequest()?.filename ?? ""} entries={protocolDialogEntries()} session={protocolSession()}
       onRemoveBlock={id => { if (protocolUsesSelection()) setProtocolEntries(previous => Object.fromEntries(Object.entries(previous).filter(([, block]) => block.id !== id))); }}
-      onSaved={() => setDocsRevision(value => value + 1)} onBusyChange={setMovieBusy} onClose={closeProtocol} /></Portal>
+      onChanged={() => setDocsRevision(value => value + 1)} onBusyChange={setMovieBusy} onClose={closeProtocol} /></Portal>
   </div>;
 }

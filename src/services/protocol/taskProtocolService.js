@@ -57,6 +57,31 @@ export async function createTaskProtocol(task, snapshots = [], { signal } = {}) 
   serializeProtocol(document);
   return document;
 }
+export async function openTaskProtocol(task, filename = "protocol.html", snapshots = [], { signal } = {}) {
+  signal?.throwIfAborted();
+  const name = protocolFilename(filename), saved = await readTaskProtocol(task, name);
+  signal?.throwIfAborted();
+  const document = saved ? appendProtocolBlocks(saved.document, snapshots.map(block => ({ ...block, comment: "" })))
+    : await createTaskProtocol(task, snapshots, { signal });
+  signal?.throwIfAborted();
+  return { name, saved, document };
+}
+
+export async function deleteTaskProtocol(task, filename, expectedHtml, { signal } = {}) {
+  const permission = task?.handle?.requestPermission?.({ mode: "readwrite" });
+  if (!permission || await permission !== "granted") throw new Error("Разрешите запись в каталог задания.");
+  signal?.throwIfAborted();
+  const name = protocolFilename(filename), current = await readTaskProtocol(task, name);
+  if (!current) throw new Error("Протокол уже удалён или перемещён. Перечитайте список файлов.");
+  if (typeof expectedHtml !== "string" || current.html !== expectedHtml) {
+    throw new Error("Файл изменён после открытия. Перечитайте его перед удалением.");
+  }
+  const directory = await docsDirectory(task);
+  signal?.throwIfAborted();
+  await directory.removeEntry(name);
+  return { name };
+}
+
 export async function saveTaskProtocol(task, filename, document, expectedHtml, { signal } = {}) {
   // Ask in the click handler's activation, before asynchronous reads.
   const permission = task?.handle?.requestPermission?.({ mode: "readwrite" });

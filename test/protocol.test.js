@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appendProtocolBlocks, canCommentProtocolBlock, newProtocol, parseProtocol, serializeProtocol, validateProtocol, PROTOCOL_MAX_BYTES } from "../src/services/protocol/protocolDocument.js";
+import { appendProtocolBlocks, canCommentProtocolBlock, newProtocol, parseProtocol, refreshProtocolDraft, serializeProtocol, validateProtocol, PROTOCOL_MAX_BYTES } from "../src/services/protocol/protocolDocument.js";
 import { readProtocolVideos } from "../src/services/protocol/protocolMedia.js";
 import { readProtocolDocs } from "../src/services/protocol/protocolDocs.js";
-import { createTaskProtocol, protocolFilename, readTaskProtocol, saveTaskProtocol } from "../src/services/protocol/taskProtocolService.js";
+import { createTaskProtocol, deleteTaskProtocol, openTaskProtocol, protocolFilename, readTaskProtocol, saveTaskProtocol } from "../src/services/protocol/taskProtocolService.js";
 import { captureProtocolRenderer } from "../src/services/protocol/protocolCapture.js";
 
 const image = id => ({ id, kind: "image", title: "Поле", comment: "Шаг 2", width: 1, height: 1,
@@ -40,7 +40,7 @@ test("standalone HTML escapes conditions, names and comments; its data never bec
 
 function filesystem() {
   const files = new Map(), dirs = new Set(["", "output3XX"]), writes = [];
-  let permission = "granted", failWrite = false;
+  let permission = "granted", failWrite = false, failDelete = false;
   const notFound = () => new DOMException("missing", "NotFoundError");
   function directory(path) {
     return { kind: "directory", name: path.split("/").at(-1) || "Task",
@@ -59,14 +59,14 @@ function filesystem() {
             async close() { files.set(key, data); writes.push(key); }, async abort() { writes.push("aborted"); },
           }; } };
       },
-      async removeEntry(name) { files.delete([path, name].filter(Boolean).join("/")); },
+      async removeEntry(name) { if (failDelete) throw new Error("delete failed"); files.delete([path, name].filter(Boolean).join("/")); },
       async *entries() { for (const key of files.keys()) if (key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes("/")) {
         const name = key.slice(path.length + 1); yield [name, await this.getFileHandle(name)];
       } },
     };
   }
   return { files, dirs, writes, task: { handle: directory(""), plotLabel: "Root/Project/Task" },
-    permission: value => { permission = value; }, failWrite: () => { failWrite = true; } };
+    permission: value => { permission = value; }, failWrite: () => { failWrite = true; }, failDelete: value => { failDelete = value; } };
 }
 
 test("DOCS is created only on save; conditions are excluded and missing output is allowed", async () => {
@@ -236,4 +236,91 @@ test("chunked base64 retains complete WebM bytes across chunk boundaries", async
   fs.files.set("output3XX/demo/large.webm", movie);
   const [block] = await readProtocolVideos(fs.task, PROTOCOL_MAX_BYTES);
   assert.deepEqual(Buffer.from(block.dataUrl.split(",")[1], "base64"), Buffer.from(await movie.arrayBuffer()));
+});
+
+
+test("opening an existing protocol reads only DOCS and inserts only marked views without rebuilding automatic blocks", async () => {
+  const fs = filesystem(); fs.dirs.add("DOCS");
+  const summaries = ["input", "output"].map(id => ({ id, kind: "text", source: "summary", title: id, text: "original", comment: "" }));
+  const note = { id: "note", kind: "text", source: "docs", title: "README", text: "old note", comment: "User text" };
+  const video = { id: "movie", kind: "video", filename: "a.webm", title: "Animation", comment: "Movie note", dataUrl: "data:video/webm;base64,AAAA" };
+  const original = newProtocol("Task", [...summaries, image("old"), note, video]);
+  const html = serializeProtocol(original); fs.files.set("DOCS/protocol.html", html);
+  const rootGet = fs.task.handle.getDirectoryHandle;
+  fs.task.handle.getDirectoryHandle = (name, options) => {
+    assert.equal(name, "DOCS", "editing must not read input, output or animations");
+    return rootGet(name, options);
+  };
+  const opened = await openTaskProtocol(fs.task, "protocol.html", [image("new"), image("old")]);
+  assert.equal(opened.saved.html, html); assert.equal(opened.document.id, original.id);
+  assert.deepEqual(opened.document.blocks.map(b => b.id), ["input", "output", "old", "new", "note", "movie"]);
+  assert.deepEqual(opened.document.blocks.filter(b => b.id !== "new"), original.blocks);
+  assert.equal(opened.document.blocks[3].comment, "");
+  assert.equal(fs.files.get("DOCS/protocol.html"), html); assert.deepEqual(fs.writes, []);
+  assert.deepEqual(appendProtocolBlocks(opened.document, [image("new")]), opened.document);
+});
+
+test("file absence selects creation; cancellation and foreign HTML never replace a file", async () => {
+  const fs = filesystem(), fresh = await openTaskProtocol(fs.task, "protocol.html", [image("selected")]);
+  assert.equal(fresh.saved, null); assert.equal(fresh.document.blocks[0].id, "selected");
+  assert.equal(fs.dirs.has("DOCS"), false);
+  fs.dirs.add("DOCS"); fs.files.set("DOCS/protocol.html", "External HTML");
+  await assert.rejects(openTaskProtocol(fs.task), /не содержит/);
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(openTaskProtocol(fs.task, "new.html", [], { signal: controller.signal }), { name: "AbortError" });
+  assert.equal(fs.files.get("DOCS/protocol.html"), "External HTML"); assert.deepEqual(fs.writes, []);
+});
+
+test("adding marked views preserves legacy block order and stays after summaries before animations", () => {
+  const summary = { id: "summary", kind: "text", source: "summary", title: "Summary", text: "text", comment: "" };
+  const note = { id: "note", kind: "text", source: "docs", title: "Note", text: "text", comment: "" };
+  const video = { id: "movie", kind: "video", filename: "a.webm", title: "Animation", comment: "", dataUrl: "data:video/webm;base64,AAAA" };
+  const original = newProtocol("Task", [note, summary, image("old"), video]);
+  const amended = appendProtocolBlocks(original, [image("new")]);
+  assert.deepEqual(amended.blocks.map(b => b.id), ["note", "summary", "old", "new", "movie"]);
+  assert.deepEqual(amended.blocks.filter(b => b.id !== "new"), original.blocks);
+});
+
+test("refreshing a file preserves unsaved comments, added blocks and removals while accepting external edits", () => {
+  const base = newProtocol("Task", [image("edited"), image("untouched"), image("removed"), image("externally-removed")]);
+  const draft = { ...base, blocks: base.blocks.filter(b => b.id !== "removed").map(b =>
+    ["edited", "externally-removed"].includes(b.id) ? { ...b, comment: "Not saved" } : b).concat(image("local-new")) };
+  const latest = { ...base, blocks: base.blocks.filter(b => b.id !== "externally-removed").map(b =>
+    b.id === "untouched" ? { ...b, comment: "External edit" } : b).concat(image("external-new")) };
+  const refreshed = refreshProtocolDraft(draft, base, latest);
+  assert.equal(refreshed.blocks.find(b => b.id === "edited").comment, "Not saved");
+  assert.equal(refreshed.blocks.find(b => b.id === "untouched").comment, "External edit");
+  assert.equal(refreshed.blocks.find(b => b.id === "externally-removed").comment, "Not saved");
+  assert.ok(refreshed.blocks.some(b => b.id === "local-new"));
+  assert.ok(refreshed.blocks.some(b => b.id === "external-new"));
+  assert.ok(!refreshed.blocks.some(b => b.id === "removed"));
+  assert.equal(refreshProtocolDraft(draft, base, null), draft);
+  assert.throws(() => refreshProtocolDraft(draft, base, newProtocol("Other")), /другим протоколом/);
+});
+
+test("protocol deletion checks permissions and current contents and removes exactly one HTML file", async () => {
+  const fs = filesystem();
+  const saved = await saveTaskProtocol(fs.task, "protocol.html", newProtocol("Task", [image("old")]), null);
+  fs.files.set("DOCS/README.txt", "keep"); fs.files.set("DOCS/other.html", "keep other");
+  fs.files.set("output3XX/demo/a.webm", webm());
+  const originals = new Map(fs.files);
+  fs.permission("denied");
+  await assert.rejects(deleteTaskProtocol(fs.task, saved.name, saved.html), /Разрешите/);
+  fs.permission("granted");
+  await assert.rejects(deleteTaskProtocol(fs.task, saved.name, null), /изменён/);
+  await assert.rejects(deleteTaskProtocol(fs.task, "../protocol.html", saved.html), /имя файла/);
+  fs.files.set("DOCS/protocol.html", saved.html + "\n");
+  await assert.rejects(deleteTaskProtocol(fs.task, saved.name, saved.html), /изменён/);
+  fs.files.set("DOCS/protocol.html", saved.html);
+  fs.failDelete(true); await assert.rejects(deleteTaskProtocol(fs.task, saved.name, saved.html), /delete failed/); fs.failDelete(false);
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(deleteTaskProtocol(fs.task, saved.name, saved.html, { signal: controller.signal }), { name: "AbortError" });
+  assert.deepEqual(fs.files, originals);
+  await deleteTaskProtocol(fs.task, saved.name, saved.html);
+  originals.delete("DOCS/protocol.html"); assert.deepEqual(fs.files, originals);
+  await assert.rejects(deleteTaskProtocol(fs.task, saved.name, saved.html), /удалён/);
+  const draft = { ...saved.document, blocks: saved.document.blocks.map(b => ({ ...b, comment: "Not saved" })) };
+  const restored = await saveTaskProtocol(fs.task, saved.name, draft, null);
+  assert.equal(parseProtocol(restored.html).blocks[0].comment, "Not saved");
+  assert.deepEqual([...fs.files.keys()].sort(), [...originals.keys(), "DOCS/protocol.html"].sort());
 });

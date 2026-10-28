@@ -35,7 +35,7 @@ import {installBrowserDefaults} from '../src/services/browserDefaults.js';
 import {createMovieExportController} from '../src/services/movie/movieExportController.js';
 import {createMovieWebmEncoder} from '../src/services/movie/movieWebmEncoder.js';
 installBrowserDefaults(window);
-const task={general:{countTimeSteps:2,timeStep:.5},regions:[{id:1,indCoil:1},{id:2,indCoil:2}],metadata:{PSI:{steps:[{index:0}]},FM:{steps:[{index:0}]},MH:{steps:[{index:0},{index:1},{index:2}],header:{stride:9},pointCount:1,ranges:{runId:'field-1'}}},
+const task={general:{countTimeSteps:2,timeStep:.5},regions:[{id:1,indCoil:1},{id:2,indCoil:2}],metadata:{PSI:{steps:[{index:0}]},FM:{steps:[{index:0}]},Q:{steps:[{index:0}],header:{stride:4},pointCount:1},MH:{steps:[{index:0},{index:1},{index:2}],header:{stride:9},pointCount:1,ranges:{runId:'field-1'}}},
 handle:{getDirectoryHandle:async()=>{throw new DOMException('no OM','NotFoundError')}},reader:{history:async()=>{await window.__historyGate;return {steps:[0,1,2],stride:9,values:Float64Array.from([0,0,0,3,4,0,0,0,0,0,0,0,-3,0,4,0,0,0,0,0,0,3,4,0,0,0,0])}}}};
 const manifest={schema:'clark-result-channels/1',model:'mechanics',role:'derived',complete:true,fieldRunId:'field-1',grid:{steps:2,dt:.5},dataFile:'energy.tsv',channels:[{column:'energy_J',label:'Механическая энергия',unit:'Дж'}]};
 window.pickerCalls=0;
@@ -171,12 +171,13 @@ try {
    const marked = await axis.locator('option.constructor-integral-option').evaluateAll(options => options.map(option => ({
      value: option.value, background: getComputedStyle(option).backgroundColor, color: getComputedStyle(option).color,
    })));
-   assert.deepEqual(marked, ['flux:1','flux:2','force','moment'].map(value => ({
+   assert.deepEqual(marked, ['flux:1','flux:2','force','moment','loss'].map(value => ({
      value, background:'rgb(255, 224, 130)', color:'rgb(23, 32, 43)',
    })));
    assert.equal(await axis.locator('option[value="field:M"]').evaluate(option => getComputedStyle(option).backgroundColor), 'rgb(38, 59, 82)');
+   assert.equal(await axis.locator('option[value="field:Q"]').evaluate(option => getComputedStyle(option).backgroundColor), 'rgb(38, 59, 82)');
  }
- passed('Both quantity lists highlight every coil flux, total force and total moment with a contrasting yellow background');
+ passed('Both quantity lists highlight coil fluxes, total force, total moment and total conduction losses; local loss density keeps its ordinary background');
  assert.equal(await curve.isDisabled(),true);
  await add.click(); await waitSeries(0,3);
  assert.equal(await x.getByLabel('Величина').inputValue(),'time');

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appendProtocolBlocks, newProtocol, parseProtocol, serializeProtocol } from "../src/services/protocol/protocolDocument.js";
+import { appendProtocolBlocks, newProtocol, parseProtocol, serializeProtocol, PROTOCOL_MAX_BYTES } from "../src/services/protocol/protocolDocument.js";
+import { readProtocolVideos } from "../src/services/protocol/protocolMedia.js";
 import { createTaskProtocol, protocolFilename, readTaskProtocol, saveTaskProtocol } from "../src/services/protocol/taskProtocolService.js";
 import { captureProtocolRenderer } from "../src/services/protocol/protocolCapture.js";
 
@@ -33,7 +34,7 @@ test("standalone HTML escapes conditions, names and comments; its data never bec
   assert.throws(() => serializeProtocol({ ...doc, blocks: [{ ...image("bad"), dataUrl: "https://example.com/image.png" }] }), /изображение/);
   assert.throws(() => serializeProtocol({ ...doc, blocks: [image("duplicate"), image("duplicate")] }), /блок/);
   assert.throws(() => parseProtocol("<h1>Unrelated file</h1>"), /не содержит/);
-  assert.throws(() => serializeProtocol({ ...doc, version: 2 }), /версии 1/);
+  assert.throws(() => serializeProtocol({ ...doc, version: 3 }), /версии 1 или 2/);
 });
 
 function filesystem() {
@@ -102,4 +103,68 @@ test("renderer export restores the chart on capture failure", async () => {
     capture: () => { throw new Error("lost context"); }, restore: async () => calls.push("restore") };
   await assert.rejects(captureProtocolRenderer(renderer, {}, {}), /lost context/);
   assert.deepEqual(calls, ["ready", "prepare", "restore"]);
+});
+
+const webm = extra => new Blob([Uint8Array.from([0x1a,0x45,0xdf,0xa3,0x8b,0x42,0x82,0x84,0x77,0x65,0x62,0x6d,0,0,0,0]), extra ?? ""], { type: "video/webm" });
+
+test("all task WebM files follow snapshots and conditions, are embedded once and survive loss of source files", async () => {
+  const fs = filesystem(); fs.dirs.add("output3XX/demo");
+  fs.files.set("output3XX/conditions.json", '{"MPI":4}');
+  fs.files.set("output3XX/demo/B.WEBM", webm("second"));
+  fs.files.set("output3XX/demo/a.webm", webm("first"));
+  fs.files.set("output3XX/demo/legacy.gif", "GIF89a");
+  fs.files.set("output3XX/demo/notes.txt", "text");
+  fs.files.set("foreign.webm", webm("other location"));
+  const doc = await createTaskProtocol(fs.task, [image("selected")]);
+  assert.deepEqual(doc.blocks.map(b => b.kind), ["text", "image", "video", "video"]);
+  assert.deepEqual(doc.blocks.filter(b => b.kind === "video").map(b => b.filename), ["a.webm", "B.WEBM"]);
+  const html = serializeProtocol(doc);
+  assert.match(html, /media-src data:/); assert.equal((html.match(/<video /g) ?? []).length, 2);
+  for (const block of doc.blocks.filter(b => b.kind === "video")) {
+    assert.equal(html.split(block.dataUrl).length - 1, 1, "each video payload is stored once");
+  }
+  const metadata = JSON.parse(/id="clark-protocol-data">([\s\S]*?)<\/script>/.exec(html)[1]);
+  assert.ok(metadata.blocks.filter(b => b.kind === "video").every(b => !("dataUrl" in b)));
+  const saved = await saveTaskProtocol(fs.task, "movies.html", doc, null);
+  for (const key of [...fs.files.keys()]) if (!key.startsWith("DOCS/")) fs.files.delete(key);
+  fs.dirs.delete("output3XX/demo"); fs.dirs.delete("output3XX");
+  const reopened = (await readTaskProtocol(fs.task, saved.name)).document;
+  assert.deepEqual(reopened, saved.document);
+  const augmented = appendProtocolBlocks(reopened, [image("later")]);
+  assert.deepEqual(augmented.blocks.map(b => b.kind), ["text", "image", "image", "video", "video"]);
+  assert.deepEqual(parseProtocol(serializeProtocol(augmented)), augmented);
+});
+
+test("version 1 protocols remain readable; adding a movie upgrades them without changing old blocks", async () => {
+  const original = { ...newProtocol("Task", [image("old")]), version: 1 };
+  assert.deepEqual(parseProtocol(serializeProtocol(original)), original);
+  const fs = filesystem(); fs.dirs.add("output3XX/demo"); fs.files.set("output3XX/demo/a.webm", webm());
+  const movies = await readProtocolVideos(fs.task, PROTOCOL_MAX_BYTES);
+  const updated = appendProtocolBlocks(original, movies);
+  assert.equal(updated.version, 2); assert.deepEqual(updated.blocks[0], original.blocks[0]);
+  assert.deepEqual(parseProtocol(serializeProtocol(updated)), updated);
+  for (const filename of [".webm", "a".repeat(240) + ".webm"])
+    assert.doesNotThrow(() => serializeProtocol({ ...updated, blocks: [{ ...movies[0], filename }] }));
+  assert.throws(() => parseProtocol(serializeProtocol(updated).replace(/<video[^>]*>/, "")), /отсутствует встроенная/);
+  assert.throws(() => serializeProtocol({ ...updated, blocks: [{ ...movies[0], dataUrl: "https://example.com/a.webm" }] }), /WebM/);
+});
+
+test("corrupt, oversized or cancelled WebM collection fails as a whole without creating DOCS", async () => {
+  const fs = filesystem(); fs.dirs.add("output3XX/demo");
+  fs.files.set("output3XX/demo/a.webm", webm()); fs.files.set("output3XX/demo/b.webm", "not a movie");
+  await assert.rejects(createTaskProtocol(fs.task), /b.webm/);
+  assert.equal(fs.dirs.has("DOCS"), false);
+  fs.files.delete("output3XX/demo/b.webm");
+  await assert.rejects(readProtocolVideos(fs.task, 1), /256 МиБ/);
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(createTaskProtocol(fs.task, [], { signal: controller.signal }), { name: "AbortError" });
+  assert.equal(fs.dirs.has("DOCS"), false);
+});
+
+test("chunked base64 retains complete WebM bytes across chunk boundaries", async () => {
+  const bytes = new Uint8Array(3 * 1024 * 1024 + 7); bytes.fill(91);
+  const movie = webm(bytes), fs = filesystem(); fs.dirs.add("output3XX/demo");
+  fs.files.set("output3XX/demo/large.webm", movie);
+  const [block] = await readProtocolVideos(fs.task, PROTOCOL_MAX_BYTES);
+  assert.deepEqual(Buffer.from(block.dataUrl.split(",")[1], "base64"), Buffer.from(await movie.arrayBuffer()));
 });

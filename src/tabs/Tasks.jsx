@@ -13,6 +13,7 @@ import { ProjectDiskDialog } from "../components/tasks/ProjectDiskDialog.jsx";
 import { LastOpenedTaskMarker, ProjectSelectValue } from "../components/tasks/LastOpenedTaskMarker.jsx";
 import { useTaskStatuses } from "../services/taskStatusMonitor.js";
 import { createTaskTestProtocolWindow } from "../services/taskTestProtocolWindow.js";
+import { TaskProtocolDownload, useTaskProtocolDownloads } from "../components/tasks/TaskProtocolDownload.jsx";
 import "../components/geometry/ResultsGeometryViewport.css";
 
 export function Tasks(props) {
@@ -27,6 +28,7 @@ export function Tasks(props) {
   let catalogSelect;
   const [root, setRoot] = createSignal(null), [projects, setProjects] = createSignal([]);
   const [project, setProject] = createSignal(""), [tasks, setTasks] = createSignal([]);
+  const protocolDownloads = useTaskProtocolDownloads(tasks, () => props.docsRevision);
   const taskStatus = useTaskStatuses(
     () => tasks().map(item => ({ key: item.handle, handle: item.handle })),
   );
@@ -335,7 +337,11 @@ export function Tasks(props) {
             onDblClick={() => { if (candidate()?.handle === item.handle) void load(); }}
             title="Двойной щелчок — загрузить задание для просмотра">
             <TaskStatusCells status={taskStatus(item.handle)} disabled={props.busy || browserBusy()}
-              onOpenProtocols={() => { void openTestProtocols(item); }} /><span class="task-status-name"><Show when={isLastTask(item)}><LastOpenedTaskMarker label="Последнее открытое задание" /></Show>{item.name}</span>
+              onOpenProtocols={() => { void openTestProtocols(item); }} /><span class="task-status-name">
+              <span class="task-status-label"><Show when={isLastTask(item)}><LastOpenedTaskMarker label="Последнее открытое задание" /></Show>{item.name}</span>
+              <TaskProtocolDownload taskHandle={item.handle} taskName={item.name} record={protocolDownloads(item.handle)}
+                disabled={props.busy || browserBusy()} />
+            </span>
           </div>}</For>
         </div>
         <div class="task-load-row">

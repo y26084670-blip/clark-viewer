@@ -11,7 +11,8 @@
 .protocol-block { border: 1px solid #596773; margin: 14px 0; padding: 12px; border-radius: 4px; }
 .protocol-block-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .protocol-block-header strong { flex: 1; }
-.protocol-block img { display: block; max-width: 100%; max-height: 360px; object-fit: contain; margin: 0 auto 10px; background: white; }
+.protocol-block img, .protocol-block video { display: block; max-width: 100%; max-height: 360px; object-fit: contain; margin: 0 auto 10px; background: white; }
+.protocol-block video { min-width: min(320px, 100%); }
 .protocol-block pre { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .protocol-block textarea { display: block; width: 100%; min-height: 60px; resize: vertical; }
 .protocol-block table { border-collapse: collapse; font-size: 13px; width: 100%; }

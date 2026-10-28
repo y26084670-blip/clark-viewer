@@ -38,7 +38,7 @@ export function validateUpdatesFeed(value) {
       throw new Error("Некорректная запись журнала обновлений.");
     }
     ids.add(item.id);
-    for (const key of ["action", "limitations", "detailsUrl", "status"]) {
+    for (const key of ["action", "limitations", "detailsUrl", "status", "titleNote"]) {
       if (item[key] !== undefined && typeof item[key] !== "string") throw new Error("Некорректная запись журнала обновлений.");
     }
   }

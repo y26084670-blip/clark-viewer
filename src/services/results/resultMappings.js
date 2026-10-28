@@ -12,6 +12,10 @@ export const QUANTITIES = Object.freeze({
     components: 1, productOffsets: [3, 6], factor: 1e-3, group: "elements", solvedOnly: true },
   sigmaRelative: { label: "Относительная электропроводность", formula: "σ/j_gmin", unit: "отн. ед.", file: "JE", offset: 3,
     components: 1, relativeConductivity: true, group: "elements", solvedOnly: true },
+  MResidual: { label: "M-невязка по запросу", unit: "кА/м", file: "MH_work", offset: 3,
+    components: 1, workResidual: true, group: "elements", solvedOnly: true },
+  JResidual: { label: "J-невязка по запросу", unit: "А/мм²", file: "JE_work", offset: 3,
+    components: 1, workResidual: true, group: "elements", solvedOnly: true },
   Bs: { label: "Индукция B — области", unit: "Тл", file: "HS", offset: 3, components: 3, group: "regions", mirrorParity: "magnetic" },
   As: { label: "Векторный потенциал A — области", unit: "Тл·м", file: "AS", offset: 3, components: 3, group: "regions", factor: MU0, mirrorParity: "opposite" },
   Bv: { label: "Индукция B — виртуальные элементы", unit: "Тл", file: "HV", offset: 3, components: 3, group: "elements", mirrorParity: "magnetic" },
@@ -24,6 +28,8 @@ export function assignedHtsElements(task) {
 }
 
 export function sourceRecords(task, file) {
+  if (file === "MH_work") return task.elements.filter(e => e.targ === 0 && kvFlags(e).mv);
+  if (file === "JE_work") return task.elements.filter(e => e.targ === 0 && kvFlags(e).rv);
   if (file === "HS" || file === "AS") return task.regions;
   if (file === "HV" || file === "AV") return task.elements.filter(e => e.targ === 3);
   if (file === "MH") return task.elements.filter(e => kvFlags(e).mv);

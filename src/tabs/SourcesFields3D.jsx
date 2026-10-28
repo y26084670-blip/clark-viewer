@@ -75,7 +75,8 @@ export function SourcesFields3D(props) {
     selections: { elements: props.elements, regions: props.regions } });
   const graphBlocked = () => props.movieBusy || flightBusy() || !graphReady();
   const selectedSlice = () => graphSlices().find(s => s.id === activeSlice());
-  const graphQuantities = () => ({ elements: elementsQuantity(), regions: regionsQuantity(), virtual: virtualQuantity() });
+  const graphQuantities = () => ({ elements: QUANTITIES[elementsQuantity()]?.workResidual ? "none" : elementsQuantity(),
+    regions: regionsQuantity(), virtual: virtualQuantity() });
   const sliceScalar = slice => QUANTITIES[graphQuantityKey(props.task, slice, graphQuantities())]?.components !== 3;
   const sliceCount = (recordIndex, direction) => graphSliceCount(props.task?.elements?.[recordIndex], direction);
   const sliceLabel = (recordIndex, direction) => `${GRAPH_SLICE_DIRECTIONS[direction].label} (${sliceCount(recordIndex, direction) || "—"})`;
@@ -186,6 +187,7 @@ export function SourcesFields3D(props) {
     else event.currentTarget.value = streamlineMethod();
   }
   const [elementsQuantity, setElementsQuantity] = createGeometryViewSetting("resultElementsQuantity", "M");
+  const [residualRevision, setResidualRevision] = createSignal(0);
   const [regionsQuantity, setRegionsQuantity] = createGeometryViewSetting("resultRegionsQuantity", "none");
   const [virtualQuantity, setVirtualQuantity] = createGeometryViewSetting("resultVirtualQuantity", "none");
   const [scale, setScale] = createGeometryViewSetting("resultVectorScale", 1);
@@ -291,7 +293,8 @@ export function SourcesFields3D(props) {
     const chosen = quantities[group.key].read();
     const quantityKey = chosen === "sigmaRelative" && !conductivityAvailable() ? "none" : chosen;
     return { key: group.key, quantityKey, selected,
-      volumeMode: quantityKey !== "none" && volumeMode()
+      residualRevision: QUANTITIES[quantityKey]?.workResidual ? residualRevision() : 0,
+      volumeMode: quantityKey !== "none" && !QUANTITIES[quantityKey]?.workResidual && volumeMode()
         && (QUANTITIES[quantityKey]?.components === 1 || !normalizeVectors()) };
   }));
   const graphReader = createResultGraphReader();
@@ -302,7 +305,8 @@ export function SourcesFields3D(props) {
     const profiles = profileDefinitions();
     const wanted = new Set(profiles.map(p => p.graphId));
     const request = { task: props.task, time: props.time, quantities: graphQuantities(),
-      slices: graphReady() ? graphSlices().filter(s => sliceGraphs() || wanted.has(s.id)) : [], profiles,
+      slices: graphReady() ? graphSlices().filter(s => (sliceGraphs() || wanted.has(s.id))
+        && !QUANTITIES[props.task?.elements?.[s.recordIndex]?.targ === 3 ? virtualQuantity() : elementsQuantity()]?.workResidual) : [], profiles,
       regions: graphReady() && regionsQuantity() !== "none" ? (props.task?.regions ?? [])
         .filter(r => r.geoType !== 2 && (wanted.has(`region:${r.recordIndex}`) || areaGraphs() && requestedLayers().find(g => g.key === "regions").selected.includes(r.id))).map(r => r.recordIndex) : [] };
     return { ...request, quantityKey: graphRequestKey(request) };
@@ -402,7 +406,10 @@ export function SourcesFields3D(props) {
                       checked={quantities[key].read() === quantityKey}
                       disabled={unavailableConductivity(quantityKey)}
                       title={unavailableConductivity(quantityKey) ? "В задании нет материалов ВТСП" : undefined}
-                      onChange={() => quantities[key].write(quantityKey)} />
+                      onClick={() => {
+                        quantities[key].write(quantityKey);
+                        if (QUANTITIES[quantityKey]?.workResidual) setResidualRevision(value => value + 1);
+                      }} />
                     <span>{quantityText(quantityKey)}</span>
                   </label>
                   <Show when={quantityKey === (key === "elements" ? "sigmaRelative" : "As")}>

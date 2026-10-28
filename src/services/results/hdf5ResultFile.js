@@ -4,6 +4,7 @@ import { readResultRanges } from "./resultRanges.js";
 const families = {
   MH: [3, 2, true], JE: [3, 2, true], HS: [3, 1, true], AS: [3, 1, true],
   HV: [3, 1, true], AV: [3, 1, true], Q: [1, 1, true], FM: [3, 2, false], PSI: [1, 1, false],
+  MH_work: [1, 1, true], JE_work: [1, 1, true],
 };
 
 // Shared by the browser worker and actual-HDF5 integration checks in Node.
@@ -22,6 +23,10 @@ export class Hdf5ResultFile {
       throw new Error(`${name}.h5: HEADER не соответствует формату solver`);
     }
     this.steps = timeDatasets(handle.keys());
+    if (["MH_work", "JE_work"].includes(name)
+      && (this.steps.length !== 1 || this.steps[0].index !== 0)) {
+      throw new Error(`${name}.h5: ожидался один рабочий снимок`);
+    }
     this.byStep = new Map();
     this.pointCount = null;
     for (const step of this.steps) {

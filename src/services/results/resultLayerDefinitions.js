@@ -1,7 +1,7 @@
 // Independent 3D result groups; geometry visibility and list selection are separate.
 export const RESULT_LAYER_GROUPS = Object.freeze([
   Object.freeze({ key: "elements", label: "Элементы", defaultQuantity: "M",
-    quantities: Object.freeze(["none", "M", "H", "MHdot", "J", "E", "JEdot", "sigmaRelative"]) }),
+    quantities: Object.freeze(["none", "M", "H", "MHdot", "J", "E", "JEdot", "sigmaRelative", "MResidual", "JResidual"]) }),
   Object.freeze({ key: "regions", label: "Области", defaultQuantity: "none",
     quantities: Object.freeze(["none", "Bs", "As"]) }),
   Object.freeze({ key: "virtual", label: "Виртуальные", defaultQuantity: "none",
@@ -13,6 +13,7 @@ export const RESULT_LAYER_QUANTITY_LABELS = Object.freeze({
   M: "Намагниченность", H: "Напряженность МП", MHdot: "Плотность энергии ФММ",
   J: "Плотность тока", E: "Напряженность ЭП", JEdot: "Потери на токи проводимости",
   sigmaRelative: "Относительная электропроводность",
+  MResidual: "M-невязка по запросу", JResidual: "J-невязка по запросу",
   Bs: "Индукция", As: "Векторный потенциал",
   Bv: "Индукция", Av: "Векторный потенциал",
 });

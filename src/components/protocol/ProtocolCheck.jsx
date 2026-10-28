@@ -15,7 +15,6 @@ export function ProtocolCheck(props) {
     if (!add) { props.context.setProtocolEntry(props.entryKey, null); return; }
     const task = props.context.task, time = props.context.time;
     const title = props.title, moment = props.momentLabel ?? protocolMoment(task, time);
-    const comment = `${moment}${props.comment ? ` · ${props.comment}` : ""}`;
     const controller = new AbortController(); abort = controller;
     const timer = setTimeout(() => controller.abort(new Error("График не готов к снимку. Дождитесь загрузки и повторите.")), 15000);
     props.context.setProtocolBusy?.(true);
@@ -24,7 +23,7 @@ export function ProtocolCheck(props) {
       const image = props.capture ? await props.capture(options) : await captureProtocolMovie(props.adapter, options);
       controller.signal.throwIfAborted();
       if (props.context.task === task) props.context.setProtocolEntry(props.entryKey,
-        { ...image, id: crypto.randomUUID(), title, comment });
+        { ...image, id: crypto.randomUUID(), title, comment: "" });
     } catch (failure) { if (props.context.task === task) setError(failure.message || String(failure)); }
     finally { clearTimeout(timer); abort = null; props.context.setProtocolBusy?.(false); }
   }

@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appendProtocolBlocks, newProtocol, parseProtocol, serializeProtocol, PROTOCOL_MAX_BYTES } from "../src/services/protocol/protocolDocument.js";
+import { appendProtocolBlocks, canCommentProtocolBlock, newProtocol, parseProtocol, serializeProtocol, validateProtocol, PROTOCOL_MAX_BYTES } from "../src/services/protocol/protocolDocument.js";
 import { readProtocolVideos } from "../src/services/protocol/protocolMedia.js";
-import { createTaskProtocol, protocolFilename, readProtocolConditions, readTaskProtocol, saveTaskProtocol } from "../src/services/protocol/taskProtocolService.js";
+import { readProtocolDocs } from "../src/services/protocol/protocolDocs.js";
+import { createTaskProtocol, protocolFilename, readTaskProtocol, saveTaskProtocol } from "../src/services/protocol/taskProtocolService.js";
 import { captureProtocolRenderer } from "../src/services/protocol/protocolCapture.js";
 
 const image = id => ({ id, kind: "image", title: "Поле", comment: "Шаг 2", width: 1, height: 1,
@@ -68,16 +69,35 @@ function filesystem() {
     permission: value => { permission = value; }, failWrite: () => { failWrite = true; } };
 }
 
-test("DOCS is created only on save; conditions are available manually, missing output is allowed", async () => {
+test("DOCS is created only on save; conditions are excluded and missing output is allowed", async () => {
   const fs = filesystem(); fs.files.set("output3XX/conditions.json", '{"MPI": 4}\n');
   const doc = await createTaskProtocol(fs.task);
-  assert.equal((await readProtocolConditions(fs.task)).text, '{"MPI": 4}\n');
   assert.deepEqual(doc.blocks, []);
   assert.equal(fs.dirs.has("DOCS"), false); assert.equal(await readTaskProtocol(fs.task, "protocol.html"), null);
   const saved = await saveTaskProtocol(fs.task, "protocol.html", doc, null);
   assert.equal(fs.dirs.has("DOCS"), true);
   assert.deepEqual((await readTaskProtocol(fs.task, saved.name)).document, saved.document);
   fs.dirs.delete("output3XX"); assert.deepEqual((await createTaskProtocol(fs.task)).blocks, []);
+});
+
+test("empty comments produce no HTML paragraphs; summaries cannot be commented and entered comments survive", () => {
+  const blocks = [
+    { ...image("empty"), comment: "" },
+    { ...image("spaces"), comment: " \n\t\u00a0 " },
+    { id: "summary", kind: "text", source: "summary", title: "Сводка", text: "Done", comment: "Hidden summary comment" },
+    { id: "document", kind: "text", source: "docs", title: "DOCS/README.txt", text: "Notes", comment: "My <note> & detail" },
+  ];
+  assert.equal(canCommentProtocolBlock(blocks[2]), false);
+  assert.ok([blocks[0], blocks[1], blocks[3]].every(canCommentProtocolBlock));
+  const doc = newProtocol("Task", blocks), html = serializeProtocol(doc);
+  const body = html.slice(html.indexOf("<main>"), html.indexOf("</main>"));
+  assert.equal((body.match(/<p class="comment">/g) ?? []).length, 1);
+  assert.match(body, /My &lt;note&gt; &amp; detail/);
+  assert.equal(body.includes("Hidden summary comment"), false);
+  assert.deepEqual(parseProtocol(html), doc);
+  for (const block of [{ ...blocks[0], source: "docs" }, { ...blocks[3], source: "unknown" }]) {
+    assert.throws(() => validateProtocol({ ...doc, blocks: [block] }), /источник/);
+  }
 });
 
 test("existing or externally changed files cannot be overwritten silently; denied and failed writes preserve old data", async () => {
@@ -107,6 +127,53 @@ test("renderer export restores the chart on capture failure", async () => {
 });
 
 const webm = extra => new Blob([Uint8Array.from([0x1a,0x45,0xdf,0xa3,0x8b,0x42,0x82,0x84,0x77,0x65,0x62,0x6d,0,0,0,0]), extra ?? ""], { type: "video/webm" });
+
+test("every direct TXT/MD document is embedded literally after snapshots and before animations", async () => {
+  const fs = filesystem(); fs.dirs.add("DOCS"); fs.dirs.add("output3XX/demo");
+  fs.files.set("output3XX/_summary_out.txt", "Finished\nФайлы результатов:\nignored");
+  fs.files.set("DOCS/10-notes.txt", "Line 1\r\n<script>not executable</script>\n");
+  fs.files.set("DOCS/2-notes.MD", "# Markdown remains text\n");
+  fs.files.set("DOCS/empty.txt", "");
+  fs.files.set("DOCS/existing.html", "<h1>Do not embed another report</h1>");
+  fs.files.set("DOCS/image.png", "not text");
+  fs.files.set("DOCS/sub/nested.txt", "Not a direct document");
+  fs.files.set("other.txt", "Outside DOCS");
+  fs.files.set("output3XX/demo/a.webm", webm());
+  const snapshot = image("snapshot"), original = structuredClone(snapshot);
+  const doc = await createTaskProtocol(fs.task, [snapshot]);
+  assert.deepEqual(snapshot, original);
+  assert.deepEqual(doc.blocks.map(b => b.source ?? b.kind), ["summary", "image", "docs", "docs", "docs", "video"]);
+  assert.deepEqual(doc.blocks.filter(b => b.source === "docs").map(b => b.title),
+    ["Документ · DOCS/2-notes.MD", "Документ · DOCS/10-notes.txt", "Документ · DOCS/empty.txt"]);
+  assert.equal(doc.blocks[3].text, fs.files.get("DOCS/10-notes.txt"));
+  assert.ok(doc.blocks.every(b => b.comment === ""));
+  const html = serializeProtocol(doc);
+  assert.equal(html.includes('<p class="comment">'), false);
+  assert.equal(html.includes("<script>not executable"), false);
+  assert.match(html, /&lt;script&gt;not executable&lt;\/script&gt;/);
+  assert.deepEqual(parseProtocol(html), doc);
+  const amended = appendProtocolBlocks(doc, [image("later"), image("snapshot")]);
+  assert.deepEqual(amended.blocks.map(b => b.source ?? b.kind), ["summary", "image", "image", "docs", "docs", "docs", "video"]);
+  assert.deepEqual(fs.writes, []);
+  fs.files.clear();
+  assert.deepEqual(parseProtocol(html), doc, "embedded text survives removal of all source files");
+});
+
+test("DOCS text collection reports malformed, oversized, inaccessible and cancelled reads without partial writes", async () => {
+  const fs = filesystem();
+  assert.deepEqual(await readProtocolDocs(fs.task), []);
+  fs.dirs.add("DOCS"); fs.files.set("DOCS/a.txt", "valid");
+  fs.files.set("DOCS/b.txt", new Uint8Array([0xff]));
+  await assert.rejects(createTaskProtocol(fs.task), /b\.txt.*UTF-8/);
+  fs.files.set("DOCS/b.txt", new Blob(["x".repeat(2 * 1024 * 1024 + 1)]));
+  await assert.rejects(createTaskProtocol(fs.task), /b\.txt.*2 МиБ/);
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(readProtocolDocs(fs.task, { signal: controller.signal }), { name: "AbortError" });
+  await assert.rejects(readProtocolDocs({ handle: { kind: "directory", getDirectoryHandle() {
+    throw new DOMException("denied", "NotAllowedError");
+  } } }), { name: "NotAllowedError" });
+  assert.deepEqual(fs.writes, []);
+});
 
 test("all task WebM files follow summaries and marked views, are embedded once and survive loss of source files", async () => {
   const fs = filesystem(); fs.dirs.add("output3XX/demo");

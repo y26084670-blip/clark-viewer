@@ -72,6 +72,11 @@ try {
     'Отмеченный вид 1','Отмеченный вид 2','Анимация · a.webm']);
   assert.equal((await dialog.innerText()).includes('MH.h5 — подробное описание'),false);
   assert.equal((await dialog.innerText()).includes('must not be automatically inserted'),false);
+  assert.equal(await dialog.getByRole('button',{name:'Добавить условия расчёта',exact:true}).count(),0);
+  assert.equal(await dialog.getByLabel('Комментарий: Сводка исходных данных · input3XX/_summary.txt',{exact:true}).count(),0);
+  assert.equal(await dialog.getByLabel('Комментарий: Сводка расчёта · output3XX/_summary_out.txt',{exact:true}).count(),0);
+  assert.equal(await dialog.locator('textarea').count(),4);
+  assert.ok((await dialog.locator('textarea').evaluateAll(nodes=>nodes.map(node=>node.value))).every(value=>value===''));
   assert.equal(await page.evaluate(()=>fixture.permissions()),0);
   passed('Protocol order is scene → input summary → trimmed output summary → marked views → WebM, without an automatic conditions block');
 
@@ -87,6 +92,7 @@ try {
   await dialog.getByRole('status').filter({hasText:'Сохранено:'}).waitFor();
   const original=await page.evaluate(()=>fixture.doc()),source=await page.evaluate(()=>fixture.html());
   assert.equal(original.version,3);assert.equal(original.blocks[0].scene.objects[0].instances.length,32);
+  assert.equal(source.includes('<p class="comment">'),false);
   assert.equal(original.blocks[0].scene.objects[1].instances.length,4);
   assert.equal(original.blocks[2].text,'Расчёт завершён\r\nИтераций: 17');
   assert.equal((source.match(/<script>/g)||[]).length,1);

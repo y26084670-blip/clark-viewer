@@ -37,7 +37,7 @@ export async function readProtocolVideos(task, availableBytes, { signal } = {}) 
     signal?.throwIfAborted();
     try {
       blocks.push({ id: crypto.randomUUID(), kind: "video", filename: file.name,
-        title: `Анимация · ${file.name}`, comment: `output3XX/demo/${file.name}`,
+        title: `Анимация · ${file.name}`, comment: "",
         dataUrl: await webmDataUrl(file.blob, signal) });
     } catch (error) {
       signal?.throwIfAborted();

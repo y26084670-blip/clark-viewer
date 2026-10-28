@@ -2,6 +2,7 @@ import { appendProtocolBlocks, newProtocol, parseProtocol, PROTOCOL_MAX_BYTES, P
 import { readProtocolVideos } from "./protocolMedia.js";
 import { readProtocolScene } from "./protocolSceneCapture.js";
 import { readProtocolSummaries } from "./protocolSummaries.js";
+import { readProtocolDocs } from "./protocolDocs.js";
 const missing = error => error?.name === "NotFoundError";
 export function protocolFilename(value) {
   const name = String(value).trim();
@@ -34,15 +35,6 @@ export async function readTaskProtocol(task, filename) {
   const html = await file.text();
   return { name, html, document: parseProtocol(html) };
 }
-export async function readProtocolConditions(task) {
-  try {
-    const output = await task.handle.getDirectoryHandle("output3XX");
-    const file = await (await output.getFileHandle("conditions.json")).getFile();
-    if (file.size > 2 * 1024 * 1024) throw new Error("conditions.json превышает 2 МиБ.");
-    return { id: crypto.randomUUID(), kind: "text", title: "Условия расчёта · output3XX/conditions.json",
-      comment: "Содержимое файла на момент добавления в протокол.", text: await file.text() };
-  } catch (error) { if (missing(error)) return null; throw error; }
-}
 export async function createTaskProtocol(task, snapshots = [], { signal } = {}) {
   signal?.throwIfAborted();
   let path = task.plotLabel || task.name || task.handle.name;
@@ -54,8 +46,10 @@ export async function createTaskProtocol(task, snapshots = [], { signal } = {}) 
   }
   const scene = await readProtocolScene(task, { signal });
   const summaries = await readProtocolSummaries(task, { signal });
+  const documents = await readProtocolDocs(task, { signal });
   signal?.throwIfAborted();
-  const draft = newProtocol(path, [...(scene ? [scene] : []), ...summaries, ...snapshots]);
+  const draft = newProtocol(path, [...(scene ? [scene] : []), ...summaries,
+    ...snapshots.map(block => ({ ...block, comment: "" })), ...documents]);
   const baseBytes = new TextEncoder().encode(serializeProtocol(draft)).length;
   const videos = await readProtocolVideos(task, PROTOCOL_MAX_BYTES - baseBytes, { signal });
   const document = appendProtocolBlocks(draft, videos);

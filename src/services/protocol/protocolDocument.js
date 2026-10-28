@@ -7,6 +7,8 @@ export const PROTOCOL_SIZE_ERROR = "Протокол превышает 256 Ми
 const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const text = (value, limit = 10000) => typeof value === "string" && value.length <= limit;
 
+export const canCommentProtocolBlock = block => block?.source !== "summary";
+
 export function validateProtocol(doc) {
   if (doc?.schema !== PROTOCOL_SCHEMA || ![1, 2, 3].includes(doc.version) || !text(doc.id, 100) || !doc.id
     || !text(doc.taskPath) || !text(doc.createdAt, 100) || !text(doc.updatedAt, 100)
@@ -17,6 +19,9 @@ export function validateProtocol(doc) {
       throw new Error("Некорректный блок протокола.");
     }
     ids.add(block.id);
+    if (block.source !== undefined && (block.kind !== "text" || !["summary", "docs"].includes(block.source))) {
+      throw new Error("Неизвестный источник текстового блока протокола.");
+    }
     if (block.kind === "image") {
       if (!text(block.dataUrl, 16 * 1024 * 1024) || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(block.dataUrl)
         || !Number.isSafeInteger(block.width) || !Number.isSafeInteger(block.height) || block.width < 1 || block.height < 1
@@ -59,7 +64,8 @@ export function appendProtocolBlocks(doc, blocks) {
   })];
   return validateProtocol({ ...doc, version: combined.some(block => block.kind === "scene") ? 3
     : combined.some(block => block.kind === "video") ? Math.max(2, doc.version) : doc.version,
-    blocks: [...combined.filter(block => block.kind !== "video"), ...combined.filter(block => block.kind === "video")] });
+    blocks: [...combined.filter(block => block.kind !== "video" && block.source !== "docs"),
+      ...combined.filter(block => block.source === "docs"), ...combined.filter(block => block.kind === "video")] });
 }
 
 function blockHtml(block, index) {
@@ -68,7 +74,9 @@ function blockHtml(block, index) {
     : block.kind === "video" ? `<video data-protocol-video="${index}" src="${block.dataUrl}" controls preload="metadata" playsinline aria-label="${esc(block.filename)}"></video>`
       : block.kind === "text" ? `<pre>${esc(block.text)}</pre>`
       : `<div class="table-scroll"><table><thead><tr>${block.table.headers.map(value => `<th>${esc(value)}</th>`).join("")}</tr></thead><tbody>${block.table.rows.map(row => `<tr>${row.map(value => `<td>${esc(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
-  return `<section data-block-id="${esc(block.id)}"><h2>${esc(block.title)}</h2>${content}<p class="comment">${esc(block.comment)}</p></section>`;
+  const comment = canCommentProtocolBlock(block) && block.comment.trim()
+    ? `<p class="comment">${esc(block.comment)}</p>` : "";
+  return `<section data-block-id="${esc(block.id)}"><h2>${esc(block.title)}</h2>${content}${comment}</section>`;
 }
 
 export function serializeProtocol(document) {

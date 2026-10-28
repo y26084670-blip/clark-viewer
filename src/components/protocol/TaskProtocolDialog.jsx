@@ -1,12 +1,13 @@
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { appendProtocolBlocks, serializeProtocol } from "../../services/protocol/protocolDocument.js";
-import { createTaskProtocol, listTaskProtocols, readProtocolConditions, readTaskProtocol, saveTaskProtocol } from "../../services/protocol/taskProtocolService.js";
+import { createTaskProtocol, readProtocolConditions, readTaskProtocol, saveTaskProtocol } from "../../services/protocol/taskProtocolService.js";
 import "./Protocol.css";
 
 export function TaskProtocolDialog(props) {
   let dialog, revision = 0, saved = null, readAbort, saveAbort, previewUrl;
   const [doc, setDoc] = createSignal(null);
   const [filename, setFilename] = createSignal("protocol.html"), [selected, setSelected] = createSignal("");
+  const [replacement, setReplacement] = createSignal("");
   const [loading, setLoading] = createSignal(false), [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal(""), [notice, setNotice] = createSignal("");
   const pending = () => Object.values(props.entries ?? {});
@@ -17,19 +18,19 @@ export function TaskProtocolDialog(props) {
     readAbort?.abort();
     const controller = new AbortController(); readAbort = controller;
     const current = ++revision, task = props.task;
-    setLoading(true); setError(""); setNotice(""); setDoc(null); saved = null; setSelected(name);
+    setLoading(true); setError(""); setNotice(""); setDoc(null); saved = null; setSelected(name); setReplacement("");
     try {
-      const available = name ? [] : await listTaskProtocols(task);
-      if (current !== revision) return;
-      const existing = name ? await readTaskProtocol(task, name) : null;
+      // Capture the previous HTML for the existing conflict check. Creating a
+      // protocol rebuilds current snapshots/videos instead of editing old blocks.
+      const existing = await readTaskProtocol(task, name || "protocol.html");
+      controller.signal.throwIfAborted();
       if (name && !existing) throw new Error("Протокол удалён или перемещён. Обновите список файлов.");
-      const draft = existing?.document ?? await createTaskProtocol(task, pending(), { signal: controller.signal });
+      const draft = name ? existing.document : await createTaskProtocol(task, pending(), { signal: controller.signal });
       controller.signal.throwIfAborted();
       if (current !== revision || !props.open || task !== props.task) return;
       saved = existing; setDoc(draft);
-      let next = "protocol.html", suffix = 2;
-      while (!name && available.includes(next)) next = `protocol-${suffix++}.html`;
-      setFilename(name || next);
+      setFilename(name || "protocol.html");
+      setReplacement(!name && existing ? existing.name : "");
       dialog.scrollTop = 0;
     } catch (failure) { if (current === revision) setError(failure.message); }
     finally { if (current === revision) setLoading(false); }
@@ -78,7 +79,7 @@ export function TaskProtocolDialog(props) {
       { signal: saveAbort.signal });
     setSaving(true); props.onBusyChange?.(true); setError(""); setNotice("");
     try {
-      saved = await operation; setDoc(saved.document); setSelected(saved.name); setFilename(saved.name);
+      saved = await operation; setDoc(saved.document); setSelected(saved.name); setFilename(saved.name); setReplacement("");
       setNotice(`Сохранено: DOCS/${saved.name}. Для повторного редактирования разверните протокол во вкладке DOCS.`);
       props.onSaved?.({ task, name: saved.name });
     } catch (failure) { setError(failure.message); }
@@ -93,6 +94,9 @@ export function TaskProtocolDialog(props) {
       <Show when={selected()}><p class="viewer-movie-note">Файл: DOCS/{selected()} <button type="button" onClick={() => void read(selected())}>Перечитать</button></p>
         <p class="viewer-movie-note">«Перечитать» отменяет несохранённые правки в этом окне.</p></Show>
       <label>Имя файла <input type="text" aria-label="Имя файла протокола" value={filename()} onInput={event => setFilename(event.currentTarget.value)} /></label>
+      <Show when={replacement() && replacement() === filename().trim()}>
+        <p class="viewer-movie-note">При сохранении DOCS/{replacement()} будет перезаписан текущим содержимым протокола.</p>
+      </Show>
       <Show when={doc()}>
         <p class="viewer-movie-note">Задание в протоколе: {doc()?.taskPath}</p>
         <div class="protocol-dialog-toolbar">

@@ -121,10 +121,11 @@ try {
   await page.screenshot({ path: `${output}/protocol-dialog.png` });
   await dialog().getByRole("button", { name: "Закрыть", exact: true }).click();
   await tools();
-  await page.waitForFunction(() => document.querySelector('[aria-label="Имя файла протокола"]')?.value === "protocol-2.html");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Имя файла протокола"]')?.value === "protocol.html");
+  await dialog().getByText('При сохранении DOCS/protocol.html будет перезаписан текущим содержимым протокола.', { exact: true }).waitFor();
   assert.equal(await dialog().getByLabel("Открыть существующий протокол").count(), 0);
   await dialog().getByRole("button", { name: "Закрыть", exact: true }).click();
-  checks.push("Tools always starts a new protocol with a free filename");
+  checks.push("Tools rebuilds protocol.html and offers to overwrite it on Save without numbered copies");
   await tab("Поле на линиях").click(); await ready();
   await mark().click(); await capture();
   await editFromDocs();

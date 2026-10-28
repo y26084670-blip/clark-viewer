@@ -44,6 +44,9 @@ window.fixture={ready:true,permissions:()=>permissions,
  async document(){return parseProtocol(await this.html());},
  async erase(){await task.removeEntry('output3XX',{recursive:true});await task.removeEntry('outside.webm');localStorage.setItem('protocol-no-sources','1');},
  async corrupt(){await put(task,'output3XX/demo/broken.webm','invalid');},
+ async recalculate(){await put(task,'output3XX/conditions.json','{"test":"recalculated"}');
+  await put(task,'output3XX/demo/a.WEBM',bytes(clips[1]));await put(task,'output3XX/demo/z.webm',bytes(clips[0]));},
+ async external(){await put(task,'DOCS/protocol.html',(await this.html())+'\\n');},
  async names(){const docs=await task.getDirectoryHandle('DOCS');const names=[];for await(const[name]of docs.entries())names.push(name);return names;}
 };return <TaskProtocolDialog open={open()} task={currentTask} initialFilename={name()} entries={entries()} onClose={()=>setOpen(false)}/>;}
 render(()=><Fixture/>,document.getElementById('root'));
@@ -72,10 +75,12 @@ try {
   passed("All and only current task WebM files are appended after conditions and selected views; opening requests no write permission");
   await page.waitForFunction(() => [...document.querySelectorAll('.protocol-block video')].every(v => v.videoWidth === 96 && v.duration > 1.5));
   passed("Actual native WebM players load both real VP9 animations in the protocol dialog");
+  await page.getByLabel('Комментарий: Снимок 1', {exact:true}).fill('Старый комментарий');
   await dialog.getByRole('button', { name: 'Сохранить в DOCS', exact: true }).click();
   await page.getByRole('status').filter({hasText:'Сохранено:'}).waitFor();
   assert.equal(await page.evaluate(() => fixture.permissions()), 1);
-  const original = await page.evaluate(() => fixture.document()), html = await page.evaluate(() => fixture.html());
+  let original = await page.evaluate(() => fixture.document());
+  const html = await page.evaluate(() => fixture.html());
   assert.equal(original.version, 2);
   for (const block of original.blocks.filter(b => b.kind === 'video')) assert.equal(html.split(block.dataUrl).length - 1, 1);
   passed("Saved HTML contains each video once and carries the complete editable version 2 document");
@@ -86,6 +91,34 @@ try {
   await popup.close();
   passed("HTML preview plays embedded media with the document's restrictive content policy");
   await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await page.evaluate(() => fixture.recalculate());await page.evaluate(() => fixture.open());
+  await page.waitForFunction(() => document.querySelectorAll('.protocol-block video').length === 2);
+  assert.equal(await dialog.getByLabel('Имя файла протокола',{exact:true}).inputValue(),'protocol.html');
+  await dialog.getByText('При сохранении DOCS/protocol.html будет перезаписан текущим содержимым протокола.',{exact:true}).waitFor();
+  assert.equal(await page.getByLabel('Комментарий: Снимок 1',{exact:true}).inputValue(),'Исходный комментарий');
+  assert.equal(await page.evaluate(()=>fixture.html()),html,'Opening must leave the saved protocol untouched');
+  await dialog.getByRole('button',{name:'Закрыть',exact:true}).click();
+  assert.equal(await page.evaluate(()=>fixture.html()),html,'Closing without Save must keep the saved protocol');
+  await page.evaluate(()=>fixture.open());await page.waitForFunction(()=>document.querySelectorAll('.protocol-block video').length===2);
+  await dialog.getByRole('button',{name:'Сохранить в DOCS',exact:true}).click();
+  await page.getByRole('status').filter({hasText:'Сохранено:'}).waitFor();
+  const replaced=await page.evaluate(()=>fixture.document());
+  assert.notEqual(replaced.id,original.id);
+  assert.equal(replaced.blocks[0].text,'{"test":"recalculated"}');
+  assert.notEqual(replaced.blocks.find(b=>b.filename==='a.WEBM').dataUrl,original.blocks.find(b=>b.filename==='a.WEBM').dataUrl);
+  assert.equal(replaced.blocks.find(b=>b.id==='Снимок 1').comment,'Исходный комментарий');
+  assert.deepEqual(await page.evaluate(()=>fixture.names()),['protocol.html']);original=replaced;
+  passed('Repeated creation rebuilds current conditions, snapshots and WebM and overwrites protocol.html only on Save, without numbered copies');
+
+  await dialog.getByRole('button',{name:'Закрыть',exact:true}).click();await page.evaluate(()=>fixture.open());
+  await page.waitForFunction(()=>document.querySelectorAll('.protocol-block video').length===2);
+  await page.evaluate(()=>fixture.external());const externallyChanged=await page.evaluate(()=>fixture.html());
+  await dialog.getByRole('button',{name:'Сохранить в DOCS',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'изменён после открытия'}).waitFor();
+  assert.equal(await page.evaluate(()=>fixture.html()),externallyChanged);
+  assert.deepEqual(await page.evaluate(()=>fixture.names()),['protocol.html']);
+  passed('Regeneration still detects external edits after opening and preserves the changed file without creating a copy');
+  await dialog.getByRole('button',{name:'Закрыть',exact:true}).click();
   await page.evaluate(() => fixture.erase()); await page.reload(); await page.waitForFunction(() => window.fixture?.ready);
   await page.evaluate(() => fixture.reopen());
   await page.waitForFunction(() => document.querySelectorAll('.protocol-block video').length === 2);
@@ -118,10 +151,12 @@ try {
   await standalone.screenshot({path:path.join(output,'portable-protocol.png'),fullPage:true});
   passed("Copied single HTML works from file:// offline with JavaScript disabled: both videos decode, play, pause and seek without external requests");
   await dialog.getByRole('button',{name:'Закрыть',exact:true}).click();await page.evaluate(()=>fixture.corrupt());
+  const beforeFailure=await page.evaluate(()=>fixture.html());
   await page.evaluate(()=>fixture.open());
   await page.getByRole('alert').filter({hasText:'broken.webm'}).waitFor();
   assert.equal(await dialog.getByRole('button',{name:'Сохранить в DOCS',exact:true}).isDisabled(),true);
   assert.deepEqual(await page.evaluate(()=>fixture.names()),['protocol.html']);
+  assert.equal(await page.evaluate(()=>fixture.html()),beforeFailure);
   passed("A corrupt task WebM prevents partial protocol creation and leaves the saved document untouched");
   assert.deepEqual(errors,[]);
   await writeFile(path.join(output,'browser.json'),JSON.stringify({checks,errors},null,2));

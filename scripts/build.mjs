@@ -2,12 +2,14 @@ import { spawnSync } from 'node:child_process';
 import { constants } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
+import { buildProtocolScene } from './build-protocol-scene.mjs';
 
 const startedAt = performance.now();
 const root = fileURLToPath(new URL('../', import.meta.url));
 const label = process.env.npm_lifecycle_event || 'build';
 
 try {
+  await buildProtocolScene();
   const result = spawnSync(process.execPath,
     ['node_modules/vite/bin/vite.js', 'build', ...process.argv.slice(2)],
     { cwd: root, stdio: 'inherit' });

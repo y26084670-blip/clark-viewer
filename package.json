@@ -1,7 +1,7 @@
 {
   "name": "clark-viewer",
   "private": true,
-  "version": "4.59.2",
+  "version": "4.60.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,9 @@
     "build:release": "node scripts/build.mjs --mode production",
     "build:pages": "node scripts/build.mjs --mode production --base=/clark-viewer/",
     "preview": "vite preview",
-    "test": "node --test"
+    "test": "node --test",
+    "pretest": "node scripts/build-protocol-scene.mjs",
+    "predev": "node scripts/build-protocol-scene.mjs"
   },
   "dependencies": {
     "@libav.js/variant-webm-vp9": "6.10.9",

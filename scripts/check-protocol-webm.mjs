@@ -5,11 +5,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import solid from "vite-plugin-solid";
+import { buildProtocolScene } from "./build-protocol-scene.mjs";
 
 // Real dialog, OPFS, native WebM players and portable HTML. No solver data.
 const root = fileURLToPath(new URL("..", import.meta.url));
 const output = process.env.CHECK_OUTPUT || "/tmp/clark-protocol-webm";
 const fixture = path.join(root, "__protocol_webm_check__");
+await buildProtocolScene();
 await mkdir(output, { recursive: true }); await mkdir(fixture, { recursive: true });
 const clips = [];
 for (const [index, source] of ["testsrc2", "smptebars"].entries()) {
@@ -30,7 +32,7 @@ const bytes=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 async function put(handle,payload,data){const parts=payload.split('/'),name=parts.pop();let dir=handle;
  for(const p of parts)dir=await dir.getDirectoryHandle(p,{create:true});const writer=await(await dir.getFileHandle(name,{create:true})).createWritable();await writer.write(data);await writer.close();}
 if(!localStorage.getItem('protocol-no-sources')){
- await put(task,'output3XX/conditions.json','{"test":"portable WebM"}');
+ await put(task,'output3XX/_summary_out.txt','Расчёт WebM завершён');
  await put(task,'output3XX/demo/z.webm',bytes(clips[1]));await put(task,'output3XX/demo/a.WEBM',bytes(clips[0]));
  await put(task,'output3XX/demo/legacy.gif','GIF89a');await put(task,'outside.webm',bytes(clips[0]));
  await put(other,'output3XX/demo/foreign.webm',bytes(clips[0]));}
@@ -44,7 +46,7 @@ window.fixture={ready:true,permissions:()=>permissions,
  async document(){return parseProtocol(await this.html());},
  async erase(){await task.removeEntry('output3XX',{recursive:true});await task.removeEntry('outside.webm');localStorage.setItem('protocol-no-sources','1');},
  async corrupt(){await put(task,'output3XX/demo/broken.webm','invalid');},
- async recalculate(){await put(task,'output3XX/conditions.json','{"test":"recalculated"}');
+ async recalculate(){await put(task,'output3XX/_summary_out.txt','Расчёт WebM обновлён');
   await put(task,'output3XX/demo/a.WEBM',bytes(clips[1]));await put(task,'output3XX/demo/z.webm',bytes(clips[0]));},
  async external(){await put(task,'DOCS/protocol.html',(await this.html())+'\\n');},
  async names(){const docs=await task.getDirectoryHandle('DOCS');const names=[];for await(const[name]of docs.entries())names.push(name);return names;}
@@ -70,9 +72,9 @@ try {
   const dialog = page.getByRole("dialog");
   await page.waitForFunction(() => document.querySelectorAll('.protocol-block video').length === 2);
   assert.deepEqual(await dialog.locator('.protocol-block-header strong').allTextContents(),
-    ['Условия расчёта · output3XX/conditions.json', 'Снимок 1', 'Анимация · a.WEBM', 'Анимация · z.webm']);
+    ['Сводка расчёта · output3XX/_summary_out.txt', 'Снимок 1', 'Анимация · a.WEBM', 'Анимация · z.webm']);
   assert.equal(await page.evaluate(() => fixture.permissions()), 0);
-  passed("All and only current task WebM files are appended after conditions and selected views; opening requests no write permission");
+  passed("All and only current task WebM files are appended after summaries and selected views; opening requests no write permission");
   await page.waitForFunction(() => [...document.querySelectorAll('.protocol-block video')].every(v => v.videoWidth === 96 && v.duration > 1.5));
   passed("Actual native WebM players load both real VP9 animations in the protocol dialog");
   await page.getByLabel('Комментарий: Снимок 1', {exact:true}).fill('Старый комментарий');
@@ -104,7 +106,7 @@ try {
   await page.getByRole('status').filter({hasText:'Сохранено:'}).waitFor();
   const replaced=await page.evaluate(()=>fixture.document());
   assert.notEqual(replaced.id,original.id);
-  assert.equal(replaced.blocks[0].text,'{"test":"recalculated"}');
+  assert.equal(replaced.blocks[0].text,'Расчёт WebM обновлён');
   assert.notEqual(replaced.blocks.find(b=>b.filename==='a.WEBM').dataUrl,original.blocks.find(b=>b.filename==='a.WEBM').dataUrl);
   assert.equal(replaced.blocks.find(b=>b.id==='Снимок 1').comment,'Исходный комментарий');
   assert.deepEqual(await page.evaluate(()=>fixture.names()),['protocol.html']);original=replaced;

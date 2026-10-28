@@ -76,6 +76,51 @@ function runtime({initial=series(), failInit=false, autoScaleToggle=true, ChartI
 const bounds=chart=>({xMin:chart.scales.x.min,xMax:chart.scales.x.max,yMin:chart.scales.y.min,yMax:chart.scales.y.max});
 const pointer=(x,y,button=0)=>({clientX:x,clientY:y,button,buttons:button===2?2:1,pointerId:1,isPrimary:true,preventDefault(){}});
 
+function assertVisibleMarkers(h, points) {
+  const chart = h.chart(), { x, y } = chart.scales;
+  const expected = points.filter(p => p.x >= x.min && p.x <= x.max && p.y >= y.min && p.y <= y.max)
+    .map(p => [x.getPixelForValue(p.x), y.getPixelForValue(p.y)]);
+  assert.ok(expected.length > 2, "fixture must keep several visible points");
+  h.calls.length = 0; chart.draw();
+  const circles = h.calls.filter(call => call.name === "arc").map(call => call.args.slice(0, 2));
+  assert.deepEqual(circles, expected, "every visible point, including repeated X, must be drawn in source order");
+}
+
+for (const showLine of [false, true]) {
+  test(`real Chart.js keeps unsorted ${showLine ? "XY curves" : "working points"} visible after Auto-off, zoom and frame changes`, async () => {
+    // The maximum occurs in the middle; later points return inside the curve.
+    // parsing:false wrongly enables Chart.js's sorted-X binary clipping.
+    const points = [0, 1, 2, 10, 10, 2, 6, 1, 5].map((x, row) => ({ x, y: x, row }));
+    const makeSeries = data => [
+      { label: "characteristic", points: [{ x: 0, y: 0 }, { x: 10, y: 10 }], pointRadius: 0 },
+      { label: "calculated", points: data, pointRadius: 3, showLine, tooltip: p => [`row=${p.row}`] },
+    ];
+    const h = runtime({ initial: makeSeries(points), ChartImplementation: RealChart });
+    try {
+      const chart = h.chart(), original = bounds(chart);
+      assertVisibleMarkers(h, points);
+      h.toggleAutoScale(); assert.equal(h.autoScale(), false); assert.deepEqual(bounds(chart), original);
+      assertVisibleMarkers(h, points);
+      const at = (x, y, button = 0) => pointer(chart.scales.x.getPixelForValue(x) * 400 / chart.width,
+        chart.scales.y.getPixelForValue(y) * 200 / chart.height, button);
+      h.startSelection(at(1.5, 8.5)); h.finishSelection(at(8.5, 1.5));
+      assert.ok(chart.scales.x.max < original.xMax); assertVisibleMarkers(h, points);
+      const zoomed = bounds(chart), next = points.map(p => ({ ...p, x: p.x - 0.1 })), key = { step: 1 };
+      h.publish(makeSeries(next), key); assert.deepEqual(bounds(chart), zoomed); assertVisibleMarkers(h, next);
+      assert.equal(chart.data.datasets[1].data, next);
+      assert.deepEqual(chart.getDatasetMeta(1)._parsed.map(p => p.x), next.map(p => p.x));
+      assert.deepEqual(chart.options.plugins.tooltip.callbacks.label({ datasetIndex: 1, raw: next[6] }), ["row=6"]);
+      h.captureAdapter.prepare(); await h.captureAdapter.renderReady(key); h.captureAdapter.capture(key);
+      assert.deepEqual(bounds(chart), zoomed); assertVisibleMarkers(h, next);
+      h.captureAdapter.restore(); assertVisibleMarkers(h, next);
+      chart.setDatasetVisibility(1, false); chart.update("none"); h.calls.length = 0; chart.draw();
+      assert.equal(h.calls.filter(call => call.name === "arc").length, 0);
+      chart.setDatasetVisibility(1, true); chart.update("none"); assertVisibleMarkers(h, next);
+      h.toggleAutoScale(); assert.equal(h.autoScale(), true); assertVisibleMarkers(h, next);
+    } finally { h.captureAdapter.restore(); h.dispose(); }
+  });
+}
+
 test("capture follows Auto while preserving visibility and restores the original chart settings", async()=>{
   const h=runtime(),chart=h.chart();chart.setDatasetVisibility(1,false);h.setShowLegend(true);
   const initial=bounds(chart),first=h.frame();await h.captureAdapter.renderReady(first);

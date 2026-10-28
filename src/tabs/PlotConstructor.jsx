@@ -142,7 +142,8 @@ export function PlotConstructor(props) {
       <label>Величина<select value={spec().key} title="Выберите стандартную величину результата или подключённый параметр ОМ"
         disabled={p.axis === "y" && !sourceReady()}
         onChange={e => p.set({ ...spec(), key: e.currentTarget.value, point: 1 })}>
-        <option value="" selected={!c()}>Выберите величину</option><For each={p.axis === "y" ? yChannels() : channels()}>{item => <option value={item.key} selected={spec().key === item.key}>{label(item)}</option>}</For>
+        <option value="" selected={!c()}>Выберите величину</option><For each={p.axis === "y" ? yChannels() : channels()}>{item => <option value={item.key} selected={spec().key === item.key}
+          classList={{ "constructor-integral-option": ["flux", "force", "moment"].includes(item.kind) }}>{label(item)}</option>}</For>
       </select></label>
       <Show when={c()?.kind === "field"}><label>Точка в файле результата
         <input type="number" min="1" max={c()?.points} value={spec().point}

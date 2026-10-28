@@ -218,7 +218,9 @@ export function LineChart(props) {
             const legend = untrack(showLegend) ? drawOverlayLegend(current, currentSeries, legendPosition) : { hitBoxes: [], bounds: null };
             legendHitBoxes = legend.hitBoxes; legendBounds = legend.bounds;
           } }], options: {
-        responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+        // Working points and XY loops are not sorted by X. Parsing lets Chart.js
+        // detect their order and prevents sorted-only clipping at manual bounds.
+        responsive: true, maintainAspectRatio: false, animation: false, parsing: true,
         layout: { padding: { bottom: props.endpointCoordinates ? 32 : 0 } },
         onResize: cancelSelection,
         scales: { x: { type: "linear", min: range.xMin, max: range.xMax,

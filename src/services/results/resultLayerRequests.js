@@ -1,7 +1,8 @@
 import { readRelativeConductivityFrames } from "./relativeConductivity.js";
 import { RESULT_LAYER_GROUPS } from "./resultLayerDefinitions.js";
 import { referenceResultVectorLayers } from "../visualization/resultVectorScale.js";
-import { QUANTITIES } from "./resultMappings.js";
+import { QUANTITIES, sourceRecords } from "./resultMappings.js";
+import { readWorkResidualFrames } from "./workResiduals.js";
 import { readObjectFrames, resultObjects } from "./resultRequests.js";
 import { scalarScene, vectorScene } from "./resultPlots.js";
 import { readResultVolumeFrame } from "./resultVolumeRequests.js";
@@ -28,6 +29,12 @@ function prepareLayer(request, layer) {
   if (!layer.selected?.length) return { result };
   const quantity = QUANTITIES[layer.quantityKey];
   const selected = new Set(layer.selected);
+  if (quantity.workResidual) {
+    const records = sourceRecords(request.task, quantity.file).filter(record => selected.has(record.id));
+    if (!records.length) return { result };
+    return { result, key: layer.key, quantity, volumeMode: false,
+      request: { task: request.task, quantityKey: layer.quantityKey, selected: records.map(record => record.id) } };
+  }
   const objects = resultObjects(request.task, layer.quantityKey).filter(item => selected.has(item.record.id)
     && (layer.key === "regions" || (item.record.targ === 3) === (layer.key === "virtual")));
   if (!objects.length) return { result };
@@ -42,7 +49,7 @@ function prepareLayer(request, layer) {
  * its own lazy processor, preserving its spatial plan across time frames.
  */
 export function createResultLayerReader({ processorFactory = createResultVolumeProcessor,
-  streamlineProcessorFactory = createResultStreamlineProcessor } = {}) {
+  streamlineProcessorFactory = createResultStreamlineProcessor, residualReader = readWorkResidualFrames } = {}) {
   const processors = new Map();
   let streamlineProcessor = null;
   let streamlineFrame = null;
@@ -82,7 +89,8 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
             });
             value = await readResultVolumeFrame(layer.request, null, processors.get(layer.key).processor);
           } else {
-            const frames = await (layer.quantity.relativeConductivity ? readRelativeConductivityFrames : readObjectFrames)(layer.request);
+            const frames = await (layer.quantity.workResidual ? residualReader
+              : layer.quantity.relativeConductivity ? readRelativeConductivityFrames : readObjectFrames)(layer.request);
             value = { scene: layer.quantity.components === 1 ? null : vectorScene(frames, layer.quantity, request.task),
               scalarScene: layer.quantity.components === 1 ? scalarScene(frames, layer.quantity, request.task) : null,
               sampled: frames.some(item => item.frame.count < item.originalCount) };

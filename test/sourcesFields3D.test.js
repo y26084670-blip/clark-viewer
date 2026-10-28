@@ -30,7 +30,7 @@ const selections = layers => Object.fromEntries(layers.map(layer => [layer.key, 
 // The UI labels/options are owned by the same descriptor rendered by its <For>.
 test("3D quantity defaults migrate hidden regions into visibility without changing list selection", () => {
   assert.deepEqual(RESULT_LAYER_GROUPS.map(group => [group.key, group.defaultQuantity, [...group.quantities]]), [
-    ["elements", "M", ["none", "M", "H", "MHdot", "J", "E", "JEdot", "sigmaRelative"]],
+    ["elements", "M", ["none", "M", "H", "MHdot", "J", "E", "JEdot", "sigmaRelative", "MResidual", "JResidual"]],
     ["regions", "none", ["none", "Bs", "As"]],
     ["virtual", "none", ["none", "Bv", "Av"]],
   ]);

@@ -22,6 +22,6 @@ export async function readProtocolScene(task, { signal } = {}) {
     signal?.throwIfAborted();
     const poster = player.capture();
     return { id: crypto.randomUUID(), kind: "scene", title: "3D-геометрия системы",
-      comment: "Исходная геометрия со всеми заданными образами симметрии. Вращение, масштаб и видимость доступны в интерактивном виде.", scene, poster };
+      comment: "", scene, poster };
   } finally { player?.dispose(); host.remove(); }
 }

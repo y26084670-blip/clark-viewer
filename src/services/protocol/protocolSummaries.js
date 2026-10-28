@@ -22,7 +22,7 @@ export async function readProtocolSummaries(task, { signal } = {}) {
       const text = (await (trim ? file.slice(0, MAX_SUMMARY_BYTES) : file).text()).replace(/^\uFEFF/, "");
       if (file.size > MAX_SUMMARY_BYTES && !resultFilesMarker(text)) throw new Error(`${directory}/${name}: сводка до раздела «Файлы результатов:» превышает 2 МиБ.`);
       signal?.throwIfAborted();
-      blocks.push({ id: crypto.randomUUID(), kind: "text", title, comment: "Содержимое файла на момент создания протокола.",
+      blocks.push({ id: crypto.randomUUID(), kind: "text", source: "summary", title, comment: "",
         text: trim ? trimResultFilesDescription(text) : text });
     } catch (error) { signal?.throwIfAborted(); if (error.name !== "NotFoundError") throw error; }
   }

@@ -21,6 +21,7 @@ test("summaries follow input/output order, preserve literal input and stop befor
   assert.equal(blocks.length, 2); assert.equal(blocks[0].text, inputSummary);
   assert.equal(blocks[1].text, "Расчёт завершён\r\nИтераций: 17");
   assert.match(blocks[0].title, /input3XX\/_summary.txt/); assert.match(blocks[1].title, /output3XX\/_summary_out.txt/);
+  assert.ok(blocks.every(block => block.source === "summary" && block.comment === ""));
   assert.ok(source.calls.every(options => options.create === false));
 });
 

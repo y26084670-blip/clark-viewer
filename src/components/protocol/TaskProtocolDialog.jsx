@@ -1,6 +1,6 @@
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
-import { appendProtocolBlocks, serializeProtocol } from "../../services/protocol/protocolDocument.js";
-import { createTaskProtocol, readProtocolConditions, readTaskProtocol, saveTaskProtocol } from "../../services/protocol/taskProtocolService.js";
+import { appendProtocolBlocks, canCommentProtocolBlock, serializeProtocol } from "../../services/protocol/protocolDocument.js";
+import { createTaskProtocol, readTaskProtocol, saveTaskProtocol } from "../../services/protocol/taskProtocolService.js";
 import "./Protocol.css";
 import { ProtocolScenePreview } from "./ProtocolScenePreview.jsx";
 
@@ -50,18 +50,8 @@ export function TaskProtocolDialog(props) {
     props.onRemoveBlock?.(id);
   }
   function addMarked() {
-    try { setDoc(previous => appendProtocolBlocks(previous, pending())); setNotice(""); setError(""); }
+    try { setDoc(previous => appendProtocolBlocks(previous, pending().map(block => ({ ...block, comment: "" })))); setNotice(""); setError(""); }
     catch (failure) { setError(failure.message); }
-  }
-  async function addConditions() {
-    const current = ++revision, task = props.task; setLoading(true); setError("");
-    try {
-      const block = await readProtocolConditions(task);
-      if (current !== revision || task !== props.task) return;
-      if (!block) { setNotice("Файл output3XX/conditions.json отсутствует."); return; }
-      setDoc(previous => appendProtocolBlocks(previous, [block])); setNotice("");
-    } catch (failure) { if (current === revision) setError(failure.message); }
-    finally { if (current === revision) setLoading(false); }
   }
   function preview() {
     setError("");
@@ -92,6 +82,7 @@ export function TaskProtocolDialog(props) {
     <p class="viewer-movie-note">Один HTML-файл в DOCS: автономный просмотр и повторное редактирование блоков в Viewer.</p>
     <p class="viewer-movie-note">Все WebM из output3XX/demo автоматически добавляются в конец нового протокола и включаются внутрь HTML.</p>
     <p class="viewer-movie-note">В начале — интерактивная геометрия системы и сводки исходных данных и расчёта.</p>
+    <p class="viewer-movie-note">Перед анимациями — содержимое текстовых документов TXT и MD из DOCS с именами файлов.</p>
     <fieldset disabled={loading() || saving()} style={{ border: "0", padding: "0", margin: "0" }}>
       <Show when={selected()}><p class="viewer-movie-note">Файл: DOCS/{selected()} <button type="button" onClick={() => void read(selected())}>Перечитать</button></p>
         <p class="viewer-movie-note">«Перечитать» отменяет несохранённые правки в этом окне.</p></Show>
@@ -103,10 +94,9 @@ export function TaskProtocolDialog(props) {
         <p class="viewer-movie-note">Задание в протоколе: {doc()?.taskPath}</p>
         <div class="protocol-dialog-toolbar">
           <button type="button" disabled={!additions().length} onClick={addMarked}>Добавить отмеченные ({additions().length})</button>
-          <button type="button" onClick={() => void addConditions()}>Добавить условия расчёта</button>
           <button type="button" onClick={preview}>Просмотр HTML</button>
         </div>
-        <Show when={!doc()?.blocks.length}><p>Отметьте нужные виды флажком «В протокол» или добавьте условия расчёта.</p></Show>
+        <Show when={!doc()?.blocks.length}><p>Отметьте нужные виды флажком «В протокол».</p></Show>
         <For each={doc()?.blocks.map(block => block.id) ?? []}>{id => {
           const block = () => doc()?.blocks.find(item => item.id === id);
           return <section class="protocol-block" data-block-id={id}>
@@ -119,8 +109,10 @@ export function TaskProtocolDialog(props) {
               <thead><tr><For each={block()?.table.headers}>{header => <th>{header}</th>}</For></tr></thead>
               <tbody><For each={block()?.table.rows}>{row => <tr><For each={row}>{cell => <td>{cell}</td>}</For></tr>}</For></tbody>
             </table></div></Show>
-            <label>Комментарий<textarea aria-label={`Комментарий: ${block()?.title}`} maxLength="10000" value={block()?.comment}
-              onInput={event => changeComment(id, event.currentTarget.value)} /></label>
+            <Show when={canCommentProtocolBlock(block())}>
+              <label>Комментарий<textarea aria-label={`Комментарий: ${block()?.title}`} maxLength="10000" value={block()?.comment}
+                onInput={event => changeComment(id, event.currentTarget.value)} /></label>
+            </Show>
           </section>;
         }}</For>
       </Show>

@@ -2,6 +2,7 @@ import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { appendProtocolBlocks, serializeProtocol } from "../../services/protocol/protocolDocument.js";
 import { createTaskProtocol, readProtocolConditions, readTaskProtocol, saveTaskProtocol } from "../../services/protocol/taskProtocolService.js";
 import "./Protocol.css";
+import { ProtocolScenePreview } from "./ProtocolScenePreview.jsx";
 
 export function TaskProtocolDialog(props) {
   let dialog, revision = 0, saved = null, readAbort, saveAbort, previewUrl;
@@ -90,6 +91,7 @@ export function TaskProtocolDialog(props) {
     <h2>{title()}</h2>
     <p class="viewer-movie-note">Один HTML-файл в DOCS: автономный просмотр и повторное редактирование блоков в Viewer.</p>
     <p class="viewer-movie-note">Все WebM из output3XX/demo автоматически добавляются в конец нового протокола и включаются внутрь HTML.</p>
+    <p class="viewer-movie-note">В начале — интерактивная геометрия системы и сводки исходных данных и расчёта.</p>
     <fieldset disabled={loading() || saving()} style={{ border: "0", padding: "0", margin: "0" }}>
       <Show when={selected()}><p class="viewer-movie-note">Файл: DOCS/{selected()} <button type="button" onClick={() => void read(selected())}>Перечитать</button></p>
         <p class="viewer-movie-note">«Перечитать» отменяет несохранённые правки в этом окне.</p></Show>
@@ -109,6 +111,7 @@ export function TaskProtocolDialog(props) {
           const block = () => doc()?.blocks.find(item => item.id === id);
           return <section class="protocol-block" data-block-id={id}>
             <div class="protocol-block-header"><strong>{block()?.title}</strong><button type="button" onClick={() => remove(id)}>Удалить блок</button></div>
+            <Show when={block()?.kind === "scene"}><ProtocolScenePreview block={block()} /></Show>
             <Show when={block()?.kind === "image"}><img src={block()?.dataUrl} alt={block()?.title} /></Show>
             <Show when={block()?.kind === "video"}><video src={block()?.dataUrl} controls preload="metadata" playsinline aria-label={block()?.filename} /></Show>
             <Show when={block()?.kind === "text"}><pre>{block()?.text}</pre></Show>

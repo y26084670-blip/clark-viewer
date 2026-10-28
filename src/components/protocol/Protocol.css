@@ -18,3 +18,5 @@
 .protocol-block table { border-collapse: collapse; font-size: 13px; width: 100%; }
 .protocol-block th, .protocol-block td { border: 1px solid #596773; padding: 5px; overflow-wrap: anywhere; }
 .protocol-block .protocol-table { overflow: auto; max-height: 300px; }
+.protocol-scene-preview iframe { width: 100%; height: 650px; border: 1px solid #697c8b; background: #eef1f4; }
+.protocol-scene-preview > button { margin: 6px 0; }

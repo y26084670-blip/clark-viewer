@@ -5,11 +5,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import solid from "vite-plugin-solid";
+import { buildProtocolScene } from "./build-protocol-scene.mjs";
 
 // Actual Tasks list + protocol editor + OPFS + native browser downloads.
 const root = fileURLToPath(new URL("..", import.meta.url));
 const output = process.env.CHECK_OUTPUT || "/tmp/clark-protocol-download";
 const fixture = path.join(root, "__protocol_download_check__");
+await buildProtocolScene();
 await mkdir(output, { recursive: true }); await mkdir(fixture, { recursive: true });
 const movie = path.join(output, "sample.webm");
 execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc2=size=96x64:rate=4", "-frames:v", "8",

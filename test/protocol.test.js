@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { appendProtocolBlocks, newProtocol, parseProtocol, serializeProtocol, PROTOCOL_MAX_BYTES } from "../src/services/protocol/protocolDocument.js";
 import { readProtocolVideos } from "../src/services/protocol/protocolMedia.js";
-import { createTaskProtocol, protocolFilename, readTaskProtocol, saveTaskProtocol } from "../src/services/protocol/taskProtocolService.js";
+import { createTaskProtocol, protocolFilename, readProtocolConditions, readTaskProtocol, saveTaskProtocol } from "../src/services/protocol/taskProtocolService.js";
 import { captureProtocolRenderer } from "../src/services/protocol/protocolCapture.js";
 
 const image = id => ({ id, kind: "image", title: "Поле", comment: "Шаг 2", width: 1, height: 1,
@@ -34,7 +34,7 @@ test("standalone HTML escapes conditions, names and comments; its data never bec
   assert.throws(() => serializeProtocol({ ...doc, blocks: [{ ...image("bad"), dataUrl: "https://example.com/image.png" }] }), /изображение/);
   assert.throws(() => serializeProtocol({ ...doc, blocks: [image("duplicate"), image("duplicate")] }), /блок/);
   assert.throws(() => parseProtocol("<h1>Unrelated file</h1>"), /не содержит/);
-  assert.throws(() => serializeProtocol({ ...doc, version: 3 }), /версии 1 или 2/);
+  assert.throws(() => serializeProtocol({ ...doc, version: 4 }), /версии 1, 2 или 3/);
 });
 
 function filesystem() {
@@ -68,10 +68,11 @@ function filesystem() {
     permission: value => { permission = value; }, failWrite: () => { failWrite = true; } };
 }
 
-test("DOCS is created only on save; optional conditions are literal, missing output is allowed", async () => {
+test("DOCS is created only on save; conditions are available manually, missing output is allowed", async () => {
   const fs = filesystem(); fs.files.set("output3XX/conditions.json", '{"MPI": 4}\n');
   const doc = await createTaskProtocol(fs.task);
-  assert.equal(doc.blocks[0].text, '{"MPI": 4}\n');
+  assert.equal((await readProtocolConditions(fs.task)).text, '{"MPI": 4}\n');
+  assert.deepEqual(doc.blocks, []);
   assert.equal(fs.dirs.has("DOCS"), false); assert.equal(await readTaskProtocol(fs.task, "protocol.html"), null);
   const saved = await saveTaskProtocol(fs.task, "protocol.html", doc, null);
   assert.equal(fs.dirs.has("DOCS"), true);
@@ -107,9 +108,9 @@ test("renderer export restores the chart on capture failure", async () => {
 
 const webm = extra => new Blob([Uint8Array.from([0x1a,0x45,0xdf,0xa3,0x8b,0x42,0x82,0x84,0x77,0x65,0x62,0x6d,0,0,0,0]), extra ?? ""], { type: "video/webm" });
 
-test("all task WebM files follow snapshots and conditions, are embedded once and survive loss of source files", async () => {
+test("all task WebM files follow summaries and marked views, are embedded once and survive loss of source files", async () => {
   const fs = filesystem(); fs.dirs.add("output3XX/demo");
-  fs.files.set("output3XX/conditions.json", '{"MPI":4}');
+  fs.files.set("output3XX/_summary_out.txt", 'Расчёт завершён\nФайлы результатов:\nMH.h5');
   fs.files.set("output3XX/demo/B.WEBM", webm("second"));
   fs.files.set("output3XX/demo/a.webm", webm("first"));
   fs.files.set("output3XX/demo/legacy.gif", "GIF89a");
@@ -117,6 +118,7 @@ test("all task WebM files follow snapshots and conditions, are embedded once and
   fs.files.set("foreign.webm", webm("other location"));
   const doc = await createTaskProtocol(fs.task, [image("selected")]);
   assert.deepEqual(doc.blocks.map(b => b.kind), ["text", "image", "video", "video"]);
+  assert.equal(doc.blocks[0].text, "Расчёт завершён");
   assert.deepEqual(doc.blocks.filter(b => b.kind === "video").map(b => b.filename), ["a.webm", "B.WEBM"]);
   const html = serializeProtocol(doc);
   assert.match(html, /media-src data:/); assert.equal((html.match(/<video /g) ?? []).length, 2);

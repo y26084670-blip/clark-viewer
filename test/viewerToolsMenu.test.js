@@ -17,7 +17,7 @@ const createRuntime = new Function("props", "createSignal", "createMemo", "creat
         saveInTask: saveInTask(), saving: saving(), savedNotice: savedNotice(),
         protocols: protocols(), protocolScanning: protocolScanning(), protocolScanError: protocolScanError(),
         protocolOpenError: protocolOpenError(), protocolsDialogOpen: protocolsDialogOpen(), protocolOpening: protocolOpening() }),
-      attach(refs) { trigger=refs.trigger; menu=refs.menu; menuItem=refs.menuItem; taskProtocolMenuItem=refs.taskProtocolMenuItem; conditionsMenuItem=refs.conditionsMenuItem;
+      attach(refs) { trigger=refs.trigger; menu=refs.menu; menuItem=refs.menuItem; taskProtocolMenuItem=refs.taskProtocolMenuItem;
         protocolsMenuItem=refs.protocolsMenuItem; protocolsDialog=refs.protocolsDialog; protocolsCloseButton=refs.protocolsCloseButton;
         dialog=refs.dialog;
         intervalInput=refs.intervalInput; cancelButton=refs.cancelButton; saveButton=refs.saveButton; } };
@@ -43,7 +43,7 @@ function runtime(overrides = {}) {
   const focusable = () => ({ focused: 0, focus() { this.focused++; } });
   const refs = { trigger: { ...focusable(), ownerDocument: document,
     getBoundingClientRect: () => ({ right: 890, bottom: 590 }) },
-    menu: { offsetWidth: 260, offsetHeight: 120 }, menuItem: focusable(), taskProtocolMenuItem: focusable(), conditionsMenuItem: focusable(),
+    menu: { offsetWidth: 260, offsetHeight: 120 }, menuItem: focusable(), taskProtocolMenuItem: focusable(),
     dialog: { open: false, showModal() { this.open = true; }, close() { this.open = false; } },
     protocolsMenuItem: { ...focusable(), disabled: true }, protocolsCloseButton: focusable(),
     protocolsDialog: { open: false, showModal() { this.open = true; }, close() { this.open = false; } },
@@ -329,7 +329,6 @@ test("protocol menu and focus refresh discovery, handle access errors, and inclu
   } });
   ui.flushEffects(); await Promise.resolve(); const initial = scans;
   ui.toggleMenu(); await Promise.resolve(); assert.equal(scans, initial + 1);
-  ui.refs.conditionsMenuItem.disabled = true;
   ui.refs.protocolsMenuItem.disabled = false;
   ui.onMenuKeyDown(key("End")); assert.equal(ui.refs.protocolsMenuItem.focused, 1);
   ui.refs.protocolsMenuItem.disabled = true;

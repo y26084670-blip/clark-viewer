@@ -5,6 +5,7 @@
 .constructor-controls legend { padding: 2px 8px; border-radius: 4px; background: #1d3048; color: #c4d9f5; font-weight: 600; }
 .constructor-controls fieldset :is(select, input) { background: #263b52; color: #f0f4f7; border-color: #7f8d99; accent-color: #8cbaed; }
 .constructor-controls fieldset option { background: #263b52; color: #f0f4f7; }
+.constructor-controls fieldset option.constructor-integral-option { background: #ffe082; color: #17202b; }
 .constructor-controls fieldset option:disabled { color: #b7c8d9; }
 .constructor-controls fieldset button { border-color: #7f8d99; background: #3a4650; color: #f0f4f7; }
 .constructor-controls fieldset button:not(:disabled):hover { border-color: #a9bac7; background: #4a5965; }

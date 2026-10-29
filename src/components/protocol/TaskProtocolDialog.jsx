@@ -1,29 +1,32 @@
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { appendProtocolBlocks, canCommentProtocolBlock, refreshProtocolDraft, serializeProtocol } from "../../services/protocol/protocolDocument.js";
 import { deleteTaskProtocol, listTaskProtocols, openTaskProtocol, readTaskProtocol, saveTaskProtocol } from "../../services/protocol/taskProtocolService.js";
+import { readProtocolClipboard } from "../../services/protocol/protocolClipboard.js";
 import "./Protocol.css";
 import { ProtocolScenePreview } from "./ProtocolScenePreview.jsx";
 
 export function TaskProtocolDialog(props) {
   const fallbackSession = { handle: null, files: new Map(), lastFilename: "protocol.html" };
-  let dialog, revision = 0, saved = null, readAbort, writeAbort, previewUrl, activeSession;
+  let dialog, revision = 0, saved = null, readAbort, writeAbort, pasteAbort, previewUrl, activeSession;
   const [doc, setDoc] = createSignal(null);
   const [filename, setFilename] = createSignal("protocol.html"), [openedName, setOpenedName] = createSignal("");
   const [names, setNames] = createSignal([]), [exists, setExists] = createSignal(false);
   const [loading, setLoading] = createSignal(false), [saving, setSaving] = createSignal(false), [deleting, setDeleting] = createSignal(false);
+  const [pasting, setPasting] = createSignal(false);
   const [error, setError] = createSignal(""), [notice, setNotice] = createSignal("");
   const pending = () => Object.values(props.entries ?? {});
   const additions = () => pending().filter(block => !doc()?.blocks.some(existing => existing.id === block.id));
-  const busy = () => loading() || saving() || deleting();
+  const busy = () => loading() || saving() || deleting() || pasting();
   const title = () => exists() ? "Редактировать протокол" : "Создать протокол";
   function discardPreview() { if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null; }
+  function cancelPaste() { pasteAbort?.abort(); pasteAbort = null; setPasting(false); }
   function remember() {
     if (!activeSession || !doc() || !openedName()) return;
     activeSession.files.set(openedName(), { document: doc(), saved, filename: filename() });
     activeSession.lastFilename = openedName();
   }
   async function read(requested = "", refresh = false) {
-    remember(); readAbort?.abort();
+    remember(); readAbort?.abort(); cancelPaste();
     const controller = new AbortController(); readAbort = controller;
     const current = ++revision, task = props.task, session = props.session ?? fallbackSession;
     const valid = () => current === revision && props.open && task === props.task;
@@ -75,10 +78,10 @@ export function TaskProtocolDialog(props) {
   }
   createEffect(on(() => [props.open, props.task, props.initialFilename, props.session], ([open]) => {
     if (open && props.task) { if (!dialog.open) dialog.showModal(); void read(props.initialFilename || ""); }
-    else { remember(); revision++; readAbort?.abort(); setLoading(false); if (dialog.open) dialog.close(); discardPreview(); }
+    else { remember(); revision++; readAbort?.abort(); cancelPaste(); setLoading(false); if (dialog.open) dialog.close(); discardPreview(); }
   }));
-  onCleanup(() => { revision++; readAbort?.abort(); writeAbort?.abort(); discardPreview(); if (dialog?.open) dialog.close(); });
-  function close() { if (!saving() && !deleting()) { remember(); revision++; readAbort?.abort(); props.onClose(); } }
+  onCleanup(() => { revision++; readAbort?.abort(); writeAbort?.abort(); cancelPaste(); discardPreview(); if (dialog?.open) dialog.close(); });
+  function close() { if (!saving() && !deleting()) { remember(); revision++; readAbort?.abort(); cancelPaste(); props.onClose(); } }
   function changeComment(id, comment) {
     setNotice(""); setDoc(previous => ({ ...previous, blocks: previous.blocks.map(block => block.id === id ? { ...block, comment } : block) })); remember();
   }
@@ -89,6 +92,20 @@ export function TaskProtocolDialog(props) {
   function addMarked() {
     try { setDoc(previous => appendProtocolBlocks(previous, pending().map(block => ({ ...block, comment: "" })))); remember(); setNotice(""); setError(""); }
     catch (failure) { setError(failure.message); }
+  }
+  async function paste(kind) {
+    if (busy() || !doc()) return;
+    const controller = new AbortController(), current = revision, task = props.task, documentId = doc().id;
+    pasteAbort = controller;
+    const valid = () => !controller.signal.aborted && current === revision && props.open && task === props.task && doc()?.id === documentId;
+    setPasting(true); setError(""); setNotice("");
+    try {
+      const block = await readProtocolClipboard(kind, { signal: controller.signal });
+      if (!valid()) return;
+      setDoc(previous => appendProtocolBlocks(previous, [block])); remember();
+      setNotice(kind === "image" ? "Рисунок из буфера добавлен в протокол." : "Текст из буфера добавлен в протокол.");
+    } catch (failure) { if (valid()) setError(failure.message); }
+    finally { if (pasteAbort === controller) { pasteAbort = null; setPasting(false); } }
   }
   function preview() {
     setError("");
@@ -139,7 +156,7 @@ export function TaskProtocolDialog(props) {
     <h2>{title()}</h2>
     <p class="viewer-movie-note">Один HTML-файл в DOCS. Комментарии и несохранённые правки сохраняются при закрытии окна в пределах текущего задания.</p>
     <Show when={exists()} fallback={<p class="viewer-movie-note">Новый протокол: геометрия, сводки, отмеченные материалы, тексты DOCS и анимации.</p>}>
-      <p class="viewer-movie-note">В существующий протокол добавляются только отмеченные материалы — после сводок и перед анимациями.</p>
+      <p class="viewer-movie-note">В существующий протокол добавляются только отмеченные материалы и вставки из буфера — после сводок и перед анимациями.</p>
     </Show>
     <fieldset disabled={busy()} style={{ border: "0", padding: "0", margin: "0" }}>
       <Show when={names().length}>
@@ -156,9 +173,11 @@ export function TaskProtocolDialog(props) {
         <p class="viewer-movie-note">Задание в протоколе: {doc()?.taskPath}</p>
         <div class="protocol-dialog-toolbar">
           <button type="button" disabled={!additions().length} onClick={addMarked}>Добавить отмеченные ({additions().length})</button>
+          <button type="button" onClick={() => void paste("image")}>Вставить рисунок</button>
+          <button type="button" onClick={() => void paste("text")}>Вставить текст</button>
           <button type="button" onClick={preview}>Просмотр HTML</button>
         </div>
-        <Show when={!doc()?.blocks.length}><p>Отметьте нужные виды флажком «В протокол».</p></Show>
+        <Show when={!doc()?.blocks.length}><p>Отметьте нужные виды флажком «В протокол» или вставьте рисунок либо текст из буфера.</p></Show>
         <For each={doc()?.blocks.map(block => block.id) ?? []}>{id => {
           const block = () => doc()?.blocks.find(item => item.id === id);
           return <section class="protocol-block" data-block-id={id}>
@@ -180,6 +199,7 @@ export function TaskProtocolDialog(props) {
       </Show>
     </fieldset>
     <Show when={loading()}><p role="status">Чтение протокола…</p></Show>
+    <Show when={pasting()}><p role="status">Чтение буфера обмена…</p></Show>
     <Show when={error()}><p role="alert" class="viewer-movie-error">{error()}</p></Show>
     <Show when={notice()}><p role="status" class="viewer-movie-saved">{notice()}</p></Show>
     <div class="viewer-movie-actions"><button type="button" disabled={busy() || !doc()} onClick={() => void save()}>

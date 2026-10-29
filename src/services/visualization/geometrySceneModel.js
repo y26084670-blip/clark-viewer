@@ -706,6 +706,7 @@ export function buildGeometryScene(model = {}) {
     return {
         primitives,
         diagnostics,
+        planar2D: model?.planar2D === true,
         bounds: createBounds(primitives),
         counts: createCounts(primitives, skipped),
     };

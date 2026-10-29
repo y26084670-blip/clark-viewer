@@ -12,7 +12,17 @@
     gap: 2px;
 }
 
-.task-status-state { justify-content: flex-start; }
+.task-status-state { position: relative; justify-content: flex-start; }
+.task-status-2d {
+    position: absolute;
+    top: 0;
+    right: 1px;
+    color: #ffeb3b;
+    background: transparent;
+    font: 700 11px/1 Arial, sans-serif;
+    text-shadow: 0 0 2px #363522;
+    pointer-events: none;
+}
 .task-status-solution, .task-status-missing { display: inline-flex; flex: 0 0 20px; }
 .task-status-solution { color: #62df87; }
 .task-status-missing { color: #ff7178; }

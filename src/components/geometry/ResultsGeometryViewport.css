@@ -14,6 +14,22 @@
   outline: none;
 }
 
+.geometry-planar-mode {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 4;
+  color: #ffeb3b;
+  background: transparent;
+  font: 700 16px/1.25 Arial, sans-serif;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Keep the existing material-help button accessible in the main 3D view. */
+.source-geometry-viewport .geometry-planar-mode { left: 44px; }
+.geometry-viewer-canvas-region:has(.geometry-planar-mode) > .geometry-performance-overlay { top: 36px; }
+
 .geometry-viewer-window:focus-visible {
   outline: 2px solid #8fc7ff;
   outline-offset: -2px;

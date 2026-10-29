@@ -2,6 +2,7 @@ import { Show } from "solid-js";
 import "./TaskStatusCells.css";
 
 const labels = {
+  planar2D: "2D расчёт: есть input3XX/_2d.e3d",
   hasSolution: "Решение получено",
   omState: "Состояние клиентской модели OM",
   missingInput: "Нет исходных данных: отсутствует каталог input3XX",
@@ -16,11 +17,14 @@ const omLabels = { active: "OM-модель подключена", disabled: "OM
 
 export function TaskStatusCells(props) {
   const stateTitle = () => [props.status?.hasSolution ? labels.hasSolution : "",
-    omLabels[props.status?.omState], failure(props.status, ["hasSolution", "missingInput", "omState"])].filter(Boolean).join("\n");
+    omLabels[props.status?.omState], props.status?.planar2D ? labels.planar2D : "", failure(props.status, ["hasSolution", "missingInput", "omState", "planar2D"])].filter(Boolean).join("\n");
   return <>
     <span class="task-status-cell task-status-state" title={stateTitle()}
       data-om-state={props.status?.omState ?? "unknown"}
       classList={{ "task-status-om-active": props.status?.omState === "active", "task-status-om-disabled": props.status?.omState === "disabled" }}>
+      <Show when={props.status?.planar2D === true}>
+        <span class="task-status-2d" role="img" aria-label={labels.planar2D}>2D</span>
+      </Show>
       <Show when={props.status?.hasSolution === true}>
         <span class="task-status-solution" title={stateTitle()} role="img" aria-label={labels.hasSolution}>
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10l4.5 5L17 5" /></svg>

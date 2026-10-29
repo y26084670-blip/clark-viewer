@@ -1,3 +1,4 @@
+import { readTaskPlanarMode } from "./taskStatusService.js";
 import { fromStorage } from "./model/arrayShape.js";
 import { RESULT_FILES } from "./results/resultLayout.js";
 
@@ -51,12 +52,15 @@ export function normalizeTaskInput({ general, elements, regions, moves, amps, mh
 export async function loadTaskInput(handle) {
   const input = await handle.getDirectoryHandle("input3XX");
   const names = ["general.txt", "kvs.txt", "tks.txt", "moves.txt", "amplitudes.txt", "mhj.txt"];
-  const texts = await Promise.all(names.map(name => readOptionalText(input, name)));
+  const [texts, planar] = await Promise.all([
+    Promise.all(names.map(name => readOptionalText(input, name))),
+    readTaskPlanarMode(handle),
+  ]);
   if (!texts[0].trim() || !texts[1].trim()) throw new Error("Не найдены general.txt или kvs.txt в input3XX");
   const general = JSON.parse(texts[0].replace(/^\uFEFF/, ""));
-  return normalizeTaskInput({ general, elements: parseRecords(texts[1], names[1]),
+  return { planar2D: planar.exists === true, ...normalizeTaskInput({ general, elements: parseRecords(texts[1], names[1]),
     regions: parseRecords(texts[2], names[2]), moves: parseRecords(texts[3], names[3]),
-    amps: parseRecords(texts[4], names[4]), mhj: parseRecords(texts[5], names[5]) });
+    amps: parseRecords(texts[4], names[4]), mhj: parseRecords(texts[5], names[5]) }) };
 }
 
 export async function readTaskSummaries(handle) {

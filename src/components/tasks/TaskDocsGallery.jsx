@@ -37,6 +37,7 @@ export function TaskDocsGallery(props) {
   const [creatingReadme, setCreatingReadme] = createSignal(false);
   const [openError, setOpenError] = createSignal("");
   const [documentCount, setDocumentCount] = createSignal(0);
+  const [imagesLoading, setImagesLoading] = createSignal(false);
   const controller = createTaskDocsTextController({ publish: setView, read: readTaskDocsDocument });
   const createDocsController = options => createTaskImageGalleryController({
     ...options, read: readTaskDocsImage, list: async (task, args) => {
@@ -74,6 +75,7 @@ export function TaskDocsGallery(props) {
     controller.select(readme().name);
   });
   createEffect(() => controller.setDisplayActive(props.visible !== false));
+  createEffect(() => props.onLoadingChange?.(imagesLoading() || view().loading));
   createEffect(() => {
     const task = props.taskHandle, active = props.active !== false, refreshKey = [props.refreshKey, readmeRevision()];
     const sameContext = initialized && task === previousTask && active === previousActive;
@@ -105,7 +107,7 @@ export function TaskDocsGallery(props) {
     <TaskImageGallery taskHandle={props.taskHandle} active={props.active} visible={props.visible}
       disabled={props.disabled} refreshKey={[props.refreshKey, readmeRevision()]} onCountChange={count => props.onCountChange?.(count + documentCount())}
       label="DOCS" emptyMessage="В DOCS нет изображений PNG, JPEG или WebP"
-      createController={createDocsController} onRefresh={() => controller.refresh()} />
+      createController={createDocsController} onLoadingChange={setImagesLoading} />
     <section class="task-docs-text-panel" aria-label="Документы задания">
       <div class="task-docs-toolbar">
         <select aria-label="Документ DOCS" value={createTarget() ? "" : view().selected?.name ?? ""}

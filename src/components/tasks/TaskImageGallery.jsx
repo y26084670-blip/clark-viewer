@@ -106,6 +106,7 @@ export function TaskImageGallery(props) {
     queueMicrotask(updateFallbackVisibility);
   });
   createEffect(() => { props.onCountChange?.(view().entries.length); });
+  createEffect(() => { props.onLoadingChange?.(view().loading); });
   createEffect(() => {
     const task = props.taskHandle, active = props.active !== false, refreshKey = props.refreshKey;
     const sameContext = initialized && task === previousTask && active === previousActive;
@@ -150,14 +151,7 @@ export function TaskImageGallery(props) {
   });
 
   return <section class="task-gif-gallery" aria-label={`${props.label} выбранного задания`}>
-    <header class="task-gif-gallery-header"><span>{props.label} <span class="task-gif-count">{view().entries.length}</span>
-      <Show when={view().deleting}><span class="task-gif-count" role="status">Удаление…</span></Show>
-    </span>
-      <button type="button" disabled={actionsDisabled() || view().loading} title={`Обновить список ${props.label}`} aria-label={`Обновить список ${props.label}`}
-        onClick={() => { controller.refresh(); props.onRefresh?.(); }}>
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 8a6 6 0 1 0 0 5M16 3v5h-5" /></svg>
-      </button>
-    </header>
+    <Show when={view().deleting}><div class="task-gif-count" role="status">Удаление…</div></Show>
     <Show when={view().error}><div class="task-gif-error" role="alert">{view().error}</div></Show>
     <div ref={grid} class="task-gif-grid" onScroll={updateFallbackVisibility} aria-busy={view().loading}>
       <For each={view().entries}>{entry => <ImageCell entry={entry} />}</For>

@@ -3093,6 +3093,9 @@ export function ThreeGeometryViewport(props) {
       aria-label="Трёхмерная геометрия элементов и областей"
       aria-busy={loading()}
     >
+      <Show when={props.scene?.planar2D}>
+        <span class="geometry-planar-mode">2D расчет</span>
+      </Show>
       <Show when={graphContourMenu()} keyed>{menu =>
         <div class="graph-contour-menu" role="menu" aria-label="Направление 1D графика" ref={element => {
           graphMenuElement = element;

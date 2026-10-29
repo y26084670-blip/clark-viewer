@@ -29,7 +29,7 @@
 .whats-new-entry h3 { font-size:15px; margin:0; color:#c4d9f5; }
 .whats-new-entry-title-note { color:#ff7178; font-weight:700; }
 .whats-new-entry-top>span { white-space:nowrap; font-size:12px; color:#b7c8d9; }
-.whats-new-entry p { margin:8px 0; }
+.whats-new-entry p { margin:8px 0; white-space:pre-line; }
 .whats-new-entry-actions { justify-content:flex-start; margin-top:9px; }
 .whats-new-dialog a { color:#acd1ff; }
 .whats-new-meta,.whats-new-footer { font-size:12px; color:#b7c8d9; }

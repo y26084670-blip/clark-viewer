@@ -39,7 +39,7 @@ test("all sixteen independent combinations, including solution without input", a
     if (mask & 8) fs.directory("comparison");
     assert.deepEqual(await readTaskStatus(fs.root), {
       hasSolution: Boolean(mask & 1), missingInput: Boolean(mask & 2),
-      hasGifs: Boolean(mask & 4), hasComparison: Boolean(mask & 8), omState: "none", errors: {},
+      hasGifs: Boolean(mask & 4), hasComparison: Boolean(mask & 8), omState: "none", planar2D: false, errors: {},
     }, `mask ${mask}`);
     assert.ok(fs.calls.every(call => call.options?.create === false));
   }
@@ -63,7 +63,7 @@ test("wrong entry kinds do not count as the required file or directories", async
   fs.directory("output3XX/_summary_out.txt");
   fs.file("output3XX/demo"); fs.file("input3XX"); fs.file("comparison");
   assert.deepEqual(await readTaskStatus(fs.root), {
-    hasSolution: false, missingInput: true, hasGifs: false, hasComparison: false, omState: "none", errors: {},
+    hasSolution: false, missingInput: true, hasGifs: false, hasComparison: false, omState: "none", planar2D: false, errors: {},
   });
 });
 
@@ -89,13 +89,13 @@ test("successive reads reflect creation, removal and restored access", async () 
   fs.directory("input3XX"); fs.file("output3XX/_summary_out.txt");
   fs.directory("output3XX/demo"); fs.directory("comparison");
   assert.deepEqual(await readTaskStatus(fs.root), {
-    hasSolution: true, missingInput: false, hasGifs: true, hasComparison: true, omState: "none", errors: {},
+    hasSolution: true, missingInput: false, hasGifs: true, hasComparison: true, omState: "none", planar2D: false, errors: {},
   });
   fs.root.errors.set("input3XX", "NotAllowedError");
   assert.equal((await readTaskStatus(fs.root)).missingInput, null);
   fs.root.errors.clear(); fs.root.children.delete("output3XX"); fs.root.children.delete("comparison");
   assert.deepEqual(await readTaskStatus(fs.root), {
-    hasSolution: false, missingInput: false, hasGifs: false, hasComparison: false, omState: "none", errors: {},
+    hasSolution: false, missingInput: false, hasGifs: false, hasComparison: false, omState: "none", planar2D: false, errors: {},
   });
 });
 
@@ -155,4 +155,25 @@ test("inaccessible OM selectors stay unknown and directories do not count as sel
   const status = await readTaskStatus(fs.root);
   assert.equal(status.omState, null); assert.equal(status.errors.omState, "NotAllowedError");
   assert.equal(status.missingInput, false);
+});
+
+
+test("2D marker is independent of a solution and refresh detects its removal", async () => {
+  for (const solved of [false, true]) {
+    const fs = filesystem(), input = fs.directory("input3XX");
+    if (solved) fs.file("output3XX/_summary_out.txt");
+    assert.equal((await readTaskStatus(fs.root)).planar2D, false);
+    fs.file("input3XX/_2d.e3d");
+    const marked = await readTaskStatus(fs.root);
+    assert.equal(marked.planar2D, true); assert.equal(marked.hasSolution, solved);
+    input.children.delete("_2d.e3d");
+    assert.equal((await readTaskStatus(fs.root)).planar2D, false);
+    fs.directory("input3XX/_2d.e3d");
+    assert.equal((await readTaskStatus(fs.root)).planar2D, false);
+    input.errors.set("_2d.e3d", "NotAllowedError");
+    const denied = await readTaskStatus(fs.root);
+    assert.equal(denied.planar2D, null); assert.equal(denied.errors.planar2D, "NotAllowedError");
+    assert.equal(denied.hasSolution, solved);
+    assert.ok(fs.calls.every(call => call.options?.create === false));
+  }
 });

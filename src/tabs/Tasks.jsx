@@ -249,6 +249,7 @@ export function Tasks(props) {
         setTasks(snapshot.tasks); setCandidate(selected);
       });
       await taskStatus.refresh();
+      if (!disposed && current === revision) await props.onTaskListRefresh?.();
     } catch (error) {
       if (!disposed && current === revision) setError(`Не удалось обновить список ${refreshProjects ? "проектов" : "заданий"}: ${error.message}`);
     } finally { if (!disposed) setBusy(false); }

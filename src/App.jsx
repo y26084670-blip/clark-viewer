@@ -1,3 +1,4 @@
+import { readTaskPlanarMode } from "./services/taskStatusService.js";
 import { createEffect, createSignal, ErrorBoundary, For, lazy, onCleanup, onMount, Show, Switch, Match, Suspense } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Tasks } from "./tabs/Tasks.jsx";
@@ -144,6 +145,14 @@ export default function App() {
     if (!movieAdapter()) return "Дождитесь готовности текущего графика.";
     return "";
   };
+  async function refreshLoadedPlanarMode() {
+    const loaded = task();
+    if (!loaded) return;
+    const marker = await readTaskPlanarMode(loaded.handle);
+    if (task() === loaded && loaded.planar2D !== (marker.exists === true)) {
+      setTask({ ...loaded, planar2D: marker.exists === true });
+    }
+  }
   const shared = {
     get task() { return task(); }, get time() { return time(); },
     setTime: index => { if (!movieBusy()) changeTime(index); }, setMovieTime: changeTime,
@@ -181,7 +190,7 @@ export default function App() {
     <main class="tabs-body" inert={movieBusy()} aria-busy={movieBusy()}>
       <div class="task-tab" style={{ display: active() === 0 ? "flex" : "none" }}>
         <Tasks active={active() === 0} onRootChange={setPlotRoot} onShowTasks={() => setActive(0)} onLoad={(...args) => { if (!movieBusy()) return load(...args); }} loadedHandle={task()?.handle} busy={busy() || movieBusy()} error={error()}
-          onEditProtocol={editProtocol} docsRevision={docsRevision()} />
+          onTaskListRefresh={refreshLoadedPlanarMode} onEditProtocol={editProtocol} docsRevision={docsRevision()} />
       </div>
       <Show when={active() !== 0}>
         <Show when={task()} fallback={<div class="empty-task"><p>Загрузите задание на первой вкладке</p><button onClick={() => setActive(0)}>Выбор задания</button></div>}>

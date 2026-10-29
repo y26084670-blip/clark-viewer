@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createTaskStatusMonitor } from "../src/services/taskStatusMonitor.js";
 
-const status = (hasSolution = false) => ({ hasSolution, missingInput: false, hasGifs: false, hasComparison: false, omState: "none", errors: {} });
+const status = (hasSolution = false) => ({ hasSolution, missingInput: false, hasGifs: false, hasComparison: false, omState: "none", planar2D: false, errors: {} });
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { resolve, promise }; };
 const turn = () => new Promise(resolve => setImmediate(resolve));
 function fixture(read, concurrency = 6) {
@@ -148,5 +148,20 @@ test("OM-only changes publish even when the solution flag is unchanged", async (
       assert.equal(f.published.at(-1).get("task").hasSolution, true);
     }
     assert.equal(f.published.length, 4);
+  } finally { f.monitor.dispose(); }
+});
+
+
+test("marker-only changes are published on refresh without changing the solution checkmark", async () => {
+  let value = status(true);
+  const f = fixture(async () => value);
+  try {
+    f.monitor.setSource([{ key: "task" }]); await f.monitor.refresh();
+    for (const planar2D of [true, false]) {
+      value = { ...value, planar2D }; await f.monitor.refresh();
+      assert.equal(f.published.at(-1).get("task").planar2D, planar2D);
+      assert.equal(f.published.at(-1).get("task").hasSolution, true);
+    }
+    assert.equal(f.published.length, 3);
   } finally { f.monitor.dispose(); }
 });

@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import { readProtocolDownload, scanTaskProtocolDownloads } from "../../services/protocol/protocolDownloads.js";
+import { scanTaskProtocolDownloads } from "../../services/protocol/protocolDownloads.js";
+import { openProtocolWindow } from "../../services/protocol/protocolOpenWindow.js";
 import "./TaskProtocolDownload.css";
 
 export function useTaskProtocolDownloads(source, refreshKey) {
@@ -39,8 +40,8 @@ export function TaskProtocolDownload(props) {
   let dialog, opener, controller, disposed = false;
   const record = createMemo(() => props.record);
   const files = () => record()?.files ?? [];
-  const title = () => files().length === 1 ? `Скачать протокол · ${files()[0].name}\n${details(files()[0])}`
-    : `Скачать протокол · файлов: ${files().length}\nВыбрать HTML из DOCS`;
+  const title = () => files().length === 1 ? `Открыть протокол · ${files()[0].name}\n${details(files()[0])}`
+    : `Открыть протокол · файлов: ${files().length}\nВыбрать HTML из DOCS`;
   const close = () => { dialog?.close(); opener?.focus(); };
   createEffect(() => {
     record(); props.taskHandle;
@@ -51,25 +52,16 @@ export function TaskProtocolDownload(props) {
   });
   onCleanup(() => { disposed = true; controller?.abort(); });
 
-  async function download(entry) {
+  async function openProtocol(entry) {
     if (props.disabled || busy()) return;
     const request = controller = new AbortController();
     setBusy(true); setError("");
     try {
-      const { name, blob } = await readProtocolDownload(entry, { signal: request.signal });
+      await openProtocolWindow(entry, { signal: request.signal });
       if (disposed || request.signal.aborted) return;
-      const url = URL.createObjectURL(blob), link = document.createElement("a");
-      link.href = url; link.download = name; link.hidden = true;
-      document.body.append(link);
-      try { link.click(); }
-      finally {
-        link.remove();
-        // Give the browser time to take ownership, including for large WebM HTML.
-        window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-      }
       close();
     } catch (error) {
-      if (!disposed && !request.signal.aborted) setError(`Не удалось скачать «${entry.name}»: ${error.message}`);
+      if (!disposed && !request.signal.aborted) setError(`Не удалось открыть «${entry.name}»: ${error.message}`);
     } finally { if (!disposed && controller === request) setBusy(false); }
   }
 
@@ -80,7 +72,7 @@ export function TaskProtocolDownload(props) {
         aria-haspopup={files().length > 1 ? "dialog" : undefined} aria-busy={busy()}
         disabled={props.disabled || busy()} onClick={event => {
           opener = event.currentTarget; setError("");
-          if (files().length === 1) void download(files()[0]);
+          if (files().length === 1) void openProtocol(files()[0]);
           else dialog.showModal();
         }}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H5v20h14V7zM14 2v5h5M12 10v8m-3-3 3 3 3-3" /></svg>
@@ -90,10 +82,10 @@ export function TaskProtocolDownload(props) {
     <Show when={error() && !dialog?.open}><span class="task-protocol-download-error" role="alert">{error()}</span></Show>
     <dialog ref={dialog} class="task-protocol-download-dialog" aria-label={`Протоколы задания «${props.taskName}»`}
       onClose={() => opener?.focus()} onCancel={() => { controller?.abort(); setBusy(false); }}>
-      <strong>Скачать протокол · {props.taskName}</strong>
+      <strong>Открыть протокол · {props.taskName}</strong>
       <div class="task-protocol-download-list">
         <For each={files()}>{entry => <button type="button" disabled={props.disabled || busy()}
-          onClick={() => void download(entry)}><span>{entry.name}</span><small>{details(entry)}</small></button>}</For>
+          onClick={() => void openProtocol(entry)}><span>{entry.name}</span><small>{details(entry)}</small></button>}</For>
       </div>
       <Show when={error()}><p class="task-protocol-download-error" role="alert">{error()}</p></Show>
       <button type="button" onClick={() => { controller?.abort(); setBusy(false); close(); }}>Закрыть</button>

@@ -10,7 +10,7 @@ self.onmessage = async ({ data }) => {
   running = true;
   const files = new Map();
   let fs, mounted = false;
-  const check = () => { if (cancelled) throw new DOMException("Создание протоколов отменено", "AbortError"); };
+  const check = () => { if (cancelled) throw new DOMException("Операция с протоколами отменена", "AbortError"); };
   const onProgress = (message, extra = {}) => self.postMessage({ progress: message, ...extra });
   try {
     let result;

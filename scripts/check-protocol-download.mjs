@@ -7,7 +7,7 @@ import { createServer } from "vite";
 import solid from "vite-plugin-solid";
 import { buildProtocolScene } from "./build-protocol-scene.mjs";
 
-// Actual Tasks list + protocol editor + OPFS + native browser downloads.
+// Actual Tasks list + report tabs + protocol editor + OPFS + native browser downloads.
 const root = fileURLToPath(new URL("..", import.meta.url));
 const output = process.env.CHECK_OUTPUT || "/tmp/clark-protocol-download";
 const fixture = path.join(root, "__protocol_download_check__");
@@ -49,7 +49,7 @@ window.fixture={ready:true,permissions,reads,source:()=>doc,loaded:()=>loaded,
  async saved(name,filename='protocol.html'){return(await(await(await tasks[name].getDirectoryHandle('DOCS')).getFileHandle(filename)).getFile()).text();}
 };
 return <><div style="height:100vh"><Tasks active={true} docsRevision={revision()} onLoad={()=>{loaded++;return true;}} /></div>
- <TaskProtocolDialog open={open()} task={createTask()} entries={{}} onSaved={()=>setRevision(n=>n+1)} onClose={()=>setOpen(false)}/></>;}
+ <TaskProtocolDialog open={open()} task={createTask()} entries={{}} onChanged={()=>setRevision(n=>n+1)} onClose={()=>setOpen(false)}/></>;}
 render(()=><Fixture/>,document.getElementById('root'));
 `);
 
@@ -67,6 +67,7 @@ try {
   const page = await context.newPage();
   page.setDefaultTimeout(15000); page.on("pageerror", error => errors.push(error.message));
   page.on("download", download => downloads.push(download));
+  context.on("page", tab => { tab.on("download", d => downloads.push(d)); tab.on("pageerror", e => errors.push(e.message)); });
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__protocol_download_check__/index.html`);
   await page.waitForFunction(() => window.fixture?.ready);
   await page.getByRole('button',{name:'Выбрать диск с проектами',exact:true}).click();
@@ -83,16 +84,23 @@ try {
   assert.equal(await page.evaluate(()=>fixture.permissions.length),0);
   passed('Saved HTML has a document/download indicator, multiple protocols show a count; scanning reads metadata only and requests no permission');
 
-  // Selecting another task must not redirect a download or load solver results.
+  // Opening a row's report must retain selection and the loaded task.
   await row('Task B').click(); await icon('Task A').waitFor({state:'visible'});
-  const singlePromise = page.waitForEvent('download'); await icon('Task A').click();
+  const popupPromise = page.waitForEvent('popup'); await icon('Task A').click();
+  const report = await popupPromise;
+  const downloadButton = report.getByRole('link', {name:'Загрузить',exact:true}); await downloadButton.waitFor();
+  await report.frameLocator('iframe').locator('video').waitFor();
+  assert.equal(await report.evaluate(()=>window.opener),null); assert.equal(downloads.length,0);
+  const downloadBox=await downloadButton.boundingBox();assert.ok(downloadBox.x>1200&&downloadBox.y<20);
+  await report.screenshot({path:path.join(output,'opened-protocol.png')});
+  const singlePromise = report.waitForEvent('download'); await downloadButton.click();
   const single = await singlePromise, singlePath = path.join(output,'downloaded-protocol.html'); await single.saveAs(singlePath);
   assert.equal(single.suggestedFilename(),'protocol.html');
   assert.equal(await readFile(singlePath,'utf8'),await page.evaluate(()=>fixture.source()));
   assert.equal(await row('Task B').getAttribute('aria-selected'),'true');
   assert.equal(await page.evaluate(()=>fixture.loaded()),0);
   assert.equal(await page.evaluate(()=>fixture.permissions.length),0);
-  passed('One click downloads the exact saved HTML including WebM, retaining task selection and requesting no write permission or solver load');
+  passed('The icon opens a report tab without downloading; its top-right button downloads exact HTML with WebM, without changing selection or loading results');
 
   await icon('Task B').focus(); await page.keyboard.press('Enter');
   const chooser = page.getByRole('dialog',{name:'Протоколы задания «Task B»',exact:true});
@@ -101,8 +109,11 @@ try {
   await page.keyboard.press('Escape'); await chooser.waitFor({state:'hidden'});
   assert.equal(await icon('Task B').evaluate(n=>n===document.activeElement),true);
   await icon('Task B').click();
-  const selectedPromise = page.waitForEvent('download');
+  const selectedPopup = page.waitForEvent('popup');
   await chooser.getByRole('button',{name:/^protocol-10\.html/}).click();
+  const selectedReport=await selectedPopup;await selectedReport.getByRole('link',{name:'Загрузить',exact:true}).waitFor();
+  assert.equal(downloads.length,1);
+  const selectedPromise=selectedReport.waitForEvent('download');await selectedReport.getByRole('link',{name:'Загрузить',exact:true}).click();
   const selected=await selectedPromise, selectedPath=path.join(output,'selected-protocol.html');await selected.saveAs(selectedPath);
   assert.equal(selected.suggestedFilename(),'protocol-10.html');
   assert.equal(await readFile(selectedPath,'utf8'),await page.evaluate(()=>fixture.saved('Task B','protocol-10.html')));
@@ -122,7 +133,7 @@ try {
   passed('The downloaded single HTML plays and seeks its real VP9 video offline from file:// with JavaScript disabled');
 
   await page.evaluate(()=>fixture.create());
-  const editor=page.getByRole('dialog',{name:'Создать протокол',exact:true});await editor.waitFor();
+  const editor=page.getByRole('dialog',{name:/^(Создать|Редактировать) протокол$/});await editor.waitFor();
   await editor.getByRole('button',{name:'Сохранить в DOCS',exact:true}).click();
   await editor.getByRole('status').filter({hasText:'Сохранено:'}).waitFor();
   await editor.getByRole('button',{name:'Закрыть',exact:true}).click();
@@ -134,19 +145,26 @@ try {
   await page.evaluate(()=>fixture.restore());await refresh.click();await icon('Task A').waitFor();
   passed('Manual task-list refresh removes and restores indicators after external file changes');
 
-  const before=downloads.length;await page.evaluate(()=>fixture.block());await icon('Task A').click();
+  const before=downloads.length;await page.evaluate(()=>fixture.block());
+  const pendingPopup=page.waitForEvent('popup');await icon('Task A').click();const pendingReport=await pendingPopup;
   await page.waitForFunction(()=>fixture.started());await projects.selectOption('Other');await page.evaluate(()=>fixture.release());
-  await row('Foreign Task').waitFor();await page.waitForTimeout(250);assert.equal(downloads.length,before);
+  await row('Foreign Task').waitFor();await page.waitForTimeout(250);assert.equal(downloads.length,before);assert.equal(pendingReport.isClosed(),true);
+  assert.equal(await downloadButton.isVisible(),true);
   await projects.selectOption('Project');await icon('Task A').waitFor();
-  passed('Switching projects cancels a pending download so an old task cannot deliver a late file');
+  passed('Switching projects closes a pending report; already opened reports remain available');
 
-  await page.evaluate(()=>fixture.remove());await icon('Task A').click();
+  await page.evaluate(()=>fixture.remove());const failedPopup=page.waitForEvent('popup');await icon('Task A').click();const failedReport=await failedPopup;
   await row('Task A').locator('.task-protocol-download-error').getByRole('alert').or(row('Task A').getByRole('alert')).first().waitFor();
-  assert.equal(downloads.length,before);
+  assert.equal(downloads.length,before);assert.equal(failedReport.isClosed(),true);
   await refresh.click();await icon('Task A').waitFor({state:'hidden'});
-  passed('Deleting a source file before clicking reports a download error; no empty download or replacement document is created');
+  passed('Deleting a source file before clicking reports an opening error and closes the placeholder without creating a download');
 
   await page.screenshot({path:path.join(output,'task-protocol-download.png'),fullPage:true});
+  await page.close();
+  const independent=report.waitForEvent('download');await downloadButton.click();const afterClose=await independent;
+  await afterClose.saveAs(path.join(output,'after-gui-close.html'));
+  assert.equal(await readFile(path.join(output,'after-gui-close.html'),'utf8'),await readFile(singlePath,'utf8'));
+  passed('The opened report and original-file download survive closing the Viewer tab');
   assert.deepEqual(errors,[]);
   await writeFile(path.join(output,'browser.json'),JSON.stringify({checks,errors,downloads:downloads.map(d=>d.suggestedFilename())},null,2));
   console.log(`BROWSER_OK ${checks.length}/${checks.length}`);

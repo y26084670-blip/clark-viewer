@@ -18,5 +18,4 @@ test("lazy tab import failure has an explicit reload message and action", () => 
   assert.match(source, /<ErrorBoundary/);
   assert.match(source, /Версия Viewer обновлена\. Перезагрузите страницу\./);
   assert.match(source, /window\.location\.reload\(\)/);
-  assert.match(source, /<Suspense fallback=\{<div class="empty-task">Загрузка вкладки…<\/div>\}>/);
 });

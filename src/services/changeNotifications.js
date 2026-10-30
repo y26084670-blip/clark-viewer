@@ -24,6 +24,18 @@ export function updatesFeedUrl(app, baseUrl, locationHref) {
   const base = new URL(baseUrl, locationHref);
   return new URL(app === "viewer" ? "../clark-editor/updates.json" : "updates.json", base).href;
 }
+export async function readInstallerUrl(feedUrl, { fetchImpl = globalThis.fetch, signal } = {}) {
+  // The journal and the installer resource belong to Editor, including in Viewer.
+  const response = await fetchImpl(new URL("examples-config.json", feedUrl).href,
+    { cache: "no-store", credentials: "omit", signal });
+  if (!response.ok) throw new Error("Не удалось получить ссылку на установщик.");
+  const config = await response.json();
+  const url = new URL(config?.solverInstallerUrl);
+  if (url.protocol !== "https:" || url.username || url.password || url.hash || url.port) {
+    throw new Error("Некорректная ссылка на установщик.");
+  }
+  return url.href;
+}
 export function validateUpdatesFeed(value) {
   if (value?.schemaVersion !== 1 || !Array.isArray(value.entries) || value.entries.length > 5000) {
     throw new Error("Некорректный журнал обновлений.");
@@ -42,8 +54,9 @@ export function validateUpdatesFeed(value) {
       if (item[key] !== undefined && typeof item[key] !== "string") throw new Error("Некорректная запись журнала обновлений.");
     }
   }
-  if (value.recommendedClark !== null && (!value.recommendedClark || !validVersion(value.recommendedClark.version)
-    || !safeUpdateUrl(value.recommendedClark.installerUrl))) throw new Error("Некорректная рекомендуемая версия Clark.");
+  if (value.recommendedClark !== null && (!value.recommendedClark || !validVersion(value.recommendedClark.version))) {
+    throw new Error("Некорректная рекомендуемая версия Clark.");
+  }
   return { ...value, entries: [...value.entries].sort((a, b) => b.date.localeCompare(a.date)) };
 }
 
@@ -53,7 +66,8 @@ export function createChangeNotifications({ storage, eventTarget, fetchImpl = gl
   url, onChange = () => {}, now = Date.now, timeoutMs = 10000 } = {}) {
   const memory = new Map();
   let persistent = Boolean(storage), disposed = false, pending = null, abort;
-  let state = { feed: null, checkedAt: null, source: "none", loading: false, error: "", persistent };
+  let state = { feed: null, checkedAt: null, source: "none", loading: false, error: "",
+    installerUrl: null, installerError: "", persistent };
   const read = key => {
     try { return persistent ? storage.getItem(key) : memory.get(key) ?? null; }
     catch { persistent = false; return memory.get(key) ?? null; }
@@ -105,7 +119,7 @@ export function createChangeNotifications({ storage, eventTarget, fetchImpl = gl
       if (pending) return pending;
       abort = new AbortController();
       const timer = setTimeout(() => abort.abort(), timeoutMs);
-      state = { ...state, loading: true, error: "" }; emit();
+      state = { ...state, loading: true, error: "", installerUrl: null, installerError: "" }; emit();
       pending = Promise.resolve().then(async () => {
         if (disposed) { clearTimeout(timer); return; }
         try {
@@ -120,7 +134,17 @@ export function createChangeNotifications({ storage, eventTarget, fetchImpl = gl
         } catch {
           if (!disposed) state = { ...state, source: state.feed ? "cache" : "none",
             error: state.feed ? "Журнал недоступен. Показана последняя сохранённая копия." : "Не удалось загрузить журнал обновлений." };
-        } finally { clearTimeout(timer); pending = null; state = { ...state, loading: false }; emit(); }
+        } finally {
+          if (!disposed && state.feed?.recommendedClark) {
+            try {
+              const installerUrl = await readInstallerUrl(url, { fetchImpl, signal: abort.signal });
+              if (!disposed) state = { ...state, installerUrl };
+            } catch {
+              if (!disposed) state = { ...state, installerError: "Не удалось получить ссылку на установщик. Повторите проверку обновлений." };
+            }
+          }
+          clearTimeout(timer); pending = null; state = { ...state, loading: false }; emit();
+        }
       });
       return pending;
     },

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createChangeNotifications, compareVersions, validateUpdatesFeed, safeUpdateUrl, updatesFeedUrl,
+import { createChangeNotifications, compareVersions, validateUpdatesFeed, safeUpdateUrl, updatesFeedUrl, readInstallerUrl,
   NEWS_CACHE_KEY, installedVersionSnapshot, findVersionContext, createVersionCheckRequest, waitForVersionCheck,
   saveInstalledVersion, readSavedInstalledVersion } from "../src/services/changeNotifications.js";
 
@@ -40,6 +40,71 @@ test("invalid registries never replace usable data", () => {
     { ...feed([]), recommendedClark: { version: "0.10", installerUrl: "https://example.test/installer" } }]) {
     assert.throws(() => validateUpdatesFeed(bad));
   }
+});
+
+test("Editor and Viewer resolve the same live installer resource with no HTTP cache", async () => {
+  for (const app of ["editor", "viewer"]) {
+    const feedUrl = updatesFeedUrl(app, `/clark-${app}/`, `https://example.test/clark-${app}/`);
+    const controller = new AbortController();
+    const result = await readInstallerUrl(feedUrl, { signal: controller.signal, fetchImpl: async (url, options) => {
+      assert.equal(url, "https://example.test/clark-editor/examples-config.json");
+      assert.equal(options.cache, "no-store"); assert.equal(options.credentials, "omit");
+      assert.equal(options.signal, controller.signal);
+      return response({ solverInstallerUrl: "https://example.test/current-installer" });
+    } });
+    assert.equal(result, "https://example.test/current-installer");
+  }
+});
+
+test("installer resource rejects missing, unsafe or unavailable addresses", async () => {
+  const url = "https://example.test/clark-editor/updates.json";
+  for (const solverInstallerUrl of [undefined, "", "javascript:alert(1)", "http://host/file", "https://user:password@host/file", "https://host:8443/file", "https://host/file#fragment"]) {
+    await assert.rejects(readInstallerUrl(url, { fetchImpl: async () => response({ solverInstallerUrl }) }));
+  }
+  await assert.rejects(readInstallerUrl(url, { fetchImpl: async () => ({ ok: false, status: 404 }) }));
+});
+
+test("resource changes replace the download link without changes to the feed or cached legacy URL", async () => {
+  const data = { ...feed([entry("news")]), recommendedClark: { version: "0.10.48", installerUrl: "https://example.test/stale" } };
+  const storage = memory(), calls = [];
+  storage.setItem(NEWS_CACHE_KEY, JSON.stringify({ feed: data, checkedAt: "2026-10-22T20:00:00Z" }));
+  let current = "https://example.test/new-a", unavailable = false;
+  const store = createChangeNotifications({ storage, url: "https://example.test/clark-editor/updates.json",
+    fetchImpl: async url => {
+      calls.push(url);
+      return url.endsWith("updates.json") ? response(data)
+        : unavailable ? { ok: false, status: 503 } : response({ solverInstallerUrl: current });
+    } });
+  assert.equal(store.snapshot().installerUrl, null);
+  await store.refresh(); assert.equal(store.snapshot().installerUrl, current);
+  current = "https://example.test/new-b";
+  await store.refresh(); assert.equal(store.snapshot().installerUrl, current);
+  unavailable = true;
+  const refreshing = store.refresh(); assert.equal(store.snapshot().installerUrl, null);
+  await refreshing;
+  assert.equal(store.snapshot().installerUrl, null);
+  assert.match(store.snapshot().installerError, /ссылку на установщик/);
+  assert.equal(store.snapshot().error, ""); assert.equal(store.snapshot().feed.entries.length, 1);
+  unavailable = false;
+  await store.refresh(); assert.equal(store.snapshot().installerUrl, current);
+  assert.equal(store.snapshot().installerError, "");
+  assert.equal(calls.filter(url => url.endsWith("examples-config.json")).length, 4);
+  store.dispose();
+});
+
+test("version-only recommendation is valid and disposing stops late installer publication", async () => {
+  const data = { ...feed([]), recommendedClark: { version: "0.10.48" } };
+  assert.doesNotThrow(() => validateUpdatesFeed(data));
+  let resolveConfig, configStarted, notifications = 0;
+  const started = new Promise(resolve => { configStarted = resolve; });
+  const store = createChangeNotifications({ url: "https://example.test/updates.json", onChange: () => notifications++,
+    fetchImpl: async url => url.endsWith("updates.json") ? response(data)
+      : new Promise(resolve => { resolveConfig = resolve; configStarted(); }) });
+  const pending = store.refresh(); await started;
+  store.dispose(); const before = notifications;
+  resolveConfig(response({ solverInstallerUrl: "https://example.test/late" }));
+  await pending;
+  assert.equal(notifications, before); assert.equal(store.snapshot().installerUrl, null);
 });
 
 test("first use starts with the latest release separately in each category", async () => {
@@ -155,6 +220,7 @@ test("published guide links and canonical registry are valid when present in the
   let json;
   try { json = await readFile(path, "utf8"); } catch (error) { if (error.code === "ENOENT") return; throw error; }
   const data = validateUpdatesFeed(JSON.parse(json));
+  assert.equal(Object.hasOwn(data.recommendedClark, "installerUrl"), false, "Installer URL has one editable resource");
   const guide = await readFile(new URL("../docs/user-guide/index.html", import.meta.url), "utf8");
   for (const item of data.entries) if (item.detailsUrl?.startsWith("user-guide/index.html#")) {
     assert.ok(guide.includes(`id="${item.detailsUrl.split("#")[1]}"`));

@@ -3,7 +3,7 @@ import { LineChart } from "../components/LineChart.jsx";
 import { ProtocolCheck } from "../components/protocol/ProtocolCheck.jsx";
 import { captureProtocolRenderer } from "../services/protocol/protocolCapture.js";
 import { TimeSlider } from "../components/TimeSlider.jsx";
-import { plotChannels, plotChannelLabel, plotCurveLabel, plotPointAtStep, readPlotCurves, validatePlotCurve, expandPlotComponents, isSingleTimePlot, singleTimePlotTable } from "../services/results/plotConstructor.js";
+import { plotChannels, plotAxisLabel, plotCurveLabel, plotPointAtStep, readPlotCurves, validatePlotCurve, expandPlotComponents, isSingleTimePlot, singleTimePlotTable } from "../services/results/plotConstructor.js";
 import { listPlotTasks } from "../services/results/plotTaskSources.js";
 import { loadLatestOMChannels, readChannelSource } from "../services/results/omResultChannels.js";
 import { useAsyncResult } from "../services/results/resultRequests.js";
@@ -198,12 +198,7 @@ export function PlotConstructor(props) {
     const singleTime = createMemo(() => isSingleTimePlot(props.task, recipe().curves));
     const valueTable = createMemo(() => !data.loading() && !failure() ? singleTimePlotTable(recipe().curves, series()) : null);
     const frameKey = createMemo(() => ({ frame: data.state().frame, time: props.time }));
-    const axisLabel = axis => {
-      const labels = [...new Set(recipe().curves.map(curve => plotChannelLabel(curve[`${axis}Channel`], curve[axis])))];
-      if (labels.length === 1) return labels[0];
-      const unit = recipe().curves[0]?.[`${axis}Channel`].unit;
-      return `${axis.toUpperCase()}${unit ? `, ${unit}` : ""} (величины указаны в легенде)`;
-    };
+    const axisLabel = axis => plotAxisLabel(recipe().curves, axis);
     const protocol = () => <ProtocolCheck context={props} entryKey={`plot:${p.id}`} title={`График ${number()}`}
       compact={!expanded()} disabled={data.loading() || !!failure()}
       comment={recipe().curves.map(curve => `${plotCurveLabel(curve, "y")} / ${plotCurveLabel(curve, "x")}`).join("; ")}

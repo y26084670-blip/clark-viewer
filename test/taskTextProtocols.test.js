@@ -7,7 +7,7 @@ import h5wasm from "h5wasm/node";
 import { Hdf5ResultFile } from "../src/services/results/hdf5ResultFile.js";
 import { decodeHeader } from "../src/services/results/resultLayout.js";
 import { elementLayout, regionLayout } from "../src/services/results/resultMappings.js";
-import { createTextProtocols, deleteTextProtocols, planTextProtocols, protocolHeader, protocolNumber,
+import { createTextProtocols, deleteTextProtocols, listExistingTextProtocols, planTextProtocols, protocolHeader, protocolNumber,
   protocolRow, protocolTimestamp, textProtocolWriteAccess, TEXT_PROTOCOLS, vtspProtocolRow } from "../src/services/taskTextProtocols.js";
 
 const names = TEXT_PROTOCOLS.map(p => p.name);
@@ -154,4 +154,24 @@ for (const Type of [Float32Array, Float64Array]) test(`Real HDF5 ${Type.name}: f
     assert.equal((output.files.get("prot-source-J.txt").match(/iDTK/g) || []).length, 2);
     assert.match(output.files.get("prot-source-J.txt"), /-3\.000000E\+00/);
   } finally { file?.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("presence checks only the selected task's accepted files, including empty files, without reading or writing", async () => {
+  for (const name of names) {
+    const output = directory({ [name]: "", "prot-force.txt": "keep", "JE.h5": "binary" });
+    const selected = { async getDirectoryHandle(folder, options) { assert.equal(folder, "output3XX"); assert.equal(options, undefined); return output; } };
+    assert.deepEqual(await listExistingTextProtocols(selected), [name]);
+    assert.deepEqual(output.writes, []); assert.deepEqual(output.deleted, []);
+  }
+  assert.deepEqual(await listExistingTextProtocols({ getDirectoryHandle: async () => directory({ "prot-force.txt": "keep", "JE.h5": "binary" }) }), []);
+  assert.deepEqual(await listExistingTextProtocols({ getDirectoryHandle: async () => { throw missing(); } }), []);
+});
+
+test("presence does not confuse permission errors, directories or cancellation with absent protocols", async () => {
+  for (const name of ["NotAllowedError", "TypeMismatchError"]) {
+    const failure = new DOMException("blocked", name);
+    await assert.rejects(listExistingTextProtocols({ getDirectoryHandle: async () => { throw failure; } }), { name });
+    await assert.rejects(listExistingTextProtocols({ getDirectoryHandle: async () => ({ getFileHandle: async () => { throw failure; } }) }), { name });
+  }
+  await assert.rejects(listExistingTextProtocols({}, { signal: AbortSignal.abort() }), { name: "AbortError" });
 });

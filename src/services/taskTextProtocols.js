@@ -148,6 +148,23 @@ export async function textProtocolWriteAccess(handle) {
     throw new Error("Нет разрешения на запись текстовых протоколов");
   }
 }
+// Only the selected task's five derived files count, including empty files.
+// Metadata checks must neither read result data nor request write access.
+export async function listExistingTextProtocols(handle, { signal } = {}) {
+  signal?.throwIfAborted();
+  let output;
+  try { output = await handle.getDirectoryHandle("output3XX"); }
+  catch (error) { if (missing(error)) return []; throw error; }
+  const found = [];
+  for (const { name } of TEXT_PROTOCOLS) {
+    signal?.throwIfAborted();
+    try { await output.getFileHandle(name); found.push(name); }
+    catch (error) { if (!missing(error)) throw error; }
+  }
+  signal?.throwIfAborted();
+  return found;
+}
+
 export async function deleteTextProtocols(handle, { check = () => {}, onProgress = () => {} } = {}) {
   let output;
   try { output = await handle.getDirectoryHandle("output3XX"); }

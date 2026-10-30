@@ -7,6 +7,7 @@ import { loadTaskInput, readTaskSummaries } from "../services/taskLoadService.js
 import { useAsyncResult } from "../services/results/resultRequests.js";
 import { buildGeometryScene } from "../services/visualization/geometrySceneModel.js";
 import { ThreeGeometryViewport } from "../components/geometry/ThreeGeometryViewport.jsx";
+import { TaskTextProtocolsDialog } from "../components/tasks/TaskTextProtocolsDialog.jsx";
 import { TaskMediaPanel } from "../components/tasks/TaskMediaPanel.jsx";
 import { TaskStatusCells } from "../components/tasks/TaskStatusCells.jsx";
 import { ProjectDiskDialog } from "../components/tasks/ProjectDiskDialog.jsx";
@@ -34,12 +35,13 @@ export function Tasks(props) {
   );
   const [candidate, setCandidate] = createSignal(null), [error, setError] = createSignal("");
   const [galleryBusy, setGalleryBusy] = createSignal(false);
+  const [textProtocolsBusy, setTextProtocolsBusy] = createSignal(false);
   const [protocolBusy, setProtocolBusy] = createSignal(false);
   const [selectionReceiving, setSelectionReceiving] = createSignal(false);
   const [selectionSending, setSelectionSending] = createSignal(false);
   const [selectionNotice, setSelectionNotice] = createSignal("");
   const [selectionError, setSelectionError] = createSignal("");
-  const browserBusy = () => accessBusy() || projectListBusy() || taskListBusy() || galleryBusy() || selectionReceiving() || protocolBusy();
+  const browserBusy = () => accessBusy() || projectListBusy() || taskListBusy() || galleryBusy() || selectionReceiving() || protocolBusy() || textProtocolsBusy();
   let taskListElement, selectionErrorDialog, selectionErrorReturnFocus;
   const [lastTask, setLastTask] = createSignal(null), [lastTaskNotice, setLastTaskNotice] = createSignal("");
   const lastTaskHistory = createLastOpenedTaskHistory({ app: "viewer", onChange: setLastTask, onNotice: setLastTaskNotice });
@@ -314,9 +316,13 @@ export function Tasks(props) {
         <Show when={projectBrowseNotice()}><div class="task-access-notice" role="status">{projectBrowseNotice()}</div></Show>
         <div class="task-list-heading">
           <div class="field-label">Список заданий</div>
-          <button type="button" class="task-status-refresh" disabled={!project() || props.busy || browserBusy() || taskStatus.busy()}
-            aria-label="Обновить список заданий" aria-busy={taskListBusy() || taskStatus.busy()}
-            title="Обновить список заданий" onClick={refreshTasks}>↻</button>
+          <div class="task-list-protocol-controls">
+            <TaskTextProtocolsDialog taskHandle={candidate()?.handle} active={props.active}
+              disabled={props.busy || browserBusy()} onBusyChange={setTextProtocolsBusy} />
+            <button type="button" class="task-status-refresh" disabled={!project() || props.busy || browserBusy() || taskStatus.busy()}
+              aria-label="Обновить список заданий" aria-busy={taskListBusy() || taskStatus.busy()}
+              title="Обновить список заданий" onClick={refreshTasks}>↻</button>
+          </div>
         </div>
         <div class="task-list" ref={taskListElement} role="listbox" aria-label="Список заданий" onClick={event => {
           if (browserBusy()) return;

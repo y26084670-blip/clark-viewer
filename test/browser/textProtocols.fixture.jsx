@@ -1,14 +1,17 @@
-import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import h5wasm from "h5wasm";
-import { TaskMediaPanel } from "../../src/components/tasks/TaskMediaPanel.jsx";
+import { Tasks } from "../../src/tabs/Tasks.jsx";
 import { TEXT_PROTOCOLS } from "../../src/services/taskTextProtocols.js";
 import "../../src/App.css";
 
 const root = await navigator.storage.getDirectory();
-try { await root.removeEntry("text-protocols-fixture", { recursive: true }); } catch (error) { if (error.name !== "NotFoundError") throw error; }
-const workspace = await root.getDirectoryHandle("text-protocols-fixture", { create: true });
+try { await root.removeEntry("clark.text-protocols-fixture", { recursive: true }); } catch (error) { if (error.name !== "NotFoundError") throw error; }
+const workspace = await root.getDirectoryHandle("clark.text-protocols-fixture", { create: true });
+const project = await workspace.getDirectoryHandle("Project", { create: true });
 const tasks = {};
+FileSystemDirectoryHandle.prototype.requestPermission = async () => "granted";
+FileSystemDirectoryHandle.prototype.queryPermission = async () => "granted";
+window.showDirectoryPicker = async () => root;
 async function put(handle, path, data) {
   const parts = path.split("/"), name = parts.pop();
   for (const part of parts) handle = await handle.getDirectoryHandle(part, { create: true });
@@ -29,9 +32,9 @@ const sources = {
 };
 const original = {};
 for (const name of ["A", "B"]) {
-  const handle = await workspace.getDirectoryHandle(name, { create: true }); tasks[name] = handle;
+  const handle = await project.getDirectoryHandle(name, { create: true }); tasks[name] = handle;
   const element = { targ: 0, model: 2, rv: 1, xapName: "HTS", dp: [1, 1, 1], dr: [0, 0, 0],
-    geo: Array(24).fill(0), vkan: [0, 0, 0], sym: { vi: [0, 0, 0], ls: 1, as: 1, ps: 1, kya: 0, kyp: 0 } };
+    geo: [0,0,0, 1,0,0, 1,1,0, 0,1,0, 0,0,1, 1,0,1, 1,1,1, 0,1,1], vkan: [0, 0, 0], sym: { vi: [0, 0, 0], ls: 1, as: 1, ps: 1, kya: 0, kyp: 0 } };
   await put(handle, "input3XX/general.txt", JSON.stringify({ countTimeSteps: 1, timeStep: .5, doubleFloat: true }));
   await put(handle, "input3XX/kvs.txt", [element, { ...element, targ: 1, model: 0 },
     { ...element, targ: 2, model: 0 }, { ...element, targ: 3, model: 0, indAmp: 0 }].map(x => JSON.stringify(x)).join("\n"));
@@ -51,9 +54,11 @@ for (const name of ["A", "B"]) {
   await put(handle, "DOCS/README.txt", "Documentation");
 }
 function Fixture() {
-  const [selected, setSelected] = createSignal(null), [busy, setBusy] = createSignal(false);
+  let loadedHandle = null, loadCount = 0;
   window.textProtocolFixture = {
-    select: name => setSelected(tasks[name] ?? null),
+    loaded: () => loadedHandle?.name, loadCount: () => loadCount,
+    seedSingle: (name, filename = "prot-source-M.txt") => put(tasks[name], `output3XX/${filename}`, ""),
+    clear: async name => { const output = await tasks[name].getDirectoryHandle("output3XX"); for (const p of TEXT_PROTOCOLS) { try { await output.removeEntry(p.name); } catch (e) { if (e.name !== "NotFoundError") throw e; } } },
     text: async (name, path) => (await read(tasks[name], path)).text(),
     list: async name => { const output = await tasks[name].getDirectoryHandle("output3XX"); return Array.fromAsync(output.keys()); },
     seed: async name => { for (const p of TEXT_PROTOCOLS) await put(tasks[name], `output3XX/${p.name}`, "previous"); },
@@ -67,8 +72,8 @@ function Fixture() {
       return true;
     },
   };
-  return <div style={{ width: "450px", height: "620px", margin: "20px" }}>
-    <TaskMediaPanel taskHandle={selected()} active={true} disabled={busy()} onBusyChange={setBusy} />
+  return <div style={{ height: "100vh" }}>
+    <Tasks active={true} onLoad={handle => { loadedHandle = handle; loadCount++; return true; }} />
   </div>;
 }
 render(() => <Fixture />, document.getElementById("root"));

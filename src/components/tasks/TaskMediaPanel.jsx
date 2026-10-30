@@ -1,6 +1,7 @@
 import { createMemo, createSignal, createUniqueId } from "solid-js";
 import { TaskGifGallery } from "./TaskGifGallery.jsx";
 import { TaskDocsGallery } from "./TaskDocsGallery.jsx";
+import { TaskTextProtocolsDialog } from "./TaskTextProtocolsDialog.jsx";
 import "./TaskMediaPanel.css";
 
 export function TaskMediaPanel(props) {
@@ -28,6 +29,8 @@ export function TaskMediaPanel(props) {
     (next === "gif" ? gifButton : docsButton)?.focus();
   }
   return <section class="task-results-panel task-media-panel" aria-label="Результаты и документация выбранного задания">
+    <div class="task-media-toolbar">
+    <TaskTextProtocolsDialog taskHandle={props.taskHandle} active={props.active} disabled={disabled()} onBusyChange={busyChanged} />
     <div class="task-media-tabs" role="tablist" aria-label="Материалы выбранного задания" onKeyDown={tabKeyDown}>
       <div class="task-media-tab" classList={{ "is-active": tab() === "gif" }} role="presentation">
       <button ref={gifButton} type="button" role="tab" id={`${id}-gif-tab`} aria-controls={`${id}-gif-panel`}
@@ -49,6 +52,7 @@ export function TaskMediaPanel(props) {
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 8a6 6 0 1 0 0 5M16 3v5h-5" /></svg>
       </button>
       </div>
+    </div>
     </div>
     <div class="task-media-page" role="tabpanel" id={`${id}-gif-panel`} aria-labelledby={`${id}-gif-tab`} hidden={tab() !== "gif"}>
       <TaskGifGallery taskHandle={props.taskHandle} active={props.active} visible={tab() === "gif"}

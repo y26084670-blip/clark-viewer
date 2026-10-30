@@ -45,11 +45,12 @@ export function expectedPointCount(record, file) {
 export function mapResultObjects(task, file, header) {
   const records = sourceRecords(task, file);
   if (records.length !== header.numbs.length) {
-    throw new Error(`${file}.h5: число объектов не совпадает с input3XX`);
+    throw new Error(`${file}.h5: число объектов не совпадает с input3XX. Ожидается: ${records.length}, фактически: ${header.numbs.length}.`);
   }
   return records.map((record, index) => {
-    if (expectedPointCount(record, file) !== header.numbs[index]) {
-      throw new Error(`${file}.h5: сетка объекта №${record.id} не совпадает с input3XX`);
+    const expected = expectedPointCount(record, file);
+    if (expected !== header.numbs[index]) {
+      throw new Error(`${file}.h5: сетка объекта №${record.id} не совпадает с input3XX (число точек). Ожидается: ${expected}, фактически: ${header.numbs[index]}.`);
     }
     return { record, start: header.inds1[index] - 1, count: header.numbs[index] };
   });

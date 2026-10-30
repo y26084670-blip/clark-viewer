@@ -104,7 +104,10 @@ export function planTextProtocols(task, metadata) {
     if (!meta || meta.error || !meta.steps?.length) throw new Error(meta?.error || `${name}.h5: нет сохранённых результатов`);
     const objects = mapResultObjects(task, name, meta.header).map(object => ({ ...object,
       layout: name === "HS" ? regionLayout(object.record) : elementLayout(object.record, name === "HV") }));
-    if (meta.steps.some(step => step.index > task.general.countTimeSteps)) throw new Error(`${name}.h5: шаги не соответствуют input3XX`);
+    if (meta.steps.some(step => step.index > task.general.countTimeSteps)) {
+      const lastStep = meta.steps.reduce((last, step) => Math.max(last, step.index), 0);
+      throw new Error(`${name}.h5: шаги не соответствуют input3XX (максимальный номер шага). Ожидается: не более ${task.general.countTimeSteps}, фактически: ${lastStep}.`);
+    }
     families[name] = { name, objects, steps: meta.steps, count: objects.reduce((sum, o) => sum + o.count, 0) };
   }
   const hts = (families.MH?.objects ?? []).filter(o => o.record.targ === 0 && o.record.model === 2);
@@ -112,11 +115,18 @@ export function planTextProtocols(task, metadata) {
     const currents = new Map((families.JE?.objects ?? []).map(o => [o.record.id, o]));
     const objects = hts.map(o => {
       const je = currents.get(o.record.id);
-      if (!je || je.count !== o.count) throw new Error(`ВТСП №${o.record.id}: сетки MH и JE не совпадают`);
+      if (!je || je.count !== o.count) {
+        throw new Error(`ВТСП №${o.record.id}: сетки MH и JE не совпадают (число точек). Ожидается: ${o.count} (MH), фактически: ${je ? je.count : "объект отсутствует"} (JE).`);
+      }
       return { ...o, je };
     });
-    if (families.MH.steps.map(s => s.index).join(",") !== families.JE.steps.map(s => s.index).join(",")) {
-      throw new Error("ВТСП: сохранённые шаги MH и JE не совпадают");
+    const mhSteps = families.MH.steps, jeSteps = families.JE.steps;
+    if (mhSteps.length !== jeSteps.length) {
+      throw new Error(`ВТСП: сохранённые шаги MH и JE не совпадают (число сохранённых шагов). Ожидается: ${mhSteps.length} (MH), фактически: ${jeSteps.length} (JE).`);
+    }
+    const mismatch = mhSteps.findIndex((step, index) => step.index !== jeSteps[index].index);
+    if (mismatch !== -1) {
+      throw new Error(`ВТСП: сохранённые шаги MH и JE не совпадают (номер шага в позиции ${mismatch + 1}). Ожидается: ${mhSteps[mismatch].index} (MH), фактически: ${jeSteps[mismatch].index} (JE).`);
     }
     families.VTSP = { name: "VTSP", objects, steps: families.MH.steps, count: objects.reduce((sum, o) => sum + o.count, 0) };
   }

@@ -85,7 +85,10 @@ export function TaskTextProtocolsDialog(props) {
       onCancel={event => { event.preventDefault(); close(); }}>
       <h2 id={titleId}>Протоколы расчёта</h2>
       <p class="task-text-protocols-name">{selected()?.name}</p>
-      <p>Источники J и M, состояние ВТСП, поле в точках и объёмных областях. Все протоколы выделенного задания обрабатываются вместе.</p>
+      <p>Источники J и M, состояние ВТСП,<br />
+        поле в точках и объёмных областях.<br />
+        Протоколы выделенного задания<br />
+        обрабатываются вместе.</p>
       <Show when={checking()}><p role="status">Проверка протоколов…</p></Show>
       <Show when={status()}><p role="status">{status()}</p></Show>
       <Show when={error()}><p role="alert">{error()}</p></Show>

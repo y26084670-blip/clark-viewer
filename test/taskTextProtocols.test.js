@@ -81,12 +81,24 @@ for (const Type of [Float32Array, Float64Array]) test(`VTSP uses the material ax
   assert.equal(Number(vtspProtocolRow(object, 0, mh, je, [1, 0, 0], { JC0: 100, j_HC0: 100, JCa: 1, JCb: 1 }).trim().split(/\s+/).at(-1)), 0);
 });
 
-test("Input/HDF5 mismatch and incomplete time history are rejected before writing", () => {
+test("Input/HDF5 mismatch reports expected and actual counts or step indices", () => {
   assert.throws(() => planTextProtocols(task, {}), /нет сохранённых/);
-  assert.throws(() => planTextProtocols({ ...task, elements: [{ ...record, dp: [[3], [1], [1]] }] }, metadata), /сетка/);
-  assert.throws(() => planTextProtocols(task, { JE: { ...metadata.JE, steps: [{ index: 3 }] } }), /шаги/);
+  assert.throws(() => planTextProtocols({ ...task, elements: [record, { ...record, id: 2 }] }, metadata),
+    /JE\.h5: число объектов.*Ожидается: 2, фактически: 1\./);
+  assert.throws(() => planTextProtocols({ ...task, elements: [{ ...record, dp: [[3], [1], [1]] }] }, metadata),
+    /JE\.h5: сетка объекта №1.*число точек.*Ожидается: 3, фактически: 2\./);
+  assert.throws(() => planTextProtocols(task, { JE: { ...metadata.JE, steps: [{ index: 0 }, { index: 3 }, { index: 600 }] } }),
+    /JE\.h5: шаги.*максимальный номер шага.*Ожидается: не более 2, фактически: 600\./);
+  // Sparse, partial and static histories remain valid; snapshot count is not an interval count.
+  assert.doesNotThrow(() => planTextProtocols(task, metadata));
+  assert.doesNotThrow(() => planTextProtocols(task, { JE: { ...metadata.JE, steps: [{ index: 0 }] } }));
+  assert.doesNotThrow(() => planTextProtocols({ ...task, general: { ...task.general, countTimeSteps: 0 } },
+    { JE: { ...metadata.JE, steps: [{ index: 0 }] } }));
   const hts = { ...task, elements: [{ ...record, model: 2, xapName: "HTS" }] };
-  assert.throws(() => planTextProtocols(hts, { ...metadata, MH: { ...metadata.JE, steps: [{ index: 0 }] } }), /шаги MH и JE/);
+  assert.throws(() => planTextProtocols(hts, { ...metadata, MH: { ...metadata.JE, steps: [{ index: 0 }] } }),
+    /шаги MH и JE.*число сохранённых шагов.*Ожидается: 1 \(MH\), фактически: 2 \(JE\)/);
+  assert.throws(() => planTextProtocols(hts, { ...metadata, MH: { ...metadata.JE, steps: [{ index: 0 }, { index: 1 }] } }),
+    /шаги MH и JE.*номер шага в позиции 2.*Ожидается: 1 \(MH\), фактически: 2 \(JE\)/);
 });
 
 test("Create streams every saved step, replaces old files, and preserves HDF5/integral protocols", async () => {

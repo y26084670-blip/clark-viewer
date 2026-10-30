@@ -35,8 +35,13 @@ import {installBrowserDefaults} from '../src/services/browserDefaults.js';
 import {createMovieExportController} from '../src/services/movie/movieExportController.js';
 import {createMovieWebmEncoder} from '../src/services/movie/movieWebmEncoder.js';
 installBrowserDefaults(window);
-const task={general:{countTimeSteps:2,timeStep:.5},regions:[{id:1,indCoil:1},{id:2,indCoil:2}],metadata:{PSI:{steps:[{index:0}]},FM:{steps:[{index:0}]},Q:{steps:[{index:0}],header:{stride:4},pointCount:1},MH:{steps:[{index:0},{index:1},{index:2}],header:{stride:9},pointCount:1,ranges:{runId:'field-1'}}},
-handle:{getDirectoryHandle:async()=>{throw new DOMException('no OM','NotFoundError')}},reader:{history:async()=>{await window.__historyGate;return {steps:[0,1,2],stride:9,values:Float64Array.from([0,0,0,3,4,0,0,0,0,0,0,0,-3,0,4,0,0,0,0,0,0,3,4,0,0,0,0])}}}};
+window.__plotDetails = axis => {
+ const chart = Chart.getChart(document.querySelector('.constructor-plot canvas'));
+ return { title: chart.options.scales[axis].title.text,
+  labels: chart.data.datasets.filter(d => d._seriesKey !== 'marker').map(d => d.label) };
+};
+const task={general:{countTimeSteps:2,timeStep:.5},regions:[{id:1,indCoil:1},{id:2,indCoil:2}],metadata:{PSI:{steps:[{index:0},{index:1},{index:2}],header:{stride:1},pointCount:2},FM:{steps:[{index:0}]},Q:{steps:[{index:0}],header:{stride:4},pointCount:1},MH:{steps:[{index:0},{index:1},{index:2}],header:{stride:9},pointCount:1,ranges:{runId:'field-1'}}},
+handle:{getDirectoryHandle:async()=>{throw new DOMException('no OM','NotFoundError')}},reader:{history:async({name,point})=>{await window.__historyGate;if(name==='PSI')return {steps:[0,1,2],stride:1,values:Float64Array.from(point===0?[1,2,3]:[-10,0,10])};return {steps:[0,1,2],stride:9,values:Float64Array.from([0,0,0,3,4,0,0,0,0,0,0,0,-3,0,4,0,0,0,0,0,0,3,4,0,0,0,0])}}}};
 const manifest={schema:'clark-result-channels/1',model:'mechanics',role:'derived',complete:true,fieldRunId:'field-1',grid:{steps:2,dt:.5},dataFile:'energy.tsv',channels:[{column:'energy_J',label:'Механическая энергия',unit:'Дж'}]};
 window.pickerCalls=0;
 window.showDirectoryPicker=async()=>{window.pickerCalls++;return {getFileHandle:async name=>({getFile:async()=>new File([name==='results.json'?JSON.stringify(manifest):'step\\ttime_s\\tenergy_J\\n0\\t0\\t0\\n1\\t0.5\\t7\\n2\\t1\\t3\\n'],name)})}};
@@ -103,7 +108,7 @@ try {
  await page.getByRole('button',{name:'Выбрать диск с проектами',exact:true}).click();
  await page.getByRole('button',{name:'Продолжить',exact:true}).click();
  await page.getByRole('combobox',{name:'Список проектов'}).selectOption('Project 1');
- await page.locator('.task-status-row').filter({hasText:/^A$/}).dblclick();
+ await page.locator('.task-status-label').getByText('A', { exact: true }).dblclick();
  const objects=page.locator('.object-list');
  await page.waitForFunction(()=>document.querySelectorAll('.object-list .tabulator-row').length===3);
  assert.equal(await objects.locator('.tabulator-selected').count(),0);
@@ -178,6 +183,25 @@ try {
    assert.equal(await axis.locator('option[value="field:Q"]').evaluate(option => getComputedStyle(option).backgroundColor), 'rgb(38, 59, 82)');
  }
  passed('Both quantity lists highlight coil fluxes, total force, total moment and total conduction losses; local loss density keeps its ordinary background');
+ for (const axis of ['y', 'x']) {
+   const picker = axis === 'y' ? y : x, other = axis === 'y' ? x : y;
+   await other.getByLabel('Величина').selectOption('time');
+   await picker.getByLabel('Величина').selectOption('flux:1');
+   await add.click(); await waitSeries(0, 1);
+   const chartId = (await snap()).plots[0].id;
+   await picker.getByLabel('Величина').selectOption('flux:2');
+   await curve.click(); await waitSeries(0, 2);
+   assert.equal((await snap()).plots[0].id, chartId);
+   assert.equal(await graphs.count(), 1);
+   assert.deepEqual((await snap()).plots[0].series.map(s => s.map(p => p[axis])), [[1,2,3],[-10,0,10]]);
+   const plotted = await page.evaluate(axis => window.__plotDetails(axis), axis);
+   assert.equal(plotted.title, 'Потокосцепление, Вб');
+   assert.match(plotted.labels[0], /Катушка №1/); assert.match(plotted.labels[1], /Катушка №2/);
+   await graphs.getByRole('button', { name: 'Удалить график', exact: true }).click();
+ }
+ passed('Different coils share a plot on either axis, with distinct PSI values and legends under the common flux-linkage axis title');
+ await x.getByLabel('Величина').selectOption('time');
+ await y.getByLabel('Величина').selectOption('field:M');
  assert.equal(await curve.isDisabled(),true);
  await add.click(); await waitSeries(0,3);
  assert.equal(await x.getByLabel('Величина').inputValue(),'time');

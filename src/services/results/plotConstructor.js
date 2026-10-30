@@ -1,6 +1,6 @@
 import { QUANTITIES } from "./resultMappings.js";
 import { scalarAt } from "./resultPlots.js";
-import { measurementCoils, readFluxHistories, fluxHistorySeries, readForceMomentHistory,
+import { HISTORY_QUANTITIES, measurementCoils, readFluxHistories, fluxHistorySeries, readForceMomentHistory,
   forceMomentHistorySeries, readLossHistory, lossHistorySeries } from "./resultHistories.js";
 import { checkReadRange } from "./resultLayout.js";
 
@@ -98,6 +98,24 @@ export function plotCurveLabel(curve, axis) {
   return axis === "y" && curve.taskLabel ? `${curve.taskLabel} · ${label}` : label;
 }
 
+export function plotAxisLabel(curves, axis) {
+  const labels = [...new Set(curves.map(curve => {
+    const channel = curve[`${axis}Channel`];
+    return plotChannelLabel(channel?.kind === "flux" ? HISTORY_QUANTITIES.flux : channel, curve[axis]);
+  }))];
+  if (labels.length === 1) return labels[0];
+  const unit = curves[0]?.[`${axis}Channel`]?.unit;
+  return `${axis.toUpperCase()}${unit ? `, ${unit}` : ""} (величины указаны в легенде)`;
+}
+
+function plotQuantityIdentity(channel) {
+  // A coil selects a PSI row, not a different physical quantity. Keep its key
+  // and number on the channel for data reads, legends and tooltips.
+  if (channel.kind === "flux") return "flux";
+  if (channel.kind === "extra") return JSON.stringify([channel.kind, channel.source?.manifest.model || "ОМ", channel.column]);
+  return channel.key;
+}
+
 export function validatePlotCurve(curve, existing) {
   for (const axis of ["x", "y"]) {
     const channel = curve[`${axis}Channel`], spec = curve[axis];
@@ -107,9 +125,7 @@ export function validatePlotCurve(curve, existing) {
       throw new Error(`Ось ${axis.toUpperCase()}: номер точки должен быть от 1 до ${channel.points}.`);
     }
     const previous = existing?.[`${axis}Channel`];
-    const identity = c => c.kind === "extra"
-      ? JSON.stringify([c.kind, c.source?.manifest.model || "ОМ", c.column]) : c.key;
-    if (previous && identity(previous) !== identity(channel)) {
+    if (previous && plotQuantityIdentity(previous) !== plotQuantityIdentity(channel)) {
       throw new Error(`Ось ${axis.toUpperCase()}: выбранная величина и величина активного графика не совпадают. Добавьте отдельный график.`);
     }
   }
@@ -180,12 +196,13 @@ export function singleTimePlotTable(curves, series) {
   for (const curve of curves) {
     const component = curve.y.component ?? "scalar";
     if (!columns.has(component)) {
-      const channel = curve.yChannel;
+      const channel = curve.yChannel.kind === "flux" ? HISTORY_QUANTITIES.flux : curve.yChannel;
       const suffix = component === "scalar" ? "" : ` · ${"XYZ"[Number(component)]}`;
       columns.set(component, `${channel.label}${suffix}${channel.unit ? `, ${channel.unit}` : ""}`);
     }
     const id = curve.groupId ?? curve.id;
-    if (!groups.has(id)) groups.set(id, { id, values: new Map(), point: curve.yChannel.kind === "field" ? curve.y.point ?? 1 : null, comment: curve.taskLabel || "" });
+    if (!groups.has(id)) groups.set(id, { id, values: new Map(), point: curve.yChannel.kind === "field" ? curve.y.point ?? 1 : null,
+      comment: [curve.taskLabel, curve.yChannel.kind === "flux" ? `Катушка №${curve.yChannel.coil}` : ""].filter(Boolean).join(" · ") });
     groups.get(id).values.set(component, values.get(curve.id));
   }
   const keys = [...columns.keys()].sort();

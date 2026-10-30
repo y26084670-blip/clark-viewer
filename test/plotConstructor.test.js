@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseResultTable, validateChannelSource } from '../src/services/results/omResultChannels.js';
-import { plotChannels, readPlotChannel, pairPlotChannels, pairPlotChannelsByTime, plotPointAtStep, validatePlotCurve, plotChannelLabel, readPlotCurves } from '../src/services/results/plotConstructor.js';
+import { plotChannels, readPlotChannel, pairPlotChannels, pairPlotChannelsByTime, plotPointAtStep, validatePlotCurve, plotChannelLabel, plotAxisLabel, readPlotCurves, singleTimePlotTable } from '../src/services/results/plotConstructor.js';
 const task={ general:{countTimeSteps:2,timeStep:.5},metadata:{MH:{ranges:{runId:'run-1'}}} };
 const manifest={schema:'clark-result-channels/1',model:'inertia',role:'derived',complete:true,
   fieldRunId:'run-1',grid:{steps:2,dt:.5},dataFile:'energy.tsv',channels:[{column:'energy_J',label:'Механическая энергия',unit:'Дж'}]};
@@ -59,6 +59,56 @@ test('multiple curves retain loop order and good curves survive an invalid sourc
  assert.deepEqual(plot.series[1].points.map(p=>p.x),[0,7,3]);
  assert.match(plot.error,/Кривая 3/);
  assert.match(plot.series[0].tooltip(plot.series[0].points[1]).join(' '),/Механическая энергия/);
+});
+
+function fluxTask(values = [[1, 2, 3], [-10, 0, 10]]) {
+ const reads = [], steps = values[0].map((_, index) => ({ index }));
+ return { general: { countTimeSteps: steps.length - 1, timeStep: .5 },
+  regions: values.map((_, index) => ({ id: index + 1, indCoil: index + 1 })),
+  metadata: { PSI: { steps, pointCount: values.length, header: { stride: 1 } } }, reads,
+  reader: { history: async request => {
+   reads.push(request);
+   return { stride: 1, steps: steps.map(s => s.index), values: Float64Array.from(values[request.point]) };
+  } } };
+}
+
+test('different coils share a quantity on either axis while data and legends retain coil identity', async () => {
+ const t = fluxTask(), [time, first, second] = plotChannels(t);
+ const base = { id: 'first', x: {}, y: {}, xChannel: time, yChannel: first };
+ const next = { ...base, id: 'second', yChannel: second };
+ assert.equal(validatePlotCurve(next, base), next);
+ assert.doesNotThrow(() => validatePlotCurve({ ...next, yChannel: { ...second, label: 'Другое имя' } }, base));
+ assert.equal(plotAxisLabel([base, next], 'y'), 'Потокосцепление, Вб');
+ assert.equal(plotAxisLabel([base], 'y'), 'Потокосцепление, Вб');
+ assert.equal(plotAxisLabel([base, next], 'x'), 'Время, с');
+ const reversed = [base, next].map(c => ({ ...c, xChannel: c.yChannel, yChannel: time }));
+ assert.doesNotThrow(() => validatePlotCurve(reversed[1], reversed[0]));
+ assert.equal(plotAxisLabel(reversed, 'x'), 'Потокосцепление, Вб');
+ // Matching names/units must not make another quantity compatible with flux.
+ const other = { ...second, kind: 'field', key: 'field:Bv', points: 1 };
+ assert.throws(() => validatePlotCurve({ ...next, y: { point: 1 }, yChannel: other }, base), /Ось Y/);
+ assert.throws(() => validatePlotCurve({ ...reversed[1], x: { point: 1 }, xChannel: other }, reversed[0]), /Ось X/);
+ const result = await readPlotCurves(t, [base, next]);
+ assert.equal(result.error, '');
+ assert.deepEqual(t.reads, [{ name: 'PSI', point: 0 }, { name: 'PSI', point: 1 }]);
+ assert.deepEqual(result.series.map(s => s.points.map(p => p.y)), [[1, 2, 3], [-10, 0, 10]]);
+ for (const [index, series] of result.series.entries()) {
+  assert.match(series.label, new RegExp(`Катушка №${index + 1}`));
+  assert.match(series.tooltip(series.points[1]).join(' '), new RegExp(`Катушка №${index + 1}`));
+ }
+ const xy = await readPlotCurves(t, reversed);
+ assert.deepEqual(xy.series.map(s => s.points.map(p => p.x)), [[1, 2, 3], [-10, 0, 10]]);
+});
+
+test('single-time flux table identifies each coil under a common quantity header', async () => {
+ const t = fluxTask([[3], [-7]]), [time, ...coils] = plotChannels(t);
+ const curves = coils.map(c => ({ id: c.key, taskLabel: 'Проект/Задание', x: {}, y: {}, xChannel: time, yChannel: c }));
+ validatePlotCurve(curves[1], curves[0]);
+ const result = await readPlotCurves(t, curves), table = singleTimePlotTable(curves, result.series);
+ assert.deepEqual(table.headers, ['Потокосцепление, Вб']);
+ assert.deepEqual(table.rows.map(r => [r.values, r.comment]), [
+  [[3], 'Проект/Задание · Катушка №1'], [[-7], 'Проект/Задание · Катушка №2']]);
+ assert.equal(table.hasPoint, false);
 });
 
 function comparisonTask(dt, values) {

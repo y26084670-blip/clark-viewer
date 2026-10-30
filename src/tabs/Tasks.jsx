@@ -359,8 +359,8 @@ export function Tasks(props) {
       <footer>выбор задания</footer>
     </section>
     <section class="task-summary-panel">
-      <div class="task-geometry-preview">
-        <Show when={props.active && info.value()?.scene} fallback={<div class="plot-empty">{info.loading() ? "Чтение геометрии…" : "Геометрия выбранного задания"}</div>}>
+      <div class="task-geometry-preview" aria-busy={info.loading()}>
+        <Show when={props.active && info.value()?.scene}>
           <ThreeGeometryViewport scene={info.value().scene} mode="solid" projection="orthographic" autoFit={true} showEdges={true}
             filters={{ symmetry: { local: false, axial: false, periodic: false, mirror: false } }} />
         </Show>

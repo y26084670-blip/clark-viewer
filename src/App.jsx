@@ -199,7 +199,7 @@ export default function App() {
             <p class="tab-load-error">{failure?.message ?? String(failure)}</p>
             <button type="button" onClick={() => window.location.reload()}>Перезагрузить</button>
           </div>}>
-            <Suspense fallback={<div class="empty-task">Загрузка вкладки…</div>}><Switch>
+            <Suspense fallback={<Show when={active() !== 1}><div class="empty-task">Загрузка вкладки…</div></Show>}><Switch>
               <Match when={active() === 1}><SourcesFields3D {...shared} /></Match>
               <Match when={active() === 2}><WorkingPoints {...shared} /></Match>
               <Match when={active() === 3}><FieldLines {...shared} /></Match>

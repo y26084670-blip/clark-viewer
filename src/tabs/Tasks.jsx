@@ -1,5 +1,5 @@
 import { readTaskDirectoryLists } from "../services/taskDirectoryRefresh.js";
-import { batch, createSignal, For, Show, onCleanup, onMount } from "solid-js";
+import { batch, createEffect, createSignal, For, Show, onCleanup, onMount } from "solid-js";
 import { createLastOpenedTaskHistory, sortTaskDirectories } from "../services/taskLastOpenedService.js";
 import { listProjectCatalogs, readProjectDisk, saveProjectDisk, watchProjectDisk, projectDiskPermission } from "../services/projectDiskAccessService.js";
 import { createTaskSelectionChannel, readTaskSelection } from "../services/taskSelectionChannel.js";
@@ -42,6 +42,7 @@ export function Tasks(props) {
   const [selectionNotice, setSelectionNotice] = createSignal("");
   const [selectionError, setSelectionError] = createSignal("");
   const browserBusy = () => accessBusy() || projectListBusy() || taskListBusy() || galleryBusy() || selectionReceiving() || protocolBusy() || textProtocolsBusy();
+  createEffect(() => props.onToolsSelection?.(props.busy || browserBusy() || accessOpen() ? null : candidate()));
   let taskListElement, selectionErrorDialog, selectionErrorReturnFocus;
   const [lastTask, setLastTask] = createSignal(null), [lastTaskNotice, setLastTaskNotice] = createSignal("");
   const lastTaskHistory = createLastOpenedTaskHistory({ app: "viewer", onChange: setLastTask, onNotice: setLastTaskNotice });

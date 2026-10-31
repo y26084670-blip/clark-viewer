@@ -1,6 +1,7 @@
-import { createMemo, createUniqueId, For, Index, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, Index, onCleanup, onMount, Show } from "solid-js";
 import { useResultFrame } from "../services/results/resultRequests.js";
 import { installGeometryOverlayDrag } from "../services/visualization/geometryOverlayDrag.js";
+import { elementFaceCurrentsTableText } from "../services/visualization/chartTable.js";
 import "./ElementFaceCurrentsDialog.css";
 
 const directions = ["D1 · 1→2", "D2 · 1→3", "D3 · 1→5"];
@@ -23,6 +24,13 @@ export function ElementFaceCurrentsDialog(props) {
   const frame = createMemo(() => state().frame?.request.task === props.task ? state().frame : null);
   const groups = createMemo(() => frame()?.value ?? emptyGroups);
   const error = createMemo(() => state().requested?.time === props.time ? state().error : "");
+  const [copyError, setCopyError] = createSignal("");
+  async function copyTable() {
+    if (error() || !groups().length) return;
+    setCopyError("");
+    try { await navigator.clipboard.writeText(elementFaceCurrentsTableText(groups())); }
+    catch (failure) { setCopyError(`Не удалось скопировать таблицу: ${failure.message}`); }
+  }
   const stepLabel = createMemo(() => {
     const requested = props.time;
     const shown = error() ? requested : frame()?.request.time ?? requested;
@@ -42,7 +50,7 @@ export function ElementFaceCurrentsDialog(props) {
     onCleanup(() => { observer.disconnect(); drag.dispose(); });
   });
 
-  return <div ref={layer} class="face-currents-layer">
+  return <div ref={layer} class="face-currents-layer" hidden={props.hidden}>
     <section ref={panel} class="element-face-currents" role="dialog" aria-modal="false" aria-labelledby={titleId} tabindex="-1"
       onKeyDown={event => {
         if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); props.onClose(); }
@@ -50,11 +58,14 @@ export function ElementFaceCurrentsDialog(props) {
       <header>
         <div class="geometry-overlay-drag-handle" title="Перетащить окно">
           <h2 id={titleId}>Полные токи через грани</h2>
-          <span class="face-currents-task">{props.task.name}</span>
-          <span class="face-currents-step">{stepLabel()}</span>
+          <span class="face-currents-step" title={stepLabel()}>{stepLabel()}</span>
+          <span class="face-currents-task" title={props.task.name}>{props.task.name}</span>
         </div>
+        <button type="button" disabled={!groups().length || Boolean(error())}
+          title="Скопировать все строки показанного шага с заголовками для Excel" onClick={copyTable}>Копировать</button>
         <button type="button" onClick={props.onClose}>Закрыть</button>
       </header>
+      <Show when={copyError()}><p role="alert">{copyError()}</p></Show>
       <Show when={error()}><p role="alert">{error()}</p></Show>
       <div class="face-currents-scroll" tabindex="0" aria-label="Таблица полных токов" aria-busy={state().loading}>
         <table aria-label="Полные токи по элементам, А">

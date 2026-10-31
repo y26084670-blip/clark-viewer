@@ -23,3 +23,21 @@ export function chartTableText(series = [], xLabel = "X", yLabel = "Y") {
   }
   return rows.join("\n");
 }
+
+// Flat TSV for Excel: every image is a complete row, including the parent
+// element. Missing sections stay empty and the original numeric precision is kept.
+export function elementFaceCurrentsTableText(groups) {
+  const headings = ["№ ШГ", "Название ШГ", "Разбиений D1", "Разбиений D2", "Разбиений D3", "LS", "AS", "PS",
+    ...["D1", "D2", "D3"].flatMap(axis => ["нач.", "кон.", "сред."].map(slot => `${axis} ${slot}, А`)),
+    "Баланс, А", "Σ |ΔI|, А"];
+  const rows = [headings.join("\t")];
+  for (const group of groups) {
+    const name = String(group.name ?? "").replace(/[\t\r\n]+/g, " ");
+    const label = /^\s*[=+@-]/.test(name) ? "'" + name : name;
+    for (const { ls, as, ps, values } of group.images) {
+      rows.push([group.id, label, ...group.dimensions, ls, as, ps,
+        ...values.map(value => value === null ? "" : String(value).replace(".", ","))].join("\t"));
+    }
+  }
+  return rows.join("\r\n");
+}

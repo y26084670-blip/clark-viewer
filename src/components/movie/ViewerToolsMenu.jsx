@@ -7,7 +7,10 @@ import "./ViewerToolsMenu.css";
 
 export function ViewerToolsMenu(props) {
   const menuId = createUniqueId(), titleId = createUniqueId(), protocolsTitleId = createUniqueId();
-  const canEditProtocol = createMemo(() => Boolean(props.taskActionsEligible));
+  const selectionTab = () => props.tabIndex === 0;
+  const testProtocolTask = () => selectionTab() ? props.selectedTask : props.task;
+  const testProtocolEligible = () => selectionTab() ? props.selectionActionsEligible : props.taskActionsEligible;
+  const canEditProtocol = createMemo(() => !selectionTab() && Boolean(props.taskActionsEligible));
   let taskProtocolMenuItem, faceCurrentsMenuItem;
   const [currentsTask, setCurrentsTask] = createSignal(null);
   createEffect(() => { if (currentsTask() && currentsTask() !== props.task) setCurrentsTask(null); });
@@ -41,14 +44,15 @@ export function ViewerToolsMenu(props) {
   const focusSetup = () => (staticImage() ? startButton : intervalInput)?.focus();
   const duration = () => (props.frameCount * intervalMs() / 1000).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
   const protocolsDisabledReason = () => {
-    if (!props.task?.handle) return "Загрузите задание.";
-    if (!props.taskActionsEligible) return "Дождитесь завершения текущей операции.";
+    if (!testProtocolTask()?.handle) return selectionTab() ? "Выберите задание в списке." : "Загрузите задание.";
+    if (!testProtocolEligible()) return "Дождитесь завершения текущей операции.";
     if (protocolScanning()) return "Поиск протоколов…";
     if (protocolScanError()) return protocolScanError();
     return protocols().length ? "" : "В comparison нет HTML-протоколов.";
   };
 
   function faceCurrentsDisabledReason() {
+    if (selectionTab()) return "Откройте вкладку результатов загруженного задания.";
     const task = props.task;
     if (!task) return "Загрузите задание.";
     if (!props.taskActionsEligible) return "Дождитесь завершения текущей операции.";
@@ -68,18 +72,18 @@ export function ViewerToolsMenu(props) {
     queueMicrotask(() => trigger?.focus());
   }
 
-  async function refreshProtocols(handle = props.task?.handle) {
+  async function refreshProtocols(handle = testProtocolTask()?.handle) {
     const current = ++protocolScanRevision;
     protocolScanAbort?.abort();
     const abort = new AbortController(); protocolScanAbort = abort;
     setProtocols([]); setProtocolScanError(""); setProtocolScanning(Boolean(handle));
     try {
       const entries = handle ? await listTaskTestProtocols(handle, { signal: abort.signal }) : [];
-      if (!disposed && current === protocolScanRevision && !abort.signal.aborted && handle === props.task?.handle) {
+      if (!disposed && current === protocolScanRevision && !abort.signal.aborted && handle === testProtocolTask()?.handle) {
         setProtocols(entries);
       }
     } catch (failure) {
-      if (!disposed && current === protocolScanRevision && !abort.signal.aborted && handle === props.task?.handle) {
+      if (!disposed && current === protocolScanRevision && !abort.signal.aborted && handle === testProtocolTask()?.handle) {
         setProtocolScanError(`Не удалось найти протоколы: ${failure?.message ?? String(failure)}`);
       }
     } finally {
@@ -101,8 +105,8 @@ export function ViewerToolsMenu(props) {
     setProtocolsDialogOpen(false); trigger?.focus();
   }
   async function openProtocol(entry) {
-    if (disposed || !protocolsDialogOpen() || protocolOpening() || !props.taskActionsEligible || !protocols().includes(entry)) return;
-    const handle = props.task?.handle;
+    if (disposed || !protocolsDialogOpen() || protocolOpening() || !testProtocolEligible() || !protocols().includes(entry)) return;
+    const handle = testProtocolTask()?.handle;
     setProtocolOpenError(""); releaseProtocolTabs();
     // Reserve the tab during the click, before the asynchronous filesystem read.
     const tab = window.open("", "_blank");
@@ -115,7 +119,7 @@ export function ViewerToolsMenu(props) {
     try {
       tab.opener = null;
       const blob = await readTaskTestProtocol(entry.handle, { signal: abort.signal });
-      if (disposed || abort.signal.aborted || handle !== props.task?.handle || !protocolsDialogOpen() || tab.closed) {
+      if (disposed || abort.signal.aborted || handle !== testProtocolTask()?.handle || !protocolsDialogOpen() || tab.closed) {
         tab.close(); return;
       }
       url = URL.createObjectURL(blob);
@@ -123,7 +127,7 @@ export function ViewerToolsMenu(props) {
       protocolTabs.add({ tab, url }); url = null;
     } catch (failure) {
       tab.close();
-      if (!disposed && !abort.signal.aborted && handle === props.task?.handle) {
+      if (!disposed && !abort.signal.aborted && handle === testProtocolTask()?.handle) {
         setProtocolOpenError(`Не удалось открыть ${entry.path}: ${failure?.message ?? String(failure)}`);
         // A deleted file must also disappear from the next list.
         void refreshProtocols(handle);
@@ -157,10 +161,15 @@ export function ViewerToolsMenu(props) {
     if (menuOpen()) { closeMenu(); return; }
     void refreshProtocols();
     setMenuOpen(true);
-    queueMicrotask(() => { if (menuOpen() && !disposed) { positionMenu(); menuItem?.focus(); } });
+    queueMicrotask(() => {
+      if (menuOpen() && !disposed) {
+        positionMenu();
+        (menuItems()[0] ?? menu)?.focus();
+      }
+    });
   }
   function openSetup() {
-    if (!props.eligible || running() || saving()) return;
+    if (selectionTab() || !props.eligible || running() || saving()) return;
     closeMenu(); discardResult(); setError(""); setPhase("setup");
     setSaveInTask(true); setSavedNotice("");
     openedTask = props.task; openedTab = props.tabIndex; closeAfterRun = false;
@@ -254,10 +263,11 @@ export function ViewerToolsMenu(props) {
       event.preventDefault(); closeMenu(true);
     }
   }
+  const menuItems = () => [menuItem, taskProtocolMenuItem, protocolsMenuItem, faceCurrentsMenuItem].filter(item => item && !item.disabled);
   function onMenuKeyDown(event) {
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.code)) {
       event.preventDefault();
-      const items = [menuItem, taskProtocolMenuItem, protocolsMenuItem, faceCurrentsMenuItem].filter(item => item && !item.disabled);
+      const items = menuItems();
       const current = Math.max(0, items.indexOf(event.target));
       const index = event.code === "Home" ? 0 : event.code === "End" ? items.length - 1
         : event.code === "ArrowUp" ? (current + items.length - 1) % items.length : (current + 1) % items.length;
@@ -276,7 +286,7 @@ export function ViewerToolsMenu(props) {
   };
 
   createEffect(() => {
-    const handle = props.task?.handle;
+    const handle = testProtocolTask()?.handle;
     if (handle === protocolTaskHandle) return;
     protocolTaskHandle = handle;
     protocolReadAbort?.abort(); protocolReadAbort = null; setProtocolOpening("");
@@ -336,9 +346,9 @@ export function ViewerToolsMenu(props) {
       aria-controls={menuId} onClick={toggleMenu} onKeyDown={onTriggerKeyDown}>Инструменты</button>
     <Portal>
       <Show when={menuOpen()}>
-        <div ref={menu} id={menuId} class="viewer-tools-popup" role="menu" aria-label="Инструменты"
+        <div ref={menu} id={menuId} class="viewer-tools-popup" role="menu" tabindex="-1" aria-label="Инструменты"
           style={{ left: `${menuPosition().left}px`, top: `${menuPosition().top}px` }} onKeyDown={onMenuKeyDown}>
-          <button ref={menuItem} type="button" role="menuitem" aria-disabled={!props.eligible}
+          <button ref={menuItem} type="button" role="menuitem" disabled={selectionTab()} aria-disabled={selectionTab() || !props.eligible}
             onClick={openSetup}>Создать moview</button>
           <button ref={taskProtocolMenuItem} type="button" role="menuitem" disabled={!canEditProtocol()}
             onClick={() => { if (canEditProtocol()) { closeMenu(); props.onCreateProtocol?.(trigger); } }}>Протокол</button>
@@ -350,14 +360,14 @@ export function ViewerToolsMenu(props) {
         </div>
       </Show>
       <Show when={currentsTask() && currentsTask() === props.task}>
-        <ElementFaceCurrentsDialog task={props.task} time={props.time} workspace={props.getWorkspace()} onClose={closeFaceCurrents} />
+        <ElementFaceCurrentsDialog task={props.task} time={props.time} workspace={props.getWorkspace()} hidden={selectionTab()} onClose={closeFaceCurrents} />
       </Show>
       <dialog ref={protocolsDialog} class="viewer-movie-dialog viewer-protocols-dialog" aria-labelledby={protocolsTitleId}
         aria-busy={protocolScanning() || Boolean(protocolOpening())}
         onCancel={event => { event.preventDefault(); closeProtocols(); }}
         onClose={() => { if (protocolsDialogOpen()) closeProtocols(); }}>
         <h2 id={protocolsTitleId}>Протоколы тестов</h2>
-        <p class="viewer-movie-note">{props.task?.name} · comparison</p>
+        <p class="viewer-movie-note">{testProtocolTask()?.name} · comparison</p>
         <Show when={protocolScanning()}><p role="status">Поиск протоколов…</p></Show>
         <Show when={protocolScanError() || protocolOpenError()}>
           <p class="viewer-movie-error" role="alert">{protocolScanError() || protocolOpenError()}</p>
@@ -365,7 +375,7 @@ export function ViewerToolsMenu(props) {
         <Show when={!protocolScanning() && !protocolScanError() && !protocols().length}><p>Протоколы не найдены.</p></Show>
         <div class="viewer-protocols-list">
           <For each={protocols()}>{entry => <button type="button" title="Открыть в новой вкладке браузера"
-            disabled={Boolean(protocolOpening()) || !props.taskActionsEligible} onClick={() => void openProtocol(entry)}>{entry.path}</button>}</For>
+            disabled={Boolean(protocolOpening()) || !testProtocolEligible()} onClick={() => void openProtocol(entry)}>{entry.path}</button>}</For>
         </div>
         <Show when={protocolOpening()}><p role="status">Открытие {protocolOpening()}…</p></Show>
         <div class="viewer-movie-actions">

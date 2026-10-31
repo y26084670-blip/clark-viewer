@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chartTableText } from "../src/services/visualization/chartTable.js";
+import { chartTableText, elementFaceCurrentsTableText } from "../src/services/visualization/chartTable.js";
+
+test("face-current TSV has 11 qualified ampere columns and complete, numeric image rows", () => {
+  const values = [1.23456789012345,-1e-8,null,0,2,3,4,5,6,null,null];
+  const rows = elementFaceCurrentsTableText([{ id: 4, name: "=Test\tname\n1", dimensions: [1,2,3],
+    images: [1,2].map(as => ({ ls: 1, as, ps: 1, values })) }]).split("\r\n").map(row => row.split("\t"));
+  assert.equal(rows.length,3);
+  assert.equal(new Set(rows[0]).size,19);
+  assert.ok(rows[0].slice(8).every(title => title.endsWith(", А")));
+  assert.deepEqual(rows[2].slice(0,8),["4","'=Test name 1","1","2","3","1","2","1"]);
+  assert.deepEqual(rows[1].slice(8),["1,23456789012345","-1e-8","","0","2","3","4","5","6","",""]);
+});
 
 const table = (...args) => chartTableText(...args).split("\n").map(row => row.split("\t"));
 

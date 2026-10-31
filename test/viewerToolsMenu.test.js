@@ -75,12 +75,14 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const gif = () => ({ blob: new Blob(["GIF89a"], { type: "image/gif" }), filename: "example.gif", frameCount: 3, width: 100, height: 80 });
 const key = code => ({ code, prevented: false, stopped: false, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } });
 
-test("element face currents opens for a solved conductor from any tab and releases its task on change", () => {
+test("element face currents needs a results tab and releases its loaded task on change", () => {
   const task = { metadata: { JE: { steps: [{ index: 0 }] } }, elements: [{ targ: 2, rv: 1 }] };
   const ui = runtime({ task, tabIndex: 0 });
   ui.openFaceCurrents();
   assert.equal(ui.currentsTask(), null);
   task.elements.push({ targ: 0, rv: 3 });
+  ui.openFaceCurrents(); assert.equal(ui.currentsTask(), null);
+  ui.props.tabIndex = 1;
   ui.toggleMenu(); ui.refs.faceCurrentsMenuItem.disabled = false;
   ui.onMenuKeyDown(key("End")); assert.equal(ui.refs.faceCurrentsMenuItem.focused, 1);
   ui.openFaceCurrents(); assert.equal(ui.currentsTask(), task); assert.equal(ui.state().menuOpen, false);
@@ -298,6 +300,20 @@ test("stale result cannot write another loaded task and unmount aborts a save wi
 });
 
 const protocolEntry = (path = "mufem/report.html") => ({ path, name: path.split("/").at(-1), handle: { kind: "file", name: path.split("/").at(-1) } });
+
+test("test protocols follow the highlighted directory on task selection, then the loaded directory on results", async () => {
+  const loaded = { handle: { name: "loaded" } }, selected = { handle: { name: "highlighted" } };
+  const seen = [];
+  const ui = runtime({ tabIndex: 0, task: loaded, selectionActionsEligible: true,
+    listTaskTestProtocols: async handle => { seen.push(handle); return [protocolEntry(handle.name + ".html")]; } });
+  assert.match(ui.protocolsDisabledReason(), /Выберите/);
+  ui.openSetup(); assert.equal(ui.state().dialogOpen, false);
+  ui.props.selectedTask = selected; ui.flushEffects(); await ui.refreshProtocols();
+  assert.equal(seen.at(-1), selected.handle); assert.equal(ui.state().protocols[0].path, "highlighted.html");
+  ui.props.tabIndex = 1; ui.flushEffects(); await ui.refreshProtocols();
+  assert.equal(seen.at(-1), loaded.handle); assert.equal(ui.state().protocols[0].path, "loaded.html");
+  ui.dispose();
+});
 
 test("test protocol menu is disabled without loaded task, during discovery and when no HTML exists", async () => {
   const job = deferred(), entry = protocolEntry();

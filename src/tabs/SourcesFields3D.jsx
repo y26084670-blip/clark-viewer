@@ -412,7 +412,7 @@ export function SourcesFields3D(props) {
                       }} />
                     <span>{quantityText(quantityKey)}</span>
                   </label>
-                  <Show when={quantityKey === (key === "elements" ? "sigmaRelative" : "As")}>
+                  <Show when={quantityKey === (key === "elements" ? "JResidual" : "As")}>
                     <hr class="source-menu-separator" />
                   </Show>
                 </>}</For>

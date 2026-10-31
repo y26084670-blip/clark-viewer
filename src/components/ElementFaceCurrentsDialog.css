@@ -1,31 +1,58 @@
+.face-currents-layer {
+  position: fixed;
+  inset: 0 0 3.75rem;
+  pointer-events: none;
+  z-index: 900;
+}
 .element-face-currents {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   box-sizing: border-box;
-  width: min(1250px, calc(100vw - 28px));
-  max-height: calc(100dvh - 28px);
-  padding: 16px;
+  width: min(62%, 60rem);
+  height: min(46%, 24rem);
+  min-width: min(24rem, calc(100% - 16px));
+  min-height: min(13rem, calc(100% - 16px));
+  max-width: calc(100% - 16px);
+  max-height: calc(100% - 16px);
+  padding: 10px 12px 16px;
+  resize: both;
+  overflow: hidden;
+  pointer-events: auto;
   border: 1px solid #697c8b;
   border-radius: 6px;
+  box-shadow: 0 4px 16px #0005;
   color: #eef3f7;
   background: #202932;
   color-scheme: dark;
 }
-.element-face-currents[open] { display: flex; flex-direction: column; gap: 10px; }
-.element-face-currents::backdrop { background: rgba(0, 0, 0, .6); }
+.element-face-currents:focus { outline: none; }
 .element-face-currents header { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.element-face-currents .geometry-overlay-drag-handle { flex: 1; min-width: 0; cursor: grab; touch-action: none; user-select: none; }
+.element-face-currents.is-dragging .geometry-overlay-drag-handle { cursor: grabbing; }
 .element-face-currents h2 { font-size: 20px; margin: 0 0 3px; }
 .element-face-currents p { margin: 0; font-size: .875rem; }
 .element-face-currents header span, .face-currents-note { color: #c3d2dd; }
+.face-currents-task, .face-currents-step { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.face-currents-step { flex: none; font-variant-numeric: tabular-nums; }
 .element-face-currents button { padding: 6px 12px; border: 1px solid #697c8b; border-radius: 4px; color: inherit; background: #334454; cursor: pointer; }
-.element-face-currents .time-slider { background: #2b3844; border: 0; border-radius: 3px; }
-.element-face-currents [role="alert"] { color: #ffcdca; }
-.face-currents-scroll { min-height: 0; overflow: auto; border: 1px solid #596c7c; }
+.element-face-currents [role="alert"] { color: #ffcdca; overflow: auto; max-height: 25%; }
+.face-currents-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; border: 1px solid #596c7c; }
 .element-face-currents :focus-visible { outline: 2px solid #73beef; outline-offset: -2px; }
-.element-face-currents table { width: 100%; border-spacing: 0; font-size: .875rem; font-variant-numeric: tabular-nums; }
-.element-face-currents thead { position: sticky; top: 0; z-index: 1; background: #354655; }
+.element-face-currents table { width: 100%; min-width: 72rem; table-layout: fixed; border-spacing: 0; font-size: .875rem; font-variant-numeric: tabular-nums; }
+.face-currents-element-col { width: 10rem; }
+.face-currents-image-col { width: 6rem; }
+.element-face-currents thead { position: sticky; top: 0; z-index: 2; background: #354655; }
 .element-face-currents th, .element-face-currents td { padding: 5px 7px; border-right: 1px solid #485968; border-bottom: 1px solid #485968; white-space: nowrap; }
+.element-face-currents thead tr:first-child th:first-child { position: sticky; left: 0; z-index: 1; background: #354655; }
+.element-face-currents tbody { background: #202932; }
 .element-face-currents tbody:nth-of-type(even) { background: #293640; }
+.element-face-currents tbody tr { background: inherit; }
 .element-face-currents tbody th { font-weight: normal; }
-.element-face-currents th[scope="rowgroup"] { text-align: left; white-space: normal; min-width: 7em; }
+.element-face-currents th[scope="rowgroup"] { position: sticky; left: 0; z-index: 1; background: inherit; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .element-face-currents th small { display: block; color: #b6c7d3; white-space: nowrap; }
-.element-face-currents td { text-align: right; }
+.element-face-currents td { text-align: right; overflow: hidden; text-overflow: ellipsis; }
 .element-face-currents td.unavailable { color: #a1b0bc; }

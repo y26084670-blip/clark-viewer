@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import { ElementFaceCurrentsDialog } from "../ElementFaceCurrentsDialog.jsx";
 import { saveTaskGif } from "../../services/taskGifService.js";
 import { listTaskTestProtocols, readTaskTestProtocol } from "../../services/taskTestProtocolService.js";
 import "./ViewerToolsMenu.css";
@@ -7,7 +8,9 @@ import "./ViewerToolsMenu.css";
 export function ViewerToolsMenu(props) {
   const menuId = createUniqueId(), titleId = createUniqueId(), protocolsTitleId = createUniqueId();
   const canEditProtocol = createMemo(() => Boolean(props.taskActionsEligible));
-  let taskProtocolMenuItem;
+  let taskProtocolMenuItem, faceCurrentsMenuItem;
+  const [currentsTask, setCurrentsTask] = createSignal(null);
+  createEffect(() => { if (currentsTask() && currentsTask() !== props.task) setCurrentsTask(null); });
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [menuPosition, setMenuPosition] = createSignal({ left: 8, top: 8 });
   const [dialogOpen, setDialogOpen] = createSignal(false);
@@ -44,6 +47,26 @@ export function ViewerToolsMenu(props) {
     if (protocolScanError()) return protocolScanError();
     return protocols().length ? "" : "В comparison нет HTML-протоколов.";
   };
+
+  function faceCurrentsDisabledReason() {
+    const task = props.task;
+    if (!task) return "Загрузите задание.";
+    if (!props.taskActionsEligible) return "Дождитесь завершения текущей операции.";
+    const je = task.metadata?.JE;
+    if (je?.error) return je.error;
+    if (!je?.steps?.length) return "В задании нет сохранённых результатов JE.";
+    return task.elements?.some(record => record.targ === 0 && record.rv > 0)
+      ? "" : "В задании нет элементов с рассчитанными токами проводимости.";
+  }
+  function openFaceCurrents() {
+    if (faceCurrentsDisabledReason()) return;
+    closeMenu();
+    setCurrentsTask(props.task);
+  }
+  function closeFaceCurrents() {
+    setCurrentsTask(null);
+    queueMicrotask(() => trigger?.focus());
+  }
 
   async function refreshProtocols(handle = props.task?.handle) {
     const current = ++protocolScanRevision;
@@ -234,7 +257,7 @@ export function ViewerToolsMenu(props) {
   function onMenuKeyDown(event) {
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.code)) {
       event.preventDefault();
-      const items = [menuItem, taskProtocolMenuItem, protocolsMenuItem].filter(item => item && !item.disabled);
+      const items = [menuItem, taskProtocolMenuItem, protocolsMenuItem, faceCurrentsMenuItem].filter(item => item && !item.disabled);
       const current = Math.max(0, items.indexOf(event.target));
       const index = event.code === "Home" ? 0 : event.code === "End" ? items.length - 1
         : event.code === "ArrowUp" ? (current + items.length - 1) % items.length : (current + 1) % items.length;
@@ -322,7 +345,12 @@ export function ViewerToolsMenu(props) {
           <button ref={protocolsMenuItem} type="button" role="menuitem" disabled={Boolean(protocolsDisabledReason())}
             aria-disabled={Boolean(protocolsDisabledReason())}
             onClick={openProtocols}>Протоколы тестов</button>
+          <button ref={faceCurrentsMenuItem} type="button" role="menuitem" disabled={Boolean(faceCurrentsDisabledReason())}
+            title={faceCurrentsDisabledReason()} onClick={openFaceCurrents}>Полные токи через грани</button>
         </div>
+      </Show>
+      <Show when={currentsTask() && currentsTask() === props.task}>
+        <ElementFaceCurrentsDialog task={props.task} time={props.time} onTimeChange={props.onTimeChange} onClose={closeFaceCurrents} />
       </Show>
       <dialog ref={protocolsDialog} class="viewer-movie-dialog viewer-protocols-dialog" aria-labelledby={protocolsTitleId}
         aria-busy={protocolScanning() || Boolean(protocolOpening())}

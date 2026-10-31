@@ -11,6 +11,7 @@ const createRuntime = new Function("props", "createSignal", "createMemo", "creat
   ${setup}
     return { toggleMenu, closeMenu, openSetup, closeDialog, startCapture, cancelCapture,
       refreshProtocols, openProtocols, closeProtocols, openProtocol, protocolsDisabledReason,
+      openFaceCurrents, closeFaceCurrents, faceCurrentsDisabledReason, currentsTask,
       onTriggerKeyDown, onMenuKeyDown, progressText, setIntervalMs, validInterval, saveToTask, changeSaveLocation,
       state: () => ({ menuOpen: menuOpen(), menuPosition: menuPosition(), dialogOpen: dialogOpen(),
         phase: phase(), result: result(), progress: progress(), error: error(),
@@ -18,6 +19,7 @@ const createRuntime = new Function("props", "createSignal", "createMemo", "creat
         protocols: protocols(), protocolScanning: protocolScanning(), protocolScanError: protocolScanError(),
         protocolOpenError: protocolOpenError(), protocolsDialogOpen: protocolsDialogOpen(), protocolOpening: protocolOpening() }),
       attach(refs) { trigger=refs.trigger; menu=refs.menu; menuItem=refs.menuItem; taskProtocolMenuItem=refs.taskProtocolMenuItem;
+        faceCurrentsMenuItem=refs.faceCurrentsMenuItem;
         protocolsMenuItem=refs.protocolsMenuItem; protocolsDialog=refs.protocolsDialog; protocolsCloseButton=refs.protocolsCloseButton;
         dialog=refs.dialog;
         intervalInput=refs.intervalInput; cancelButton=refs.cancelButton; saveButton=refs.saveButton; } };
@@ -46,6 +48,7 @@ function runtime(overrides = {}) {
     menu: { offsetWidth: 260, offsetHeight: 120 }, menuItem: focusable(), taskProtocolMenuItem: focusable(),
     dialog: { open: false, showModal() { this.open = true; }, close() { this.open = false; } },
     protocolsMenuItem: { ...focusable(), disabled: true }, protocolsCloseButton: focusable(),
+    faceCurrentsMenuItem: { ...focusable(), disabled: true },
     protocolsDialog: { open: false, showModal() { this.open = true; }, close() { this.open = false; } },
     intervalInput: focusable(), cancelButton: focusable(), saveButton: focusable() };
   const props = { eligible: true, taskActionsEligible: true, task: {}, tabIndex: 1, frameCount: 3,
@@ -71,6 +74,22 @@ function runtime(overrides = {}) {
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const gif = () => ({ blob: new Blob(["GIF89a"], { type: "image/gif" }), filename: "example.gif", frameCount: 3, width: 100, height: 80 });
 const key = code => ({ code, prevented: false, stopped: false, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } });
+
+test("element face currents opens for a solved conductor from any tab and releases its task on change", () => {
+  const task = { metadata: { JE: { steps: [{ index: 0 }] } }, elements: [{ targ: 2, rv: 1 }] };
+  const ui = runtime({ task, tabIndex: 0 });
+  ui.openFaceCurrents();
+  assert.equal(ui.currentsTask(), null);
+  task.elements.push({ targ: 0, rv: 3 });
+  ui.toggleMenu(); ui.refs.faceCurrentsMenuItem.disabled = false;
+  ui.onMenuKeyDown(key("End")); assert.equal(ui.refs.faceCurrentsMenuItem.focused, 1);
+  ui.openFaceCurrents(); assert.equal(ui.currentsTask(), task); assert.equal(ui.state().menuOpen, false);
+  ui.closeFaceCurrents(); assert.equal(ui.currentsTask(), null); assert.ok(ui.refs.trigger.focused);
+  ui.openFaceCurrents(); ui.props.task = { metadata: { JE: { error: "Повреждён JE" } } };
+  ui.flushEffects(); assert.equal(ui.currentsTask(), null);
+  assert.equal(ui.faceCurrentsDisabledReason(), "Повреждён JE");
+  ui.dispose();
+});
 
 test("menu is keyboard accessible, closes outside and stays within the viewport", () => {
   const ui = runtime();

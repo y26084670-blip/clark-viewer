@@ -20,6 +20,9 @@ export class ResultService {
   }
   open(files) { return this.request("open", { files }); }
   read(data) { return this.request("read", data); }
+  elementFaceCurrents({ general, elements, moves }, step) {
+    return this.request("elementFaceCurrents", { name: "JE", task: { general, elements, moves }, step });
+  }
   history(data) { return this.request("history", data); }
   integralHistory(data) { return this.request("integralHistory", data); }
   fail(error) { for (const request of this.pending.values()) request.reject(error); this.pending.clear(); }

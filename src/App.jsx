@@ -182,6 +182,7 @@ export default function App() {
       <For each={tabs}>{(title, i) => <button classList={{ active: active() === i() }} aria-current={active() === i() ? "page" : undefined}
         disabled={movieBusy()} onClick={() => { if (!movieBusy()) setActive(i()); }}>{title}</button>}</For>
       <ViewerToolsMenu task={task()} tabIndex={active()} frameCount={(task()?.general.countTimeSteps ?? 0) + 1}
+        time={time()} onTimeChange={shared.setTime}
         onCreateProtocol={createProtocol}
         eligible={!movieDisabledReason()}
         taskActionsEligible={Boolean(task()) && !busy() && !movieBusy()}

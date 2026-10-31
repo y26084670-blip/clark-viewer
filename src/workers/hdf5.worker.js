@@ -1,5 +1,6 @@
 import h5wasm from "h5wasm";
 import { Hdf5ResultFile } from "../services/results/hdf5ResultFile.js";
+import { elementFaceCurrents } from "../services/results/elementFaceCurrents.js";
 
 const files = new Map();
 let mounted = false;
@@ -34,10 +35,11 @@ self.onmessage = ({ data }) => {
       const file = files.get(data.name);
       if (!file) throw new Error(`Файл ${data.name}.h5 недоступен`);
       if (data.action === "read") result = file.read(data);
+      else if (data.action === "elementFaceCurrents") result = elementFaceCurrents(file, data.task, data.step);
       else if (data.action === "history") result = file.history(data);
       else if (data.action === "integralHistory") result = file.integralHistory(data);
       else throw new Error("Неизвестная операция чтения");
     }
-    self.postMessage({ id: data.id, result }, result?.values ? [result.values.buffer] : []);
+    self.postMessage({ id: data.id, result }, ArrayBuffer.isView(result?.values) ? [result.values.buffer] : []);
   }).catch(error => self.postMessage({ id: data.id, error: error.message ?? String(error) }));
 };

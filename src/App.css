@@ -30,6 +30,9 @@ input[type=range] { accent-color: #2077b5; cursor: pointer; }
 .field-label { margin-top: 9px; font-weight: bold; }
 .task-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; }
 .task-list-heading .field-label { margin: 0; }
+.task-app-link { color: #a6b4c0; font-size: .875rem; font-weight: 400; white-space: nowrap; text-underline-offset: 2px; }
+.task-app-link:hover, .task-app-link:focus-visible { color: #ced8e0; }
+.task-app-link:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .task-list-heading .task-status-refresh, .task-project-actions > button { flex: 0 0 28px; box-sizing: border-box; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 1px solid #697c8b; border-radius: 3px; background: #141a20; color: #eef3f7; font-size: 23px; line-height: 26px; }
 .task-list-heading .task-status-refresh:hover:not(:disabled) { background: #334454; }
 .task-list-heading .task-status-refresh:disabled { opacity: .5; }

@@ -49,6 +49,7 @@ export default function App() {
   });
   const [active, setActive] = createSignal(0), [task, setTask] = createSignal(null), [path, setPath] = createSignal("");
   const [time, setTime] = createSignal(0), [elements, setElements] = createSignal([]), [regions, setRegions] = createSignal([]);
+  const [toolsSelection, setToolsSelection] = createSignal(null);
   const [plotRecipes, setPlotRecipes] = createSignal([]);
   const [protocolEntries, setProtocolEntries] = createSignal({});
   const [protocolSession, setProtocolSession] = createSignal({ handle: null, files: new Map(), lastFilename: "protocol.html" });
@@ -74,7 +75,7 @@ export default function App() {
   const movieController = createMovieExportController({ createEncoder: createMovieWebmEncoder,
     onAdapterChange: adapter => setMovieAdapter(() => adapter) });
   function createProtocol(opener) {
-    if (!task() || busy() || movieBusy()) return;
+    if (active() === 0 || !task() || busy() || movieBusy()) return;
     setProtocolRequest({ task: task(), filename: "", opener, loadedTask: task() });
   }
   async function editProtocol(documentTask, filename, opener) {
@@ -187,11 +188,12 @@ export default function App() {
         onCreateProtocol={createProtocol}
         eligible={!movieDisabledReason()}
         taskActionsEligible={Boolean(task()) && !busy() && !movieBusy()}
+        selectedTask={toolsSelection()} selectionActionsEligible={!busy() && !movieBusy()}
         onRun={options => movieController.run(options)} onBusyChange={setMovieBusy} />
     </nav>
     <main class="tabs-body" ref={workspace} inert={movieBusy()} aria-busy={movieBusy()}>
       <div class="task-tab" style={{ display: active() === 0 ? "flex" : "none" }}>
-        <Tasks active={active() === 0} onRootChange={setPlotRoot} onShowTasks={() => setActive(0)} onLoad={(...args) => { if (!movieBusy()) return load(...args); }} loadedHandle={task()?.handle} busy={busy() || movieBusy()} error={error()}
+        <Tasks active={active() === 0} onToolsSelection={setToolsSelection} onRootChange={setPlotRoot} onShowTasks={() => setActive(0)} onLoad={(...args) => { if (!movieBusy()) return load(...args); }} loadedHandle={task()?.handle} busy={busy() || movieBusy()} error={error()}
           onTaskListRefresh={refreshLoadedPlanarMode} onEditProtocol={editProtocol} docsRevision={docsRevision()} />
       </div>
       <Show when={active() !== 0}>

@@ -285,7 +285,12 @@ export function Tasks(props) {
       onPick={pickRoot} onAllow={allowDisk} onClose={closeAccess} />
     <section class="task-browser-panel">
       <div class="task-browser-content">
-        <label class="field-label" for="projectCatalog">Каталоги с проектами</label>
+        <div class="task-list-heading">
+          <label class="field-label" for="projectCatalog">Каталоги с проектами</label>
+          <a class="task-app-link" href="https://y26084670-blip.github.io/clark-editor/"
+            target="_blank" rel="noopener noreferrer" title="Открыть Editor в новой вкладке"
+            aria-label="Открыть Editor в новой вкладке">Editor ↗</a>
+        </div>
         <div class="task-catalog-row">
           <select id="projectCatalog" ref={catalogSelect} class="project-select" aria-label="Каталоги с проектами"
             value={root()?.name ?? ""} disabled={props.busy || browserBusy() || !catalogs().length}

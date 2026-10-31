@@ -39,6 +39,7 @@ const WorkingPoints = tabComponent("WorkingPoints");
 const FieldLines = tabComponent("FieldLines");
 const PlotConstructor = tabComponent("PlotConstructor");
 export default function App() {
+  let workspace;
   onMount(() => {
     // Load all lazy tab chunks while this HTML version is current. This keeps
     // an already-open Viewer usable after a later GitHub Pages deployment
@@ -182,13 +183,13 @@ export default function App() {
       <For each={tabs}>{(title, i) => <button classList={{ active: active() === i() }} aria-current={active() === i() ? "page" : undefined}
         disabled={movieBusy()} onClick={() => { if (!movieBusy()) setActive(i()); }}>{title}</button>}</For>
       <ViewerToolsMenu task={task()} tabIndex={active()} frameCount={(task()?.general.countTimeSteps ?? 0) + 1}
-        time={time()} onTimeChange={shared.setTime}
+        time={time()} getWorkspace={() => workspace}
         onCreateProtocol={createProtocol}
         eligible={!movieDisabledReason()}
         taskActionsEligible={Boolean(task()) && !busy() && !movieBusy()}
         onRun={options => movieController.run(options)} onBusyChange={setMovieBusy} />
     </nav>
-    <main class="tabs-body" inert={movieBusy()} aria-busy={movieBusy()}>
+    <main class="tabs-body" ref={workspace} inert={movieBusy()} aria-busy={movieBusy()}>
       <div class="task-tab" style={{ display: active() === 0 ? "flex" : "none" }}>
         <Tasks active={active() === 0} onRootChange={setPlotRoot} onShowTasks={() => setActive(0)} onLoad={(...args) => { if (!movieBusy()) return load(...args); }} loadedHandle={task()?.handle} busy={busy() || movieBusy()} error={error()}
           onTaskListRefresh={refreshLoadedPlanarMode} onEditProtocol={editProtocol} docsRevision={docsRevision()} />

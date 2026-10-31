@@ -350,7 +350,7 @@ export function ViewerToolsMenu(props) {
         </div>
       </Show>
       <Show when={currentsTask() && currentsTask() === props.task}>
-        <ElementFaceCurrentsDialog task={props.task} time={props.time} onTimeChange={props.onTimeChange} onClose={closeFaceCurrents} />
+        <ElementFaceCurrentsDialog task={props.task} time={props.time} workspace={props.getWorkspace()} onClose={closeFaceCurrents} />
       </Show>
       <dialog ref={protocolsDialog} class="viewer-movie-dialog viewer-protocols-dialog" aria-labelledby={protocolsTitleId}
         aria-busy={protocolScanning() || Boolean(protocolOpening())}

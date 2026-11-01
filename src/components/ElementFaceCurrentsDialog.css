@@ -8,7 +8,7 @@
   --face-table-width: min(72rem, calc(100vw - 4.5rem));
   position: absolute;
   top: 8px;
-  right: 8px;
+  left: 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;

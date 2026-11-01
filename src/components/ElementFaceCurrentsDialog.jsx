@@ -8,7 +8,7 @@ const directions = ["D1 · 1→2", "D2 · 1→3", "D3 · 1→5"];
 const slots = ["Нач.", "Кон.", "Сред."];
 const emptyGroups = [];
 const seconds = new Intl.NumberFormat("ru-RU", { maximumSignificantDigits: 8 });
-const displayValue = value => value === null ? "—" : Number(value.toPrecision(7)).toString().replace(".", ",");
+const displayValue = value => value === null ? "—" : Number(value.toPrecision(4)).toString().replace(".", ",");
 
 function cellTitle(element, column, value) {
   if (column >= 9) return value === null ? "Нужны три и более слоя по каждому направлению" : `${value} А`;
@@ -42,7 +42,7 @@ export function ElementFaceCurrentsDialog(props) {
     alignWorkspace();
     const observer = new ResizeObserver(alignWorkspace);
     observer.observe(props.workspace);
-    let position = { x: 1, y: 0 };
+    let position = { x: 0, y: 0 };
     const drag = installGeometryOverlayDrag(panel, {
       getPosition: () => position, setPosition: next => { position = next; },
     });

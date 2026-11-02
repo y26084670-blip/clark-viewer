@@ -31,7 +31,7 @@
   color-scheme: dark;
 }
 .element-face-currents:focus { outline: none; }
-.element-face-currents header { display: flex; align-items: center; gap: 7px; flex: none; }
+.element-face-currents header { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; flex: none; }
 .element-face-currents .geometry-overlay-drag-handle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; cursor: grab; touch-action: none; user-select: none; }
 .element-face-currents.is-dragging .geometry-overlay-drag-handle { cursor: grabbing; }
 .element-face-currents h2 { font-size: 18px; line-height: 1.15; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -39,8 +39,12 @@
 .element-face-currents header span, .face-currents-note { color: #c3d2dd; }
 .face-currents-task, .face-currents-step { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .face-currents-step { flex-shrink: 0; max-width: 45%; font-variant-numeric: tabular-nums; }
-.element-face-currents header button { flex: none; }
+.element-face-currents header button { flex: 0 0 8rem; width: 8rem; box-sizing: border-box; }
 .element-face-currents button { padding: 6px 12px; border: 1px solid #697c8b; border-radius: 4px; color: inherit; background: #334454; cursor: pointer; }
+.face-currents-sum-mode { display: inline-flex; align-items: center; gap: 4px; flex: none; white-space: nowrap; }
+.face-currents-sum-mode input { margin: 0; }
+.element-face-currents .face-currents-sum-value { flex: none; width: 13ch; box-sizing: content-box; padding: 6px 7px; border: 1px solid #697c8b; border-radius: 4px; background: #17212a; color: inherit; font: inherit; font-variant-numeric: tabular-nums; text-align: right; }
+.element-face-currents .face-currents-sum-value:disabled { color: #a1b0bc; }
 .element-face-currents [role="alert"] { color: #ffcdca; overflow: auto; max-height: 25%; }
 .face-currents-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; border: 1px solid #596c7c; }
 .element-face-currents :focus-visible { outline: 2px solid #73beef; outline-offset: -2px; }
@@ -56,5 +60,11 @@
 .element-face-currents tbody th { font-weight: normal; }
 .element-face-currents th[scope="rowgroup"] { position: sticky; left: 0; z-index: 1; background: inherit; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .element-face-currents th small { display: block; color: #b6c7d3; white-space: nowrap; }
-.element-face-currents td { text-align: right; overflow: hidden; text-overflow: ellipsis; }
+.element-face-currents td { padding: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; }
 .element-face-currents td.unavailable { color: #a1b0bc; }
+.element-face-currents td.selectable { cursor: pointer; }
+.element-face-currents .face-current-value { display: block; width: 100%; box-sizing: border-box; padding: 5px 7px; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; text-align: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
+.element-face-currents .face-current-value:disabled { opacity: 1; }
+.element-face-currents .face-current-value:enabled { cursor: pointer; }
+.element-face-currents .face-current-value:enabled:hover { background: #ffffff10; }
+.element-face-currents td.is-selected { background: #245c7c; color: #fff; box-shadow: inset 0 0 0 2px #7ed3ff; }

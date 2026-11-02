@@ -10,7 +10,7 @@ test("face-current TSV has 11 qualified ampere columns and complete, numeric ima
   assert.equal(new Set(rows[0]).size,19);
   assert.ok(rows[0].slice(8).every(title => title.endsWith(", А")));
   assert.deepEqual(rows[2].slice(0,8),["4","'=Test name 1","1","2","3","1","2","1"]);
-  assert.deepEqual(rows[1].slice(8),["1,23456789012345","-1e-8","","0","2","3","4","5","6","",""]);
+  assert.deepEqual(rows[1].slice(8),["1.23456789012345","-1e-8","","0","2","3","4","5","6","",""]);
 });
 
 const table = (...args) => chartTableText(...args).split("\n").map(row => row.split("\t"));

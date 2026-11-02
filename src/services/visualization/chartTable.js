@@ -36,7 +36,7 @@ export function elementFaceCurrentsTableText(groups) {
     const label = /^\s*[=+@-]/.test(name) ? "'" + name : name;
     for (const { ls, as, ps, values } of group.images) {
       rows.push([group.id, label, ...group.dimensions, ls, as, ps,
-        ...values.map(value => value === null ? "" : String(value).replace(".", ","))].join("\t"));
+        ...values.map(value => value === null ? "" : String(value))].join("\t"));
     }
   }
   return rows.join("\r\n");

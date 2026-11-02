@@ -2,13 +2,12 @@ import { createMemo, createSignal, createUniqueId, For, Index, onCleanup, onMoun
 import { useResultFrame } from "../services/results/resultRequests.js";
 import { installGeometryOverlayDrag } from "../services/visualization/geometryOverlayDrag.js";
 import { elementFaceCurrentsTableText } from "../services/visualization/chartTable.js";
+import { faceCurrentCellKey, formatSignificantNumber, selectedFaceCurrentTotal } from "../services/visualization/elementFaceCurrentsTable.js";
 import "./ElementFaceCurrentsDialog.css";
 
 const directions = ["D1 · 1→2", "D2 · 1→3", "D3 · 1→5"];
 const slots = ["Нач.", "Кон.", "Сред."];
 const emptyGroups = [];
-const seconds = new Intl.NumberFormat("ru-RU", { maximumSignificantDigits: 8 });
-const displayValue = value => value === null ? "—" : Number(value.toPrecision(4)).toString().replace(".", ",");
 
 function cellTitle(element, column, value) {
   if (column >= 9) return value === null ? "Нужны три и более слоя по каждому направлению" : `${value} А`;
@@ -24,6 +23,21 @@ export function ElementFaceCurrentsDialog(props) {
   const frame = createMemo(() => state().frame?.request.task === props.task ? state().frame : null);
   const groups = createMemo(() => frame()?.value ?? emptyGroups);
   const error = createMemo(() => state().requested?.time === props.time ? state().error : "");
+  const [sumEnabled, setSumEnabled] = createSignal(false);
+  const [selected, setSelected] = createSignal(new Set());
+  const total = createMemo(() => !sumEnabled() ? 0 : error() ? null : selectedFaceCurrentTotal(groups(), selected()));
+  function changeSumMode(enabled) {
+    setSumEnabled(enabled);
+    if (!enabled) setSelected(new Set());
+  }
+  function toggleCell(key) {
+    if (!sumEnabled() || error()) return;
+    setSelected(previous => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
   const [copyError, setCopyError] = createSignal("");
   async function copyTable() {
     if (error() || !groups().length) return;
@@ -34,7 +48,7 @@ export function ElementFaceCurrentsDialog(props) {
   const stepLabel = createMemo(() => {
     const requested = props.time;
     const shown = error() ? requested : frame()?.request.time ?? requested;
-    const stamp = `${shown} · t = ${seconds.format(shown * props.task.general.timeStep)} с`;
+    const stamp = `${shown} · t = ${formatSignificantNumber(shown * props.task.general.timeStep, 8)} с`;
     return shown === requested ? `Шаг ${stamp}` : `Показан шаг ${stamp} · запрошен шаг ${requested}`;
   });
   onMount(() => {
@@ -61,6 +75,14 @@ export function ElementFaceCurrentsDialog(props) {
           <span class="face-currents-step" title={stepLabel()}>{stepLabel()}</span>
           <span class="face-currents-task" title={props.task.name}>{props.task.name}</span>
         </div>
+        <label class="face-currents-sum-mode" title="Суммировать выбранные ячейки; повторный щелчок снимает выделение">
+          <input type="checkbox" checked={sumEnabled()} onChange={event => changeSumMode(event.currentTarget.checked)} />
+          Сумма
+        </label>
+        <input class="face-currents-sum-value" type="text" inputmode="decimal" readonly
+          aria-label="Сумма выделенных ячеек, А" disabled={!sumEnabled() || Boolean(error())}
+          value={formatSignificantNumber(total(), 5)}
+          title={total() === null ? "Нет данных для запрошенного шага" : `${total()} А · сумма исходных значений без округления`} />
         <button type="button" disabled={!groups().length || Boolean(error())}
           title="Скопировать все строки показанного шага с заголовками для Excel" onClick={copyTable}>Копировать</button>
         <button type="button" onClick={props.onClose}>Закрыть</button>
@@ -87,8 +109,19 @@ export function ElementFaceCurrentsDialog(props) {
                 №{element().id} {element().name}<small>{element().dimensions.join(" × ")}</small>
               </th></Show>
               <th scope="row">{image().ls} / {image().as} / {image().ps}</th>
-              <Index each={image().values}>{(value, col) => <td classList={{ unavailable: Boolean(error()) || value() === null }}
-                title={error() || cellTitle(element(), col, value())}>{error() ? "—" : displayValue(value())}</td>}</Index>
+              <Index each={image().values}>{(value, col) => {
+                const key = () => faceCurrentCellKey(element().id, image(), col);
+                const available = () => !error() && Number.isFinite(value());
+                const marked = () => sumEnabled() && available() && selected().has(key());
+                return <td classList={{ unavailable: !available(), selectable: sumEnabled() && available(), "is-selected": marked() }}
+                  title={error() || cellTitle(element(), col, value())}
+                  onClick={() => { if (available()) toggleCell(key()); }}>
+                  <button type="button" class="face-current-value" disabled={!sumEnabled() || !available()}
+                    aria-pressed={marked()}>
+                    {error() ? "—" : formatSignificantNumber(value())}
+                  </button>
+                </td>;
+              }}</Index>
             </tr>}</Index>
           </tbody>}</Index>
         </table>

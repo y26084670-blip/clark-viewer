@@ -35,7 +35,7 @@ try {
     await page.waitForFunction(() => !document.querySelector('[aria-label="Содержимое документа DOCS"]').getAttribute('aria-busy') || document.querySelector('[aria-label="Содержимое документа DOCS"]').getAttribute('aria-busy') === 'false');
     assert.equal(await createReadme.isDisabled(), true);
     assert.equal(await editReadme.isDisabled(), true);
-    assert.equal(await deleteReadme.isDisabled(), true);
+    assert.equal(await deleteReadme.isEnabled(), true);
   }
   await page.evaluate(() => mediaFixture.pick("second"));
   await page.waitForFunction(() => document.querySelector('[aria-label="Документ DOCS"]').value === "README.md");
@@ -49,7 +49,7 @@ try {
   assert.equal(await documentPicker.inputValue(), "");
   await page.evaluate(() => mediaFixture.pick("first"));
   await page.waitForFunction(() => document.querySelector('[aria-label="Документ DOCS"]').value === "README.txt");
-  console.log("PASS README actions follow the selected file, including explicit creation when only other documents exist");
+  console.log("PASS create/edit remain README-only; deletion follows the selected document");
 
   const interactiveHtml = `<!doctype html><meta charset="utf-8"><title>Interactive DOCS</title>
     <h1>Интерактивный отчёт</h1><button id="advance">Изменить время</button><output id="value">0</output>
@@ -65,7 +65,8 @@ try {
   await documentPicker.selectOption("interactive.html");
   await page.frameLocator('iframe[title="HTML-документ DOCS"]').getByRole('heading', {name:'Интерактивный отчёт'}).waitFor();
   assert.equal(await page.evaluate(() => window.reportReady), undefined);
-  for (const button of [createReadme, editReadme, deleteReadme]) assert.equal(await button.isDisabled(), true);
+  for (const button of [createReadme, editReadme]) assert.equal(await button.isDisabled(), true);
+  assert.equal(await deleteReadme.isEnabled(), true);
   const popupPromise = page.waitForEvent("popup");
   await page.getByRole('button', {name:'Открыть HTML в браузере',exact:true}).click();
   const popup = await popupPromise;
@@ -129,6 +130,70 @@ try {
   assert.equal(await page.getByRole("button", { name: "Создать README.txt", exact: true }).isDisabled(), true);
   assert.equal(await page.getByRole("tab", { name: /^GIF/ }).isEnabled(), true);
   console.log("PASS delete confirmation, create, permission refusal/retry and busy-state release");
+
+  const readDoc = name => page.evaluate(async name => {
+    const root = await navigator.storage.getDirectory();
+    const fixture = await root.getDirectoryHandle("task-media-fixture");
+    const task = await fixture.getDirectoryHandle("Sketch");
+    const docs = await task.getDirectoryHandle("DOCS");
+    try { return await (await (await docs.getFileHandle(name)).getFile()).text(); }
+    catch (error) { if (error.name === "NotFoundError") return null; throw error; }
+  }, name);
+  for (const [name, body] of [["extra.HTM", "<p>Дополнение</p>"], ["legacy.txt", [255, 254]],
+    ["large.txt", "x".repeat(2 * 1024 * 1024 + 1)]]) {
+    await page.evaluate(([name, body]) => mediaFixture.put(`DOCS/${name}`, Array.isArray(body) ? new Uint8Array(body) : body), [name, body]);
+  }
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForFunction(() => [...document.querySelector('[aria-label="Документ DOCS"]').options].some(o => o.value === "large.txt"));
+  for (const name of ["notes.txt", "README.md", "interactive.html", "extra.HTM", "legacy.txt", "large.txt"]) {
+    await documentPicker.selectOption(name);
+    await page.waitForFunction(() => !document.querySelector('.task-readme-actions button:last-child').disabled);
+    const countBefore = await page.getByRole("tab", { name: /^DOCS/ }).innerText();
+    await deleteReadme.click();
+    const confirm = editor.getByRole("button", { name: `Удалить ${name}`, exact: true });
+    await confirm.waitFor();
+    await page.waitForFunction(() => !document.querySelector('.task-readme-editor .task-readme-actions button').disabled);
+    assert.ok((await editor.innerText()).includes(`DOCS/${name}`));
+    if (name === "notes.txt") {
+      await editor.getByRole("button", { name: "Отмена", exact: true }).click();
+      assert.equal(await readDoc(name), "Пояснения к JSON за пределами DOCS.");
+      await deleteReadme.click();
+      await page.waitForFunction(() => !document.querySelector('.task-readme-editor .task-readme-actions button').disabled);
+      await page.evaluate(() => mediaFixture.put("DOCS/notes.txt", "Внешняя правка документа"));
+      await confirm.click();
+      await editor.getByRole("alert").filter({ hasText: "изменён после открытия" }).waitFor();
+      assert.equal(await readDoc(name), "Внешняя правка документа");
+      await editor.getByRole("button", { name: "Отмена", exact: true }).click();
+      await deleteReadme.click();
+    }
+    if (name === "interactive.html") {
+      await page.evaluate(() => mediaFixture.permission("denied"));
+      await confirm.click();
+      await editor.getByRole("alert").filter({ hasText: "Нет разрешения" }).waitFor();
+      assert.equal(await readDoc(name), interactiveHtml);
+      await page.evaluate(() => mediaFixture.permission("granted"));
+    }
+    await confirm.click();
+    await editor.waitFor({ state: "hidden" });
+    await page.waitForFunction(name => ![...document.querySelector('[aria-label="Документ DOCS"]').options].some(o => o.value === name), name);
+    assert.equal(await readDoc(name), null);
+    assert.equal(await readDoc("README.txt"), "Создан заново");
+    assert.equal(await documentPicker.inputValue(), "README.txt");
+    const countAfter = await page.getByRole("tab", { name: /^DOCS/ }).innerText();
+    assert.equal(Number(countAfter.match(/\d+/)[0]), Number(countBefore.match(/\d+/)[0]) - 1);
+  }
+  console.log("PASS deleting TXT/MD/HTML/HTM, unreadable and oversized documents; cancel, conflict, permission, selection and count");
+
+  await page.evaluate(() => mediaFixture.pick("second"));
+  await page.waitForFunction(() => document.querySelector('[aria-label="Документ DOCS"]').value === "README.md");
+  await deleteReadme.click();
+  await editor.getByRole("button", { name: "Удалить README.md", exact: true }).click();
+  await editor.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => document.querySelector('[aria-label="Документ DOCS"]').value === ""
+    && !document.querySelector('[aria-label="Создать README.txt"]').disabled);
+  assert.equal(await deleteReadme.isDisabled(), true);
+  assert.equal(await editReadme.isDisabled(), true);
+  console.log("PASS deleting the last document returns to the README creation option");
   await page.screenshot({ path: `${output}/readme-1100.png` });
   await page.evaluate(() => mediaFixture.pick("empty"));
   await page.getByRole("button", { name: "Создать README.txt", exact: true }).click();

@@ -1,4 +1,4 @@
-// Read-only documentation directly under <task>/DOCS.
+// Documentation directly under <task>/DOCS; deletion requires explicit confirmation in the UI.
 export const TASK_DOCS_IMAGE_MAX_BYTES = 64 * 1024 * 1024;
 export const TASK_DOCS_TEXT_MAX_BYTES = 2 * 1024 * 1024;
 export const TASK_DOCS_HTML_MAX_BYTES = 64 * 1024 * 1024;
@@ -45,6 +45,39 @@ export function preferredTaskDoc(documents, previousName) {
     ?? documents.find(entry => entry.name.toLowerCase() === "readme.txt")
     ?? documents.find(entry => entry.name.toLowerCase() === "readme.md")
     ?? documents[0] ?? null;
+}
+
+// Capture the exact selected file without decoding it or applying preview limits.
+export async function loadTaskDocSnapshot(task, name) {
+  if (task?.kind !== "directory") throw new Error("Выберите локальное задание");
+  if (!["txt", "md", "html", "htm"].includes(extension(name))) throw new Error("Выберите документ TXT, MD или HTML в DOCS");
+  const directory = await task.getDirectoryHandle("DOCS", { create: false });
+  const handle = await directory.getFileHandle(name, { create: false });
+  const file = await handle.getFile();
+  return { task, directory, handle, name, file };
+}
+
+export async function deleteTaskDoc(task, expected) {
+  if (!expected || expected.task !== task || !(expected.file instanceof Blob)) {
+    throw new Error("Сначала откройте подтверждение удаления документа");
+  }
+  // Request permission from the confirmation click, before any asynchronous reads.
+  const permission = task.requestPermission ?? task.queryPermission;
+  if (permission && await permission.call(task, { mode: "readwrite" }) !== "granted") {
+    throw new Error(`Нет разрешения на удаление ${expected.name}`);
+  }
+  const current = await loadTaskDocSnapshot(task, expected.name);
+  const conflict = () => new Error(`${expected.name} изменён после открытия. Закройте подтверждение и выберите файл заново.`);
+  if (current.file.size !== expected.file.size || current.file.lastModified !== expected.file.lastModified
+    || (current.handle.isSameEntry && !await current.handle.isSameEntry(expected.handle))) throw conflict();
+  // Compare bytes in bounded chunks, including files that cannot be previewed as UTF-8.
+  for (let offset = 0; offset < current.file.size; offset += 64 * 1024) {
+    const [before, after] = await Promise.all([expected.file, current.file]
+      .map(file => file.slice(offset, offset + 64 * 1024).arrayBuffer()));
+    const bytes = new Uint8Array(after);
+    if (!new Uint8Array(before).every((value, index) => value === bytes[index])) throw conflict();
+  }
+  await current.directory.removeEntry(current.name);
 }
 
 export async function readTaskDocsImage(handle, { signal } = {}) {

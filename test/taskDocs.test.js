@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { listTaskDocs, preferredTaskDoc, readTaskDocsImage, readTaskDocsText, readTaskDocsDocument,
+import { listTaskDocs, preferredTaskDoc, readTaskDocsImage, readTaskDocsText, readTaskDocsDocument, loadTaskDocSnapshot, deleteTaskDoc,
   TASK_DOCS_IMAGE_MAX_BYTES, TASK_DOCS_TEXT_MAX_BYTES, TASK_DOCS_HTML_MAX_BYTES } from "../src/services/taskDocsService.js";
 import { createTaskDocsTextController } from "../src/services/taskDocsTextController.js";
 import { createTaskImageGalleryController } from "../src/services/taskImageGalleryController.js";
@@ -159,4 +159,94 @@ test("documentation image controller has no deletion capability", async () => {
   let state;
   const controller = createTaskImageGalleryController({ publish: next => { state = next; }, list: async () => [entry("image.png")], read: async () => new Blob([]) });
   controller.setContext({}); await tick(); assert.equal(await controller.deleteEntry(state.entries[0]), false); controller.dispose();
+});
+
+function deletionFixture({ permission = "granted" } = {}) {
+  const files = new Map(), events = [];
+  let time = 0;
+  const put = (name, body, lastModified = ++time) => files.set(name, new File([body], name, { lastModified }));
+  const directory = {
+    async getFileHandle(name, options) {
+      assert.deepEqual(options, { create: false });
+      if (!files.has(name)) throw new DOMException("Missing", "NotFoundError");
+      return { kind: "file", name, getFile: async () => files.get(name) };
+    },
+    async removeEntry(name, options) {
+      assert.equal(options, undefined); // Never delete directories recursively.
+      events.push(["remove", name]); files.delete(name);
+    },
+  };
+  const task = { kind: "directory",
+    async getDirectoryHandle(name, options) {
+      assert.equal(name, "DOCS"); assert.deepEqual(options, { create: false });
+      events.push(["read"]); return directory;
+    },
+    async requestPermission(options) { events.push(["permission", options.mode]); return permission; },
+  };
+  return { files, events, task, put };
+}
+
+test("deletion targets each supported DOCS filename exactly, preserving other files", async () => {
+  const f = deletionFixture();
+  const names = ["README.txt", "notes.TXT", "README.md", "report.HTML", "report.htm", "readme.txt"];
+  for (const name of names) f.put(name, name);
+  for (const name of names) {
+    const snapshot = await loadTaskDocSnapshot(f.task, name);
+    f.events.length = 0;
+    await deleteTaskDoc(f.task, snapshot);
+    assert.deepEqual(f.events[0], ["permission", "readwrite"]);
+    assert.deepEqual(f.events.at(-1), ["remove", name]);
+    assert.equal(f.files.has(name), false);
+    for (const [other, file] of f.files) assert.equal(await file.text(), other);
+  }
+});
+
+test("deletion snapshots make no writes and accept invalid UTF-8 and files beyond preview limits", async () => {
+  const f = deletionFixture();
+  f.put("legacy.txt", new Uint8Array([0xff, 0xfe]));
+  f.put("large.txt", "x".repeat(TASK_DOCS_TEXT_MAX_BYTES + 1));
+  f.put("empty.md", "");
+  for (const name of [...f.files.keys()]) {
+    f.events.length = 0;
+    const snapshot = await loadTaskDocSnapshot(f.task, name);
+    assert.deepEqual(f.events, [["read"]]);
+    await deleteTaskDoc(f.task, snapshot);
+    assert.equal(f.files.has(name), false);
+  }
+});
+
+test("deletion refuses changed contents even with identical size and timestamp", async () => {
+  const f = deletionFixture(); f.put("report.html", "before", 1);
+  const snapshot = await loadTaskDocSnapshot(f.task, "report.html");
+  f.put("report.html", "after!", 1);
+  await assert.rejects(deleteTaskDoc(f.task, snapshot), /изменён после открытия/);
+  assert.equal(await f.files.get("report.html").text(), "after!");
+  assert.equal(f.events.some(event => event[0] === "remove"), false);
+});
+
+test("deletion refuses permission denial, missing files and a different task", async () => {
+  const denied = deletionFixture({ permission: "denied" }); denied.put("notes.md", "keep");
+  const snapshot = await loadTaskDocSnapshot(denied.task, "notes.md"); denied.events.length = 0;
+  await assert.rejects(deleteTaskDoc(denied.task, snapshot), /Нет разрешения/);
+  assert.deepEqual(denied.events, [["permission", "readwrite"]]);
+  const f = deletionFixture(); f.put("notes.md", "other task");
+  await assert.rejects(deleteTaskDoc(f.task, snapshot), /подтверждение/);
+  assert.deepEqual(f.events, []);
+  const before = await loadTaskDocSnapshot(f.task, "notes.md"); f.files.delete("notes.md");
+  await assert.rejects(deleteTaskDoc(f.task, before), { name: "NotFoundError" });
+  assert.equal(f.events.some(event => event[0] === "remove"), false);
+});
+
+test("deletion refuses replacement handles and names outside the document list", async () => {
+  const f = deletionFixture(); f.put("notes.md", "keep");
+  const snapshot = await loadTaskDocSnapshot(f.task, "notes.md");
+  const getFileHandle = snapshot.directory.getFileHandle;
+  snapshot.directory.getFileHandle = async (...args) => ({ ...await getFileHandle(...args), isSameEntry: async () => false });
+  await assert.rejects(deleteTaskDoc(f.task, snapshot), /изменён после открытия/);
+  assert.equal(f.files.has("notes.md"), true);
+  f.events.length = 0;
+  for (const name of ["../notes.md", "nested/notes.md", "notes\\notes.md", "image.png", "", "data.json"]) {
+    await assert.rejects(loadTaskDocSnapshot(f.task, name), /Выберите документ/);
+  }
+  assert.deepEqual(f.events, []);
 });

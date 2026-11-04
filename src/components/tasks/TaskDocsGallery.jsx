@@ -130,13 +130,14 @@ export function TaskDocsGallery(props) {
             opener = event.currentTarget; setExpanded({ task: props.taskHandle, name: view().selected.name });
           }}>⤢</button>
       </div>
-      <div class="task-readme-actions" aria-label="Управление README.txt">
+      <div class="task-readme-actions" aria-label="Действия с документом DOCS">
         <button type="button" aria-label="Создать README.txt" title="Создать README.txt" disabled={actionsDisabled() || !createTarget()}
           onClick={event => setReadmeRequest({ task: props.taskHandle, mode: "create", opener: event.currentTarget })}>Создать</button>
         <button type="button" disabled={actionsDisabled() || !readmeSelected()}
           onClick={event => setReadmeRequest({ task: props.taskHandle, mode: "edit", opener: event.currentTarget })} title="Править README.txt">Править</button>
-        <button type="button" disabled={actionsDisabled() || !readmeSelected()}
-          onClick={event => setReadmeRequest({ task: props.taskHandle, mode: "delete", opener: event.currentTarget })} title="Удалить README.txt">Удалить</button>
+        <button type="button" disabled={disabled() || view().loading || Boolean(readmeRequest()) || !selected()}
+          onClick={event => setReadmeRequest({ task: props.taskHandle, mode: "delete", name: selected().name, opener: event.currentTarget })}
+          title={selected() ? `Удалить ${selected().name}` : "Удалить выбранный документ"}>Удалить</button>
       </div>
       <div class="task-docs-status" role={view().error || openError() ? "alert" : "status"}>
         {status() || format()}
@@ -149,7 +150,7 @@ export function TaskDocsGallery(props) {
     <Show when={readmeRequest()} keyed>{request => <TaskReadmeEditor request={request}
       onBusyChange={props.onBusyChange} onClose={() => setReadmeRequest(null)}
       onChanged={() => {
-        setSelectReadmeAfterSave(request.mode === "delete" ? "create" : "read");
+        setSelectReadmeAfterSave(request.mode === "delete" ? (request.name?.toLowerCase() === "readme.txt" ? "create" : false) : "read");
         setReadmeRevision(value => value + 1);
       }} />}</Show>
     <TaskMediaDialog open={Boolean(expanded())} title={view().selected ? `${view().selected.name} — ${format()}` : ""}

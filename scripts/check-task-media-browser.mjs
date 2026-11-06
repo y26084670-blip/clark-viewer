@@ -25,14 +25,67 @@ try {
     await access(`${root}/src/tabs/Tasks.css`);
     await page.addStyleTag({ url: "/src/tabs/Tasks.css?direct" });
   } catch (error) { if (error.code !== "ENOENT") throw error; }
-  const gifTab = () => page.getByRole("tab", { name: /^GIF/ });
+  const gifTab = () => page.getByRole("tab", { name: /^PICT/ });
   const docsTab = () => page.getByRole("tab", { name: /^DOCS/ });
   const waitText = value => page.waitForFunction(value => document.querySelector('[aria-label="Содержимое документа DOCS"]').value.includes(value), value);
-  await page.waitForFunction(() => document.querySelector('[role="tab"][aria-selected="true"]').textContent === "GIF (2)");
+  await page.waitForFunction(() => document.querySelector('[role="tab"][aria-selected="true"]').textContent === "PICT (2)");
   await page.waitForFunction(() => [...document.querySelectorAll('[role="tab"]')].some(tab => tab.textContent === "DOCS (24)"));
   assert.equal(await page.evaluate(() => mediaFixture.stats().reads.some(name => /\.(png|jpeg|webp|txt|md|html?)$/i.test(name))), false);
   assert.equal(await page.evaluate(() => mediaFixture.stats().permission.length), 0);
   checks.push("hidden DOCS counts 19 images and 5 documents without reading bytes or requesting write permission");
+
+  const summary = page.getByLabel("Сводка результатов расчёта выбранного задания", { exact: true });
+  const settleScroll = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const summaryPosition = () => summary.evaluate(node => [node.scrollTop, node.scrollLeft]);
+  const longSummary = label => Array.from({ length: 120 }, (_, i) => `${label}: строка ${i + 1} ${"тайминги ".repeat(40)}`).join("\n");
+  const showSummary = async text => {
+    await page.evaluate(text => mediaFixture.summary(text), text);
+    await page.waitForFunction(text => document.querySelector(".task-results-text").value === text, text);
+    await settleScroll();
+  };
+  await showSummary(longSummary("Первое задание"));
+  await summary.evaluate(node => { node.scrollTop = 400; node.scrollLeft = 120; });
+  await settleScroll();
+  const summaryScroll = await summaryPosition();
+  assert.deepEqual(summaryScroll, [400, 120]);
+  await page.evaluate(() => mediaFixture.pick("second"));
+  await showSummary(""); // Allow the browser to dispatch scroll after clearing the old text.
+  await showSummary(longSummary("Второе задание"));
+  assert.deepEqual(await summaryPosition(), summaryScroll);
+  await showSummary(longSummary("Повторное чтение второго задания"));
+  assert.deepEqual(await summaryPosition(), summaryScroll);
+  for (const task of ["first", "second", "first"]) {
+    await page.evaluate(task => mediaFixture.pick(task), task);
+    await showSummary("");
+  }
+  await showSummary(longSummary("Последнее выбранное задание"));
+  assert.deepEqual(await summaryPosition(), summaryScroll);
+  await page.screenshot({ path: `${output}/pict-summary-scroll-1100x600.png` });
+  checks.push("PICT summary retains both scroll offsets across delayed reads, refresh and rapid task changes");
+
+  await docsTab().click();
+  await showSummary("");
+  await showSummary(longSummary("Прочитано при скрытой PICT"));
+  await gifTab().click(); await settleScroll();
+  assert.deepEqual(await summaryPosition(), summaryScroll);
+  await page.evaluate(() => mediaFixture.active(false));
+  await showSummary("");
+  await showSummary(longSummary("Прочитано при неактивной вкладке выбора задания"));
+  await page.evaluate(() => mediaFixture.active(true)); await settleScroll();
+  assert.deepEqual(await summaryPosition(), summaryScroll);
+  checks.push("hidden PICT and inactive task selection retain the summary position until shown again");
+
+  await showSummary("Нет сводки результатов расчёта");
+  assert.deepEqual(await summaryPosition(), [0, 0]);
+  await showSummary(longSummary("После короткой сводки"));
+  assert.deepEqual(await summaryPosition(), [0, 0]);
+  await summary.evaluate(node => { node.scrollTop = 300; node.scrollLeft = 90; });
+  await settleScroll();
+  await showSummary(""); await showSummary("");
+  await showSummary(longSummary("После пустого текста"));
+  assert.deepEqual(await summaryPosition(), [300, 90]);
+  await showSummary("Сводка результатов расчёта");
+  checks.push("short or missing summary clamps to its available range; empty loading text preserves the prior position");
 
   await docsTab().click(); await waitText("Строка 1:");
   await page.waitForFunction(() => [...document.querySelectorAll('[role="tabpanel"]:not([hidden]) .task-gif-thumbnail img')].length >= 2);
@@ -164,7 +217,7 @@ try {
   await page.getByRole("button", { name: "Удалить one.gif", exact: true }).click();
   await confirm.getByRole("button", { name: "Удалить", exact: true }).click();
   await page.waitForFunction(() => !mediaFixture.stats().busy.at(-1));
-  await page.waitForFunction(() => document.querySelector('[role="tab"][aria-selected="true"]').textContent === "GIF (1)");
+  await page.waitForFunction(() => document.querySelector('[role="tab"][aria-selected="true"]').textContent === "PICT (1)");
   assert.equal(await page.evaluate(() => mediaFixture.exists("one.gif")), false);
   assert.deepEqual(await page.evaluate(() => mediaFixture.stats().busy), [true, false]);
   assert.deepEqual(await page.evaluate(() => mediaFixture.stats().permission), [{ mode: "readwrite" }]);

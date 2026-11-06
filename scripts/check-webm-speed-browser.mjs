@@ -120,7 +120,7 @@ try {
   check("DOCS image preview has no speed selector", await speed().count() === 0);
   await close();
 
-  await page.getByRole("tab", { name: /^GIF/ }).click(); await open("00_first.webm");
+  await page.getByRole("tab", { name: /^PICT/ }).click(); await open("00_first.webm");
   await speed().selectOption("0.3");
   await page.evaluate(() => mediaFixture.pick("empty"));
   await dialog.waitFor({ state: "hidden" });

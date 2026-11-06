@@ -1,4 +1,4 @@
-import { createMemo, createSignal, createUniqueId } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId } from "solid-js";
 import { TaskGifGallery } from "./TaskGifGallery.jsx";
 import { TaskDocsGallery } from "./TaskDocsGallery.jsx";
 import "./TaskMediaPanel.css";
@@ -15,6 +15,28 @@ export function TaskMediaPanel(props) {
   const disabled = () => props.disabled || busy();
   const refreshDisabled = () => disabled() || props.active === false || !props.taskHandle;
   function busyChanged(value) { setBusy(value); props.onBusyChange?.(value); }
+  let summaryText;
+  let summaryScrollTop = 0, summaryScrollLeft = 0;
+  function rememberSummaryScroll() {
+    if (!summaryText?.value || !summaryText.clientHeight || tab() !== "gif" || props.active === false) return;
+    summaryScrollTop = summaryText.scrollTop;
+    summaryScrollLeft = summaryText.scrollLeft;
+  }
+  createEffect(() => {
+    const text = props.resultsSummary ?? "";
+    const visible = tab() === "gif" && props.active !== false;
+    if (!summaryText) return;
+    // Capture before replacing value: selection clears the text during loading.
+    // An empty or hidden field must not overwrite the last readable position.
+    if (summaryText.value !== text) {
+      rememberSummaryScroll();
+      summaryText.value = text;
+    }
+    if (visible && text) {
+      summaryText.scrollTop = summaryScrollTop;
+      summaryText.scrollLeft = summaryScrollLeft;
+    }
+  });
   let gifButton, docsButton;
   function tabKeyDown(event) {
     if (event.target !== gifButton && event.target !== docsButton) return;
@@ -32,8 +54,8 @@ export function TaskMediaPanel(props) {
       <div class="task-media-tab" classList={{ "is-active": tab() === "gif" }} role="presentation">
       <button ref={gifButton} type="button" role="tab" id={`${id}-gif-tab`} aria-controls={`${id}-gif-panel`}
         aria-selected={tab() === "gif"} tabIndex={tab() === "gif" ? 0 : -1} disabled={disabled()}
-        onClick={() => setTab("gif")}>GIF ({gifCount()})</button>
-      <button type="button" class="task-media-refresh" title="Обновить список GIF / WebM" aria-label="Обновить список GIF / WebM"
+        onClick={() => setTab("gif")}>PICT ({gifCount()})</button>
+      <button type="button" class="task-media-refresh" title="Обновить список PICT" aria-label="Обновить список PICT"
         aria-controls={`${id}-gif-panel`} disabled={refreshDisabled() || gifLoading()}
         onClick={() => setGifRevision(value => value + 1)}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 8a6 6 0 1 0 0 5M16 3v5h-5" /></svg>
@@ -53,8 +75,8 @@ export function TaskMediaPanel(props) {
     <div class="task-media-page" role="tabpanel" id={`${id}-gif-panel`} aria-labelledby={`${id}-gif-tab`} hidden={tab() !== "gif"}>
       <TaskGifGallery taskHandle={props.taskHandle} active={props.active} visible={tab() === "gif"}
         disabled={disabled()} refreshKey={gifRefreshKey()} onLoadingChange={setGifLoading} onBusyChange={busyChanged} onCountChange={setGifCount} />
-      <textarea class="task-media-text task-results-text" readOnly wrap="off" spellcheck={false}
-        aria-label="Сводка результатов расчёта выбранного задания" value={props.resultsSummary ?? ""} />
+      <textarea ref={summaryText} class="task-media-text task-results-text" readOnly wrap="off" spellcheck={false}
+        aria-label="Сводка результатов расчёта выбранного задания" onScroll={rememberSummaryScroll} />
     </div>
     <div class="task-media-page" role="tabpanel" id={`${id}-docs-panel`} aria-labelledby={`${id}-docs-tab`} hidden={tab() !== "docs"}>
       <TaskDocsGallery taskHandle={props.taskHandle} active={props.active} visible={tab() === "docs"}

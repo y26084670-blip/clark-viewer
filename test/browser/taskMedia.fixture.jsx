@@ -66,8 +66,10 @@ const tasks = { first: task(first), second: task(second), htmlOnly: task(htmlOnl
 } };
 function Fixture() {
   const [selected, setSelected] = createSignal(tasks.first), [active, setActive] = createSignal(true);
+  const [summary, setSummary] = createSignal("Сводка результатов расчёта");
   const [revision, setRevision] = createSignal(0), [mounted, setMounted] = createSignal(true), [busy, setBusy] = createSignal(false);
   window.mediaFixture = {
+    summary: setSummary,
     pick: name => setSelected(tasks[name]), active: setActive, refresh: () => setRevision(value => value + 1),
     mount: setMounted, permission: value => { permission = value; },
     stats: () => ({ ...metrics, liveURLs: [...metrics.liveURLs] }),
@@ -77,7 +79,7 @@ function Fixture() {
   };
   return <div style={{ height: "100dvh", display: "flex", "flex-direction": "column" }}>
     <div style={{ height: "90px", "flex-shrink": "0", padding: "12px", background: "#e1e7ed" }}>
-      <strong>Выбор задания — GIF / DOCS</strong><p>Тестовое задание «{selected()?.name}»</p>
+      <strong>Выбор задания — PICT / DOCS</strong><p>Тестовое задание «{selected()?.name}»</p>
     </div>
     <div style={{ position: "relative", flex: "1", "min-height": "0" }}>
       <div class="tasks-layout">
@@ -86,7 +88,7 @@ function Fixture() {
         <Show when={mounted()}><TaskMediaPanel taskHandle={selected()} active={active()} refreshKey={revision()}
           onEditProtocol={name => metrics.edits.push({ task: selected().name, name })}
           disabled={busy()} onBusyChange={value => { metrics.busy.push(value); setBusy(value); }}
-          resultsSummary="Сводка результатов расчёта" /></Show>
+          resultsSummary={summary()} /></Show>
       </div>
     </div>
   </div>;

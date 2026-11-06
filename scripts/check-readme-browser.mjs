@@ -128,7 +128,7 @@ try {
   await editor.waitFor({ state: "hidden" });
   await page.waitForFunction(() => document.querySelector('[aria-label="Содержимое документа DOCS"]').value === "Создан заново");
   assert.equal(await page.getByRole("button", { name: "Создать README.txt", exact: true }).isDisabled(), true);
-  assert.equal(await page.getByRole("tab", { name: /^GIF/ }).isEnabled(), true);
+  assert.equal(await page.getByRole("tab", { name: /^PICT/ }).isEnabled(), true);
   console.log("PASS delete confirmation, create, permission refusal/retry and busy-state release");
 
   const readDoc = name => page.evaluate(async name => {

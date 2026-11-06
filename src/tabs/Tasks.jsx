@@ -292,7 +292,7 @@ export function Tasks(props) {
             aria-label="Открыть Editor в новой вкладке">Editor ↗</a>
         </div>
         <div class="task-catalog-row">
-          <select id="projectCatalog" ref={catalogSelect} class="project-select" aria-label="Каталоги с проектами"
+          <select id="projectCatalog" ref={catalogSelect} class="project-select task-project-select" aria-label="Каталоги с проектами"
             value={root()?.name ?? ""} disabled={props.busy || browserBusy() || !catalogs().length}
             onChange={event => changeCatalog(event.currentTarget.value)}>
             <Show when={!catalogs().length}><option value="">{disk() ? "Нет каталогов clark.*" : "Выберите диск с проектами"}</option></Show>

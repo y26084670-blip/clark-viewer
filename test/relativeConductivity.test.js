@@ -2,12 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { QUANTITIES } from "../src/services/results/resultMappings.js";
 import { scalarScene, resultVolumeDomains } from "../src/services/results/resultPlots.js";
-import { relativeConductivityBases, relativeConductivityValues, relativeConductivityCycleRange } from "../src/services/results/relativeConductivity.js";
+import { relativeConductivityBases, relativeConductivityValues } from "../src/services/results/relativeConductivity.js";
 import { buildResultVolumeField } from "../src/services/visualization/resultVolumeField.js";
 import { createResultLayerReader } from "../src/services/results/resultLayerRequests.js";
 import { globalResultRange, resultGlobalScale } from "../src/services/results/resultGlobalScale.js";
 import { formatResultScalarTooltip } from "../src/services/visualization/geometryPicking.js";
 import { movie3DFilenamePrefix } from "../src/services/movie/movieFilename.js";
+import { sourcesFields3DSetup } from "../scripts/test-support/sourcesFields3DSetup.js";
 import { globalRangesTask } from "../scripts/test-support/globalRangesFixture.js";
 
 const quantity = QUANTITIES.sigmaRelative;
@@ -131,31 +132,38 @@ test("global E/J bounds do not stand in for extrema of relative conductivity", (
   const task = globalRangesTask();
   assert.equal(globalResultRange(task, "sigmaRelative", [2]).state, "empty");
   const range = globalResultRange(task, "sigmaRelative", [1]);
-  assert.equal(range.available, false); assert.match(range.reason, /по сохранённым шагам JE/);
+  assert.equal(range.available, false); assert.match(range.reason, /текущего кадра/);
   assert.equal(resultGlobalScale(task, [{ key: "elements", quantityKey: "sigmaRelative", selected: [1] }]).available, false);
 });
 
-test("full-cycle conductivity uses same-node J/E, skips holes and reuses completed element ranges", async () => {
+test("opening 3D with a saved conductivity map reads only the displayed JE step", async () => {
   const task = globalRangesTask();
   Object.assign(task.elements[0], { model: 2, xapName: "HTS" });
-  task.elements[3].rv = 50;
   task.handle = libraryTask(task.elements).task.handle;
   const read = task.reader.read, steps = [];
-  task.reader.read = async req => {
-    steps.push(req.step);
-    const frame = await read(req);
-    for (let i = 0; i < frame.count; i++) frame.values.set(
-      [10 * (req.step + 1), 0, 0, req.step === 0 ? 0 : 1, 0, 0], i * frame.stride + 3);
-    return frame;
+  task.reader.read = request => {
+    assert.equal(request.name, "JE");
+    steps.push(request.step);
+    return read(request);
   };
-  const hts = await relativeConductivityCycleRange(task,[1]);
-  assert.deepEqual([hts.minimum,hts.maximum], [2,3]);
-  const both = await relativeConductivityCycleRange(task,[4,1,1]);
-  assert.deepEqual([both.minimum,both.maximum], [2,5]);
-  assert.deepEqual(steps, [0,1,2]);
-  assert.equal(resultGlobalScale(task, [{key:"elements",quantityKey:"sigmaRelative",selected:[1,4]},
-    {key:"regions",quantityKey:"Bs",selected:[1]}], [], both).available,true);
-  await assert.rejects(relativeConductivityCycleRange(task,[1],AbortSignal.abort()), {name:"AbortError"});
-  task.metadata.JE.steps.pop();
-  await assert.rejects(relativeConductivityCycleRange(task,[1]), /не все шаги/);
+  const props = { task, elements: [1], regions: [], time: 0 };
+  const ui = sourcesFields3DSetup(props, {
+    elementsMode: "selected", resultElementsQuantity: "sigmaRelative", resultGlobalMinMax: true,
+  });
+  try {
+    for (const step of [0, 2]) {
+      props.time = step;
+      const frame = await ui.load(ui.request());
+      assert.deepEqual(frame.errors, []);
+      assert.equal(frame.layers[0].scalarScene.points.length, 8);
+      // Include background reads started by component setup, even after the visible frame.
+      await new Promise(resolve => setImmediate(resolve));
+      assert.deepEqual(steps, [step]);
+      steps.length = 0;
+      assert.equal(ui.effectiveGlobalMinMax(), false);
+      assert.equal(ui.globalMinMax(), true);
+    }
+    ui.quantities.elements.write("J");
+    assert.equal(ui.effectiveGlobalMinMax(), true);
+  } finally { ui.close(); }
 });

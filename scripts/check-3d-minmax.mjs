@@ -81,27 +81,49 @@ try{
  await defaults.check();
  await load('missing');await waitRange('Элементы',5,5);
  assert.equal(await defaults.isChecked(),true);assert.equal(await log.isChecked(),true);
- await menu('Представление');assert.equal(await global.isEnabled(),true);assert.equal(await global.isChecked(),true);
- await global.uncheck();await global.check();
+ await menu('Представление');
+ assert.equal(await global.isDisabled(),true);assert.equal(await global.isChecked(),false);
  await load('partial');await waitRange('Элементы',5,5);
- assert.equal(await global.isEnabled(),true);
+ assert.equal(await global.isDisabled(),true);
+ await load('complete');await waitRange('Элементы',5,150);
+ assert.equal(await global.isEnabled(),true);assert.equal(await global.isChecked(),true);
  await page.evaluate(()=>{window.minmax.setSetting('elementsMode','none');window.minmax.setSetting('regionsMode','none');});
  await page.waitForFunction(()=>!document.querySelector('.geometry-scalar-legend'));
+ assert.equal(await global.isDisabled(),true);assert.equal(await global.isChecked(),false);
+ await page.evaluate(()=>{window.minmax.setSetting('elementsMode','all');window.minmax.setSetting('regionsMode','all');});
+ await waitRange('Элементы',5,150);
+ await page.evaluate(()=>window.minmax.setBusy(true));
+ assert.equal(await global.isDisabled(),true);assert.equal(await global.isChecked(),true);
+ await page.evaluate(()=>window.minmax.setBusy(false));
  assert.equal(await global.isEnabled(),true);
- await page.evaluate(()=>{window.minmax.setBusy(true);});
- await global.uncheck();await global.check();assert.equal(await global.isEnabled(),true);
- await page.evaluate(()=>{window.minmax.setBusy(false);window.minmax.setSetting('elementsMode','all');window.minmax.setSetting('regionsMode','all');});
- pass('Preferences survive task changes; empty, missing, partial and busy states keep global control clickable');
+ pass('Missing/partial ranges, empty selection and recording restore the original disabled states');
 
  await load('conductivity');await waitRange('Элементы',5,150);
  await quantity(/Относительная электропроводность/);
- await waitRange('Элементы',1,30);await menu('Представление');
- assert.equal(await global.isChecked(),true);
- await global.uncheck();await waitRange('Элементы',1,10);
+ await waitRange('Элементы',1,10);await menu('Представление');
+ assert.equal(await global.isDisabled(),true);assert.equal(await global.isChecked(),false);
+
+ // Reopen a fresh task with the conductivity quantity and the user's global preference retained.
+ await load('conductivity');await page.waitForFunction(()=>window.minmax.snapshot().jeSteps.length>=2);
+ await waitRange('Элементы',1,10);
+ const reads=()=>page.evaluate(()=>window.minmax.snapshot().jeSteps);
+ assert.deepEqual(await reads(),[0,0]); // selected HTS and ordinary conductor, one read per element
  await setTime(2);await waitRange('Элементы',1,30);
- await global.check();await setTime(0);await waitRange('Элементы',1,30);
- await defaults.uncheck();await waitRange('Элементы',1,30);
- pass('Conductivity full-cycle extrema are calculated from JE, switching to local follows the time step');
+ assert.deepEqual(await reads(),[0,0,2,2]);
+ await defaults.uncheck();
+ await upper.fill('100');await upper.press('Enter');await waitRange('Элементы',1,100);
+ await elements.getByText('10',{exact:true}).waitFor();
+ assert.deepEqual(await reads(),[0,0,2,2]);
+ await defaults.check();await waitRange('Элементы',1,30);
+ await quantity(/Плотность тока,/);await menu('Представление');
+ assert.equal(await global.isEnabled(),true);assert.equal(await global.isChecked(),true);
+ await global.uncheck();
+ await quantity(/Относительная электропроводность/);await menu('Представление');
+ assert.equal(await global.isDisabled(),true);assert.equal(await global.isChecked(),false);
+ await quantity(/Плотность тока,/);await menu('Представление');
+ assert.equal(await global.isEnabled(),true);assert.equal(await global.isChecked(),false);
+ await global.check();await defaults.uncheck();
+ pass('Conductivity reads only requested frames, retains manual/log scales, and restores the saved global preference for indexed quantities');
 
  await load('complete');await quantity(/Потери на токи проводимости/);
  await waitRange('Элементы',0.05,45);

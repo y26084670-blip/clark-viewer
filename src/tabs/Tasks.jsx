@@ -174,6 +174,7 @@ export function Tasks(props) {
         setAccessNotice("Доступ к диску не разрешён. Повторите разрешение или выберите диск в окне «Доступ к проектам» после F5."); return;
       }
       await openDisk(handle, request);
+      return accessIsCurrent(request);
     } catch {
       if (accessIsCurrent(request)) setAccessNotice("Не удалось открыть сохранённый диск. Выберите диск в окне «Доступ к проектам» после F5.");
     } finally { if (accessIsCurrent(request)) setAccessBusy(false); }
@@ -193,6 +194,7 @@ export function Tasks(props) {
       setDiskPicked(true);
       try { await saveProjectDisk(handle); }
       catch { if (accessIsCurrent(request)) setAccessNotice("Диск открыт. Не удалось сохранить доступ; после перезагрузки выберите его снова."); }
+      return accessIsCurrent(request);
     } catch (error) { if (accessIsCurrent(request) && error.name !== "AbortError") setError(error.message); }
     finally { if (accessIsCurrent(request)) setAccessBusy(false); }
   }

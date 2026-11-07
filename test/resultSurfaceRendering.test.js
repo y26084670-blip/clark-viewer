@@ -68,7 +68,7 @@ test("GPU scalar interpolation precedes palette lookup; range changes retain geo
   assert.deepEqual([...scalar.array], [-1, 0, 1, 3]);
   assert.equal(mesh.geometry.getAttribute("color"), undefined, "interpolating RGB would distort the transfer function");
   assert.match(mesh.material.vertexShader, /vScalar = aScalar/);
-  assert.match(mesh.material.fragmentShader, /clamp\(vScalar, 0\.0, 1\.0\)/);
+  assert.match(mesh.material.fragmentShader, /palettePosition\(vScalar\)/);
   assert.match(mesh.material.fragmentShader, /texture2D\(uPalette/);
   const center = (scalar.array[0] + scalar.array[2] + scalar.array[3]) / 3;
   assert.equal(center, 1, "linear scalar centroid differs from prematurely clamped vertices");

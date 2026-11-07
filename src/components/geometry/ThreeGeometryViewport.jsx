@@ -8,6 +8,7 @@ import {
   Show,
   batch,
   createEffect,
+  createMemo,
   createSignal,
   onCleanup,
   onMount,
@@ -40,6 +41,7 @@ import { createViewCube, installViewCubeControls, syncViewCubeCamera,
 import { createGeometryFlightController } from "../../services/visualization/geometryFlightController.js";
 import { pickGeometryFlightPivot } from "../../services/visualization/geometryFlightPivot.js";
 import { installGeometryOverlayDrag } from "../../services/visualization/geometryOverlayDrag.js";
+import { ColorScaleLimits } from "./ColorScaleLimits.jsx";
 import { createGeometryViewSetting } from "../../services/visualization/geometryViewSettings.js";
 import { resultVectorLength, normalizedResultVectorLength } from "../../services/visualization/resultVectorScale.js";
 import { updateResultCones } from "../../services/visualization/resultConeVectors.js";
@@ -64,6 +66,8 @@ import {
 } from "../../services/visualization/geometryMaterialStyle.js";
 import {
   resultScalarColor,
+  resultLogScale,
+  resultScaleMidpoint,
   normalizeResultPalette,
   resultScalarLegendBackground,
 } from "../../services/visualization/resultScalarColors.js";
@@ -197,25 +201,26 @@ function createPrescribedSourceVectors(
   displayRange = null,
   normalizedLength = null,
   colorByMagnitude = false,
+  logScale = null,
 ) {
   const root = sourceVectorRoot(THREE, previousRoot, style);
   if (style === "cones") return updateResultCones(THREE, root, acceptedInstances
     ? vectors.filter(item => acceptedInstances.has(sourceInstanceKey(item.source, item.instance))) : vectors,
-  { scales, maximumMagnitude, sceneDiagonal, lengthReference, normalizedLength, displayRange, palette });
+  { scales, maximumMagnitude, sceneDiagonal, lengthReference, normalizedLength, displayRange, palette, logScale });
   if (style === "points") {
     const points = acceptedInstances
       ? vectors.filter(item => acceptedInstances.has(sourceInstanceKey(item.source, item.instance)))
       : vectors;
     let minimum = Infinity;
     let maximum = -Infinity;
-    for (const point of points) {
+    if (!displayRange) for (const point of points) {
       minimum = Math.min(minimum, point.magnitude);
       maximum = Math.max(maximum, point.magnitude);
     }
     if (displayRange) ({ minimum, maximum } = displayRange);
     const previous = root.getObjectByName("result-vector-color-nodes");
     const nodes = updateResultPoints(THREE, previous, points, {
-      colorMap: true, minimum, maximum, palette,
+      colorMap: true, minimum, maximum, palette, logScale,
       size: DISCRETIZATION_POINT_SIZE * prescribedSourceScale(scales?.magnetization),
     });
     if (nodes.parent !== root) root.add(nodes);
@@ -226,7 +231,7 @@ function createPrescribedSourceVectors(
   }
   const colored = colorByMagnitude || normalizedLength !== null;
   let colorMinimum = Infinity, colorMaximum = -Infinity;
-  if (colored) for (const item of vectors) {
+  if (colored && !displayRange) for (const item of vectors) {
     if (acceptedInstances && !acceptedInstances.has(sourceInstanceKey(item.source, item.instance))) continue;
     colorMinimum = Math.min(colorMinimum, item.magnitude); colorMaximum = Math.max(colorMaximum, item.magnitude);
   }
@@ -235,7 +240,7 @@ function createPrescribedSourceVectors(
     minimum: colorMinimum, maximum: colorMaximum, quantity: `Модуль · ${vectors[0].quantity}`, unit: vectors[0].unit, palette,
   } : null;
   const mappedColor = new THREE.Color();
-  const vectorColor = item => mappedColor.setRGB(...resultScalarColor(item.magnitude, colorMinimum, colorMaximum, palette), THREE.SRGBColorSpace);
+  const vectorColor = item => mappedColor.setRGB(...resultScalarColor(item.magnitude, colorMinimum, colorMaximum, palette, logScale), THREE.SRGBColorSpace);
   const maximum = maximumMagnitude ?? { current: 0, magnetization: 0 };
   const positions = { current: [], magnetization: [] };
   const thinVectors = { current: [], magnetization: [] };
@@ -458,7 +463,7 @@ function resultSphereTexture(THREE) {
 }
 
 function updateResultPoints(THREE, previous, points, {
-  scalar = false, colorMap = false, minimum, maximum, color = 0x44ccff, palette = "Viridis",
+  scalar = false, colorMap = false, minimum, maximum, logScale, color = 0x44ccff, palette = "Viridis",
   size = colorMap ? DISCRETIZATION_POINT_SIZE : scalar ? 9 : 4,
 } = {}) {
   const colored = scalar || colorMap;
@@ -516,7 +521,7 @@ function updateResultPoints(THREE, previous, points, {
   points.forEach((item, index) => {
     positions.array.set(item.origin, index * 3);
     if (colored) {
-      rgb.setRGB(...resultScalarColor(colorMap ? item.magnitude : item.value, minimum, maximum, palette), THREE.SRGBColorSpace);
+      rgb.setRGB(...resultScalarColor(colorMap ? item.magnitude : item.value, minimum, maximum, palette, logScale), THREE.SRGBColorSpace);
       rgb.toArray(colors.array, index * 3);
     }
   });
@@ -546,7 +551,7 @@ function releaseResultRoot(root) {
 
 export function updateResultLayers(THREE, previous, definitions, {
   filters = {}, colorMap = false, style = "thin", scale = 1,
-  palette = "Viridis", opacity = 1, normalizeVectors = false,
+  palette = "Viridis", opacity = 1, normalizeVectors = false, logarithmic = false, manualLimits,
 } = {}) {
   const next = new Map();
   const normalizedLength = normalizeVectors ? normalizedResultVectorLength(definitions) : null;
@@ -562,9 +567,12 @@ export function updateResultLayers(THREE, previous, definitions, {
     const old = previous.get(key);
     const volumeFields = layer.volumeFields ?? null;
     const displayRange = layer.displayRange?.available ? layer.displayRange : null;
+    const vectorScaleId = `${key}:vector:${layer.quantityKey ?? scene?.vectors[0]?.quantity ?? ""}`;
+    const scalarScaleId = `${key}:scalar:${layer.quantityKey ?? scalarScene?.quantity ?? ""}`;
+    const vectorLimits = manualLimits?.get(vectorScaleId), scalarLimits = manualLimits?.get(scalarScaleId);
     const vectorStyle = colorMap && !normalizeVectors ? (volumeFields ? "volume" : "points") : style;
     const signature = [scene, scalarScene, volumeFields, layer.color, layer.quantityKey,
-      layer.groupLabel, filters, colorMap, vectorStyle, scale, palette, opacity, layer.vectorLengthReference, displayRange, normalizedLength];
+      layer.groupLabel, filters, colorMap, vectorStyle, scale, palette, opacity, layer.vectorLengthReference, displayRange, normalizedLength, logarithmic, vectorLimits, scalarLimits];
     if (old && signature.every((value, index) => Object.is(value, old.signature[index]))) {
       next.set(key, old);
       continue;
@@ -574,21 +582,26 @@ export function updateResultLayers(THREE, previous, definitions, {
     const color = layer.color ?? 0x44ccff;
     if (scene) {
       const vectors = scene.vectors.filter(visible);
+      let range = vectorLimits ?? displayRange;
+      if (!range) {
+        let minimum = Infinity, maximum = -Infinity;
+        for (const item of vectors) {
+          minimum = Math.min(minimum, item.magnitude);
+          maximum = Math.max(maximum, item.magnitude);
+        }
+        range = { minimum, maximum };
+      }
+      const { minimum, maximum } = range;
+      const logScale = resultLogScale(minimum, maximum, logarithmic);
       let legend = null;
       if (vectorStyle === "volume") {
         state.vectorRoot = sourceVectorRoot(THREE, state.vectorRoot, "volume");
         const domains = volumeFields.domains.filter(visible);
         const surfaces = (volumeFields.surfaces ?? []).filter(visible);
-        let minimum = Infinity, maximum = -Infinity;
-        for (const vector of vectors) {
-          minimum = Math.min(minimum, vector.magnitude);
-          maximum = Math.max(maximum, vector.magnitude);
-        }
-        if (displayRange) ({ minimum, maximum } = displayRange);
         updateResultVolumeMeshes(THREE, state.vectorRoot, domains,
-          { minimum, maximum, palette, opacity });
+          { minimum, maximum, palette, logScale, manual: Boolean(vectorLimits), opacity });
         updateResultSurfaceMeshes(THREE, state.vectorRoot, surfaces,
-          { minimum, maximum, palette, opacity });
+          { minimum, maximum, palette, logScale, opacity });
         const fallback = (volumeFields.fallbackPoints ?? []).filter(visible);
         // Unrendered fallback samples must not become invisible picking targets.
         // Successful domains retain their saved nodes, never boundary support nodes.
@@ -600,7 +613,7 @@ export function updateResultLayers(THREE, previous, definitions, {
         if (pickNodes.parent !== state.vectorRoot) state.vectorRoot.add(pickNodes);
         const fallbackNodes = updateResultPoints(THREE,
           state.vectorRoot.getObjectByName("result-volume-fallback-nodes"), fallback,
-          { colorMap: true, minimum, maximum, palette, size: DISCRETIZATION_POINT_SIZE });
+          { colorMap: true, minimum, maximum, palette, logScale, size: DISCRETIZATION_POINT_SIZE });
         fallbackNodes.name = "result-volume-fallback-nodes";
         if (fallbackNodes.parent !== state.vectorRoot) state.vectorRoot.add(fallbackNodes);
         if (vectors.length) legend = { minimum, maximum,
@@ -609,19 +622,19 @@ export function updateResultLayers(THREE, previous, definitions, {
         state.vectorRoot = createPrescribedSourceVectors(THREE, vectors, null,
           scene.sceneDiagonal, vectorStyle,
           { current: scale, magnetization: scale },
-          scene.maximumMagnitude, color, state.vectorRoot, palette, layer.vectorLengthReference, displayRange, normalizedLength, true);
+          scene.maximumMagnitude, color, state.vectorRoot, palette, layer.vectorLengthReference, range, normalizedLength, true, logScale);
         legend = state.vectorRoot.userData.colorLegend;
         if (vectorStyle !== "points" && vectorStyle !== "cones") {
           const nodes = updateResultPoints(THREE,
             state.vectorRoot.getObjectByName("result-vector-nodes"), vectors,
-            { color, colorMap: true, minimum: legend?.minimum, maximum: legend?.maximum, palette });
+            { color, colorMap: true, minimum: legend?.minimum, maximum: legend?.maximum, palette, logScale });
           nodes.name = "result-vector-nodes";
           if (nodes.parent !== state.vectorRoot) state.vectorRoot.add(nodes);
         }
       }
       state.vectorRoot.name = `result-${key}-vectors`;
       state.vectorRoot.visible = true;
-      if (legend) state.legends.push({ ...legend, key: `${key}:vector`, groupLabel: layer.groupLabel });
+      if (legend) state.legends.push({ ...legend, key: `${key}:vector`, scaleId: vectorScaleId, logScale, groupLabel: layer.groupLabel });
     } else {
       releaseResultRoot(state.vectorRoot);
       state.vectorRoot = null;
@@ -631,7 +644,8 @@ export function updateResultLayers(THREE, previous, definitions, {
         && item.origin?.length === 3 && Array.from(item.origin).every(Number.isFinite) && visible(item);
       const points = scalarScene.points.filter(validScalar);
       const { quantity, unit } = scalarScene;
-      const { minimum, maximum } = displayRange ?? scalarScene;
+      const { minimum, maximum } = scalarLimits ?? displayRange ?? scalarScene;
+      const logScale = resultLogScale(minimum, maximum, logarithmic);
       if (Number.isFinite(minimum) && Number.isFinite(maximum)) {
         const volume = Boolean(volumeFields);
         if (state.scalarRoot && (volume ? state.scalarRoot.isPoints : !state.scalarRoot.isPoints)) {
@@ -644,23 +658,23 @@ export function updateResultLayers(THREE, previous, definitions, {
           const domains = volumeFields.domains.filter(visible);
           const surfaces = (volumeFields.surfaces ?? []).filter(visible);
           updateResultVolumeMeshes(THREE, state.scalarRoot, domains,
-            { minimum, maximum, palette, opacity });
+            { minimum, maximum, palette, logScale, manual: Boolean(scalarLimits), opacity });
           updateResultSurfaceMeshes(THREE, state.scalarRoot, surfaces,
-            { minimum, maximum, palette, opacity });
+            { minimum, maximum, palette, logScale, opacity });
           const fallback = (volumeFields.fallbackPoints ?? []).filter(validScalar);
           // Only original saved nodes and the displayed fallback belong to
           // picking. Interpolation support vertices and proxy boxes do not.
           const saved = [...new Set([...domains, ...surfaces].flatMap(domain => domain.points ?? []).concat(fallback))].filter(validScalar);
           const pickNodes = updateResultPoints(THREE,
             state.scalarRoot.getObjectByName("result-scalar-volume-pick-nodes"), saved,
-            { scalar: true, minimum, maximum, palette, size: DISCRETIZATION_POINT_SIZE });
+            { scalar: true, minimum, maximum, palette, logScale, size: DISCRETIZATION_POINT_SIZE });
           pickNodes.name = "result-scalar-volume-pick-nodes";
           pickNodes.material.colorWrite = false;
           pickNodes.material.depthWrite = false;
           if (pickNodes.parent !== state.scalarRoot) state.scalarRoot.add(pickNodes);
           const fallbackNodes = updateResultPoints(THREE,
             state.scalarRoot.getObjectByName("result-scalar-volume-fallback-nodes"), fallback,
-            { scalar: true, minimum, maximum, palette, size: DISCRETIZATION_POINT_SIZE });
+            { scalar: true, minimum, maximum, palette, logScale, size: DISCRETIZATION_POINT_SIZE });
           fallbackNodes.name = "result-scalar-volume-fallback-nodes";
           // The shared saved-node target already covers these markers.
           fallbackNodes.raycast = () => {};
@@ -668,10 +682,10 @@ export function updateResultLayers(THREE, previous, definitions, {
           state.scalarRoot.name = `result-${key}-scalars`;
         } else {
           state.scalarRoot = updateResultPoints(THREE, state.scalarRoot, points,
-            { scalar: true, minimum, maximum, palette,
+            { scalar: true, minimum, maximum, palette, logScale,
               size: DISCRETIZATION_POINT_SIZE * prescribedSourceScale(scale) });
         }
-        if (points.length) state.legends.push({ key: `${key}:scalar`, groupLabel: layer.groupLabel,
+        if (points.length) state.legends.push({ key: `${key}:scalar`, scaleId: scalarScaleId, logScale, groupLabel: layer.groupLabel,
           minimum, maximum, quantity, unit, palette });
       } else {
         releaseResultRoot(state.scalarRoot);
@@ -1490,6 +1504,19 @@ export function ThreeGeometryViewport(props) {
   let legendPanel;
   const [legendLeft, setLegendLeft] = createGeometryViewSetting("scalarLegendLeft", null);
   const [legendTop, setLegendTop] = createGeometryViewSetting("scalarLegendTop", null);
+  const [autoColorLimits, setAutoColorLimits] = createGeometryViewSetting("resultDefaultColorLimits", false);
+  const [logColors, setLogColors] = createGeometryViewSetting("resultLogColors", false);
+  // Manual limits belong to the loaded task and quantity. A new task starts
+  // from its own ranges while both header switches retain their preferences.
+  const taskLimits = createMemo(() => {
+    const task = props.taskKey;
+    const [read, write] = createSignal(new Map());
+    return { task, read, write };
+  });
+  const activeLimits = () => autoColorLimits() ? undefined : taskLimits().read();
+  function changeLimits(id, minimum, maximum) {
+    taskLimits().write(previous => new Map(previous).set(id, { minimum, maximum }));
+  }
   const attachLegendDrag = element => {
     legendPanel = element;
     const drag = installGeometryOverlayDrag(element, {
@@ -1805,7 +1832,7 @@ export function ThreeGeometryViewport(props) {
       context.fillRect(x, y, boxWidth, boxHeight - 4);
       context.fillStyle = "#f1f5f8";
       context.fillText(`${legend.groupLabel ? `${legend.groupLabel} · ` : ""}${legend.quantity}`, x + 7, y + 6, boxWidth - 14);
-      context.fillText(legend.unit, x + 7, y + 23, boxWidth - 14);
+      context.fillText(logColors() ? `${legend.unit} · log` : legend.unit, x + 7, y + 23, boxWidth - 14);
       const gradient = context.createLinearGradient(x + 7, 0, x + boxWidth - 7, 0);
       for (let stop = 0; stop <= 20; stop++) {
         const rgb = resultScalarColor(legend.minimum === legend.maximum ? 10 : stop, 0, 20, legend.palette)
@@ -1815,6 +1842,10 @@ export function ThreeGeometryViewport(props) {
       context.fillStyle = gradient; context.fillRect(x + 7, y + 41, boxWidth - 14, 10);
       context.fillStyle = "#f1f5f8";
       context.fillText(Number(legend.minimum.toPrecision(6)).toString(), x + 7, y + 57);
+      if (legend.logScale) {
+        context.textAlign = "center";
+        context.fillText(Number(resultScaleMidpoint(legend.minimum, legend.maximum, legend.logScale).toPrecision(5)).toString(), x + boxWidth / 2, y + 57);
+      }
       context.textAlign = "right";
       context.fillText(Number(legend.maximum.toPrecision(6)).toString(), x + boxWidth - 7, y + 57);
       context.textAlign = "left";
@@ -2503,7 +2534,7 @@ export function ThreeGeometryViewport(props) {
     clearHoverTooltip();
     resultLayerStates = updateResultLayers(THREE, resultLayerStates, resultLayers, {
       filters: activeResultFilters, colorMap: resultVectorColorMap, normalizeVectors: resultNormalizeVectors, style: resultVectorStyle,
-      scale: resultVectorScale, palette: resultPalette, opacity: geometryOpacity ?? 1,
+      scale: resultVectorScale, palette: resultPalette, opacity: geometryOpacity ?? 1, logarithmic: logColors(), manualLimits: activeLimits(),
     });
     for (const root of resultLayerRoots(resultLayerStates)) {
       if (root.parent !== helperRoot) helperRoot.add(root);
@@ -2511,7 +2542,7 @@ export function ThreeGeometryViewport(props) {
     streamlineRoot ??= new THREE.Group();
     streamlineRoot.name = "result-streamlines";
     updateStreamlineMeshes(THREE, streamlineRoot, streamlines, { filters: activeResultFilters, selected: selectedStreamline,
-      width: streamlineWidth, colorMap: streamlineColorMap, palette: resultPalette, resolution: [viewportWidth, viewportHeight] });
+      width: streamlineWidth, colorMap: streamlineColorMap, palette: resultPalette, logarithmic: logColors(), manualLimits: activeLimits(), resolution: [viewportWidth, viewportHeight] });
     setScalarLegends([...resultLayerStates.values()].flatMap(state => state.legends).concat(streamlineRoot.userData.colorLegends));
     if (streamlineRoot.parent !== helperRoot) helperRoot.add(streamlineRoot);
     requestRender();
@@ -2941,6 +2972,7 @@ export function ThreeGeometryViewport(props) {
       scalarScene: props.resultScalarScene, volumeFields: props.resultVolumeFields,
       color: props.resultVectorColor }];
     resultPalette = normalizeResultPalette(props.resultPalette);
+    logColors(); activeLimits(); props.taskKey;
     resultVectorColorMap = props.resultVectorColorMap === true;
     resultNormalizeVectors = props.resultNormalizeVectors === true;
     resultVectorStyle = ["solid", "cones"].includes(props.resultVectorStyle) ? props.resultVectorStyle : "thin";
@@ -3139,19 +3171,24 @@ export function ThreeGeometryViewport(props) {
       </Show>
       <Show when={!error() && scalarLegends().length}>
         <div class="geometry-scalar-legends" ref={attachLegendDrag}>
-          <div class="geometry-overlay-drag-handle" title="Перетащите панель за заголовок">Цветовые шкалы</div>
+          <div class="geometry-scale-header">
+            <div class="geometry-overlay-drag-handle" title="Перетащите панель за заголовок">Цветовые шкалы</div>
+            <label><input type="checkbox" checked={autoColorLimits()} onChange={event => setAutoColorLimits(event.currentTarget.checked)} /> По умолчанию</label>
+            <label title="Логарифмическая шкала цвета"><input type="checkbox" checked={logColors()} onChange={event => setLogColors(event.currentTarget.checked)} /> log</label>
+          </div>
           <div class="geometry-scalar-legend-list">
-          <For each={scalarLegends()}>{(legend) => (
-            <div class="geometry-scalar-legend" aria-label={`Цветовая шкала: ${legend.groupLabel ? `${legend.groupLabel} · ` : ""}${legend.quantity}, ${legend.unit}`}>
-              <Show when={legend.groupLabel}><strong>{legend.groupLabel}</strong></Show>
-              <div>{legend.quantity}, {legend.unit}</div>
-              <div class="geometry-scalar-legend-gradient" style={{ background: resultScalarLegendBackground(legend.minimum, legend.maximum, legend.palette) }} />
-              <div class="geometry-scalar-legend-limits">
-                <span>{Number(legend.minimum.toPrecision(6)).toString()}</span>
-                <span>{Number(legend.maximum.toPrecision(6)).toString()}</span>
-              </div>
-            </div>
-          )}</For>
+            <For each={scalarLegends().map(legend => legend.scaleId)}>{id => {
+              const legend = () => scalarLegends().find(item => item.scaleId === id);
+              return <Show when={legend()}>{entry =>
+                <div class="geometry-scalar-legend" aria-label={`Цветовая шкала: ${entry().groupLabel ?? ""} · ${entry().quantity}, ${entry().unit}`}>
+                  <Show when={entry().groupLabel}><strong>{entry().groupLabel}</strong></Show>
+                  <div>{entry().quantity}, {entry().unit}</div>
+                  <div class="geometry-scalar-legend-gradient" style={{ background: resultScalarLegendBackground(entry().minimum, entry().maximum, entry().palette) }} />
+                  <ColorScaleLimits legend={entry()} limits={activeLimits()?.get(id)} task={props.taskKey} automatic={autoColorLimits()}
+                    onChange={(minimum, maximum) => changeLimits(id, minimum, maximum)} />
+                </div>
+              }</Show>;
+            }}</For>
           </div>
         </div>
       </Show>

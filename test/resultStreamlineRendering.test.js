@@ -298,3 +298,18 @@ test("all symmetric seed diamonds share line selection, obey image filters and r
   updateStreamlineMeshes(THREE, root, []);
   assert.equal(root.children.length, 0); assert.equal(disposed, 1);
 });
+
+test("manual logarithmic streamline colours update on unchanged paths and retain independent line bounds", () => {
+  const root = new THREE.Group(), curve = line(1);
+  curve.paths[0].magnitudes.set([1,10,100]);
+  const options = {palette:"Rainbow",manualLimits:new Map([["streamline:M",{minimum:1,maximum:100}]])};
+  updateStreamlineMeshes(THREE,root,[curve],options);
+  const mesh = root.children[0], attribute=mesh.geometry.getAttribute("instanceColorStart");
+  const linear = new THREE.Color().fromBufferAttribute(attribute,1);
+  updateStreamlineMeshes(THREE,root,[curve],{...options,logarithmic:true});
+  const middle = new THREE.Color().fromBufferAttribute(attribute,1);
+  assert.ok(middle.r<1e-5 && middle.g>.999 && middle.b<1e-5);
+  assert.ok(linear.b>0.1);
+  assert.equal(root.userData.colorLegends[0].scaleId,"streamline:M");
+  updateStreamlineMeshes(THREE,root,[]);
+});

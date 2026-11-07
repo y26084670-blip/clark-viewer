@@ -1,12 +1,10 @@
 import { prepareStreamlineDomain, sampleStreamlineVector } from "./resultStreamlineField.js";
 import { buildResultSurfaceField } from "./resultSurfaceField.js";
-import { normalizeDiscretizationCounts, trilinearElementPoint } from "./geometryDiscretization.js";
+import { normalizeDiscretizationCounts, createElementPointMapper } from "./geometryDiscretization.js";
 import { applyMatrix4ToPoint } from "../solver/rotation3d.js";
 import { applyMatrix4ToVector, resultInstanceKey } from "../results/resultSymmetry.js";
 
 export const GRAPH_SLICE_DIRECTIONS = Object.freeze([0, 1, 2].map(value => ({ value, label: `плоскость DV${value + 1}` })));
-// Only the drawing mesh is bounded. Reconstruction always uses the complete saved grid.
-export const GRAPH_SURFACE_MAX_INTERVALS = 64;
 export const graphSliceCount = (record, direction) => normalizeDiscretizationCounts(record?.dp, 3)?.[direction] ?? 0;
 export const middleGraphDiscrete = count => Math.ceil(count / 2);
 const sub = (a, b) => a.map((v, k) => v - b[k]);
@@ -22,9 +20,11 @@ export function graphSlicePatch(vertices, direction, counts = [2, 2, 2], discret
   if (!Number.isSafeInteger(discrete) || discrete < 1 || discrete > counts[direction]) throw new Error(`Номер дискрета должен быть от 1 до ${counts[direction]}.`);
   const fixed = (discrete - .5) / counts[direction];
   const flat = vertices.flat(), varying = [0, 1, 2].filter(k => k !== direction);
-  const dimensions = varying.map(k => Math.min(GRAPH_SURFACE_MAX_INTERVALS, Math.max(2, counts[k])) + 1);
+  const dimensions = varying.map(k => Math.max(2, counts[k]) + 1);
   const positions = new Float64Array(dimensions[0] * dimensions[1] * 3), normals = new Float64Array(positions.length);
-  const position = u => trilinearElementPoint(flat, ...u);
+  const map = createElementPointMapper(flat);
+  if (!map) throw new Error("Некорректные вершины среза.");
+  const position = u => map(...u);
   for (let i = 0; i < dimensions[0]; i++) for (let j = 0; j < dimensions[1]; j++) {
     const u = [.5, .5, .5]; u[direction] = fixed; u[varying[0]] = i / (dimensions[0] - 1); u[varying[1]] = j / (dimensions[1] - 1);
     const derivative = k => { const a = [...u], b = [...u]; a[k] -= 1e-4; b[k] += 1e-4; return sub(position(b), position(a)); };
@@ -33,7 +33,7 @@ export function graphSlicePatch(vertices, direction, counts = [2, 2, 2], discret
     const n = i * dimensions[1] + j; positions.set(position(u), n * 3); normals.set(normal, n * 3);
   }
   return { positions, normals, dimensions, nodeCounts: varying.map(k => counts[k]), nodeLocation: "centres", directions: varying,
-    sampled: varying.some(k => counts[k] > GRAPH_SURFACE_MAX_INTERVALS) };
+    sampled: false };
 }
 
 function regionPatch(domain) {
@@ -65,7 +65,7 @@ function graphProfiles(graph, input, patch, copy, domain) {
     const run = profile.direction, fixed = 1 - run, counts = patch.nodeCounts;
     if (![0, 1].includes(run) || profile.index < 0 || profile.index >= counts[fixed]) return { id: profile.id, error: "Сечение вне сетки объекта." };
     const positions = new Float64Array(counts[run] * 3), values = new Float64Array(positions.length), distances = new Float64Array(counts[run]);
-    const vertices = graph.kind === "slice" ? input.geometryVertices.flat() : null;
+    const pointOnSlice = graph.kind === "slice" ? createElementPointMapper(input.geometryVertices.flat()) : null;
     for (let n = 0; n < counts[run]; n++) {
       let point, vector;
       if (graph.kind === "region") {
@@ -75,7 +75,7 @@ function graphProfiles(graph, input, patch, copy, domain) {
       } else {
         const u = [.5, .5, .5]; u[graph.direction] = (graph.discrete - .5) / input.geometryDimensions[graph.direction];
         u[patch.directions[run]] = (n + .5) / counts[run]; u[patch.directions[fixed]] = (profile.index + .5) / counts[fixed];
-        point = trilinearElementPoint(vertices, ...u);
+        point = pointOnSlice(...u);
         const sample = sampleStreamlineVector(domain, point);
         vector = !sample || missingStencil(input, sample.u) ? [NaN, NaN, NaN] : sample.vector;
       }

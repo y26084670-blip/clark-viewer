@@ -15,10 +15,6 @@ const REGION_GEO_TYPES = new Set([0, 1, 2, 3]);
 const ELEMENTS_SCHEMA_ID = "elements";
 const REGIONS_SCHEMA_ID = "regions";
 
-// Scene DTO is rebuilt synchronously on BaseModel changes. Keep both a
-// per-record and a whole-scene guard before symmetry matrices are allocated.
-export const GEOMETRY_RECORD_INSTANCE_LIMIT = 20_000;
-export const GEOMETRY_SCENE_INSTANCE_LIMIT = 20_000;
 const MAX_FLOAT32_COORDINATE = 3.402823466e38;
 const MAX_UINT32 = 0xffff_ffff;
 
@@ -176,20 +172,6 @@ function regionInstanceCount(record, general) {
         mirrorFactor(general?.mirrorSymmetryY),
         mirrorFactor(general?.mirrorSymmetryX),
     ]);
-}
-
-function instanceLimitDiagnostic(schemaId, recordIndex, count, limit) {
-    const requested = Number.isFinite(count)
-        ? String(count)
-        : "слишком много";
-
-    return diagnostic(
-        schemaId,
-        recordIndex,
-        "symLs",
-        "instance-budget-exceeded",
-        `Запись требует ${requested} образов; предел для текущей сцены — ${limit}`,
-    );
 }
 
 function flattenVertices(vertices) {
@@ -361,7 +343,7 @@ function createCounts(primitives, skipped) {
     return counts;
 }
 
-function elementPrimitive(record, recordIndex, general, remainingInstances) {
+function elementPrimitive(record, recordIndex, general, originalOnly) {
     const normalized = normalizedRecord(record);
 
     if (!ELEMENT_GEO_TYPES.has(normalized.geoType)) {
@@ -410,7 +392,7 @@ function elementPrimitive(record, recordIndex, general, remainingInstances) {
 
     const requestedInstances = elementInstanceCount(normalized, general);
 
-    if (requestedInstances === 0) {
+    if (!requestedInstances || (!originalOnly && requestedInstances > MAX_UINT32)) {
         return {
             diagnostic: diagnostic(
                 ELEMENTS_SCHEMA_ID,
@@ -422,29 +404,13 @@ function elementPrimitive(record, recordIndex, general, remainingInstances) {
         };
     }
 
-    const allowedInstances = Math.min(
-        GEOMETRY_RECORD_INSTANCE_LIMIT,
-        remainingInstances,
-    );
-
-    if (requestedInstances > allowedInstances) {
-        return {
-            diagnostic: instanceLimitDiagnostic(
-                ELEMENTS_SCHEMA_ID,
-                recordIndex,
-                requestedInstances,
-                allowedInstances,
-            ),
-        };
-    }
-
     const instances = normalizeInstances(
-        expandElementSymmetry(normalized, general),
+        expandElementSymmetry(originalOnly ? { ...normalized, symLs: 1, symAs: 1, symPs: 1 } : normalized, originalOnly ? {} : general),
     );
 
     if (
         instances.length === 0
-        || instances.length !== requestedInstances
+        || instances.length !== (originalOnly ? 1 : requestedInstances)
     ) {
         return {
             diagnostic: diagnostic(
@@ -477,7 +443,7 @@ function elementPrimitive(record, recordIndex, general, remainingInstances) {
     };
 }
 
-function regionPrimitive(record, recordIndex, general, remainingInstances) {
+function regionPrimitive(record, recordIndex, general, originalOnly) {
     const normalized = normalizedRecord(record);
 
     if (!REGION_GEO_TYPES.has(normalized.geoType)) {
@@ -527,7 +493,7 @@ function regionPrimitive(record, recordIndex, general, remainingInstances) {
 
     const requestedInstances = regionInstanceCount(normalized, general);
 
-    if (requestedInstances === 0) {
+    if (!requestedInstances || (!originalOnly && requestedInstances > MAX_UINT32)) {
         return {
             diagnostic: diagnostic(
                 REGIONS_SCHEMA_ID,
@@ -539,29 +505,13 @@ function regionPrimitive(record, recordIndex, general, remainingInstances) {
         };
     }
 
-    const allowedInstances = Math.min(
-        GEOMETRY_RECORD_INSTANCE_LIMIT,
-        remainingInstances,
-    );
-
-    if (requestedInstances > allowedInstances) {
-        return {
-            diagnostic: instanceLimitDiagnostic(
-                REGIONS_SCHEMA_ID,
-                recordIndex,
-                requestedInstances,
-                allowedInstances,
-            ),
-        };
-    }
-
     const instances = normalizeInstances(
-        expandRegionSymmetry(normalized, general),
+        expandRegionSymmetry(originalOnly ? { ...normalized, symLs: 1 } : normalized, originalOnly ? {} : general),
     );
 
     if (
         instances.length === 0
-        || instances.length !== requestedInstances
+        || instances.length !== (originalOnly ? 1 : requestedInstances)
     ) {
         return {
             diagnostic: diagnostic(
@@ -612,7 +562,6 @@ function appendRecords({
     createPrimitive,
     primitives,
     diagnostics,
-    onPrimitive,
 }) {
     if (!Array.isArray(records)) return 0;
 
@@ -627,7 +576,6 @@ function appendRecords({
                 && hasRenderableCoordinates(result.primitive)
             ) {
                 primitives.push(result.primitive);
-                onPrimitive?.(result.primitive);
                 if (result.diagnostic) {
                     diagnostics.push(result.diagnostic);
                 }
@@ -665,26 +613,22 @@ function appendRecords({
 }
 
 // BaseModel -> detached render-oriented DTO. The original model is not changed.
-export function buildGeometryScene(model = {}) {
+export function buildGeometryScene(model = {}, { originalOnly = false } = {}) {
     const primitives = [];
     const diagnostics = [];
     const general = model?.general ?? {};
-    let remainingInstances = GEOMETRY_SCENE_INSTANCE_LIMIT;
     const createElement = (record, recordIndex) => elementPrimitive(
         record,
         recordIndex,
         general,
-        remainingInstances,
+        originalOnly,
     );
     const createRegion = (record, recordIndex) => regionPrimitive(
         record,
         recordIndex,
         general,
-        remainingInstances,
+        originalOnly,
     );
-    const reservePrimitive = (primitive) => {
-        remainingInstances -= primitive.instances.length;
-    };
 
     createElement.schemaId = ELEMENTS_SCHEMA_ID;
     createRegion.schemaId = REGIONS_SCHEMA_ID;
@@ -694,13 +638,11 @@ export function buildGeometryScene(model = {}) {
         createPrimitive: createElement,
         primitives,
         diagnostics,
-        onPrimitive: reservePrimitive,
     }) + appendRecords({
         records: model?.regions,
         createPrimitive: createRegion,
         primitives,
         diagnostics,
-        onPrimitive: reservePrimitive,
     });
 
     return {

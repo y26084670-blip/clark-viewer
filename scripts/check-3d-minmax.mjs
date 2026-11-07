@@ -16,12 +16,13 @@ const checks=[],errors=[];let server,browser,page;
 const pass=name=>{checks.push(name);console.log(`PASS ${checks.length}: ${name}`);};
 try{
  const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
- server=await createServer({configFile:false,root,plugins:[solid(),libavAssets()],server:{host:'127.0.0.1',port:0,hmr:false},optimizeDeps:{include:['solid-js','solid-js/web','three','tabulator-tables']}});
+ server=await createServer({configFile:false,root,cacheDir:path.join(out,'vite-cache'),plugins:[solid(),libavAssets()],server:{host:'127.0.0.1',port:0,hmr:false},optimizeDeps:{include:['solid-js','solid-js/web','three','tabulator-tables']}});
  await server.listen();
  browser=await chromium.launch({headless:true, executablePath:process.env.CHROMIUM_EXECUTABLE || undefined,
   args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
  page=await browser.newPage({viewport:{width:1920,height:1080},deviceScaleFactor:1});
  page.on('pageerror',e=>errors.push(e.message));
+ page.on('response',r=>{if(r.status()>=400)console.error('HTTP',r.status(),r.url());});
  page.on('console',m=>{if(m.type()==='error' && /shader|WebGLProgram/i.test(m.text()))errors.push(m.text());});
  page.setDefaultTimeout(12000);
  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/${path.basename(dir)}/index.html`);
@@ -51,10 +52,11 @@ try{
  const load=(kind,stat=false)=>page.evaluate(([k,s])=>window.minmax.load(k,s),[kind,stat]);
 
  await waitRange('Элементы',5,150);
- assert.equal(await defaults.isChecked(),false);assert.equal(await log.isChecked(),false);
- assert.equal(await lower.isEditable(),true);
+ assert.equal(await defaults.isChecked(),true);assert.equal(await log.isChecked(),false);
+ assert.equal(await lower.count(),0);
+ await defaults.uncheck();assert.equal(await lower.isEditable(),true);
  await waitRange('Области',5,100);
- pass('Independent global scales start with editable limits and linear colours');
+ pass('Independent global scales start automatic and linear; unchecking enables manual limits');
  await menu('Представление');
  const before=(await page.evaluate(()=>window.minmax.snapshot())).readCount;
  await global.uncheck();await waitRange('Элементы',5,5);
@@ -171,6 +173,9 @@ try{
    assert.ok(actual.every((v,i)=>Math.abs(v-sample.expected[i])<=8),JSON.stringify(sample));
  }
  pass('Surface and volume midpoint pixels match the CPU palette after physical interpolation in four log domains');
+ const overlay=await page.evaluate(()=>window.minmax.checkLargeOverlay());
+ assert.ok(overlay.lines>=262160 && overlay.points>=131074,JSON.stringify(overlay));
+ pass('WebGL rendered all 262160 discretization lines and 131074 cell centres beyond former limits');
  assert.deepEqual(errors,[]);
  await writeFile(path.join(out,'browser.json'),JSON.stringify({passed:checks.length,checks,errors},null,2));
  console.log(`BROWSER_OK ${checks.length}`);

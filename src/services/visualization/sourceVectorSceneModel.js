@@ -11,10 +11,8 @@ import {
     multiplyMatrix4,
     rotationXMatrix4,
 } from "../solver/rotation3d.js";
-import { trilinearElementPoint } from "./geometryDiscretization.js";
+import { createElementPointMapper } from "./geometryDiscretization.js";
 import { instanceVisible, primitiveVisible } from "./geometryRenderFilters.js";
-
-export const SOURCE_VECTOR_LIMIT = 100_000;
 
 function warning(code, message) {
     return { level: "warning", schemaId: "mhj", code, message };
@@ -52,7 +50,10 @@ function elementContext(primitive, record, filters) {
         instances.get(key).push(instance);
     }
 
+    const point = createElementPointMapper(primitive.vertices);
+    if (!point) return null;
     return {
+        point,
         primitive,
         record,
         instances,
@@ -72,10 +73,7 @@ function sourceCell(context, row) {
     const parameters = [row.d12, row.d13, row.d15].map(
         (index, axis) => (index - 0.5) / counts[axis],
     );
-    const point = (...position) => trilinearElementPoint(
-        context.primitive.vertices,
-        ...position,
-    );
+    const point = context.point;
     const origin = point(...parameters);
     const edgeLengths = parameters.map((value, axis) => {
         const lower = [...parameters];
@@ -183,8 +181,8 @@ export function buildSourceVectorScene(scene, elements, mhj, options = {}) {
     }
 
     const limit = Number.isSafeInteger(options.limit) && options.limit >= 0
-        ? Math.min(options.limit, SOURCE_VECTOR_LIMIT)
-        : SOURCE_VECTOR_LIMIT;
+        ? options.limit
+        : Infinity;
     const matchedCount = Math.min(values.length, expectedRows);
     result.rowsTruncated = matchedCount > limit;
     // Index rows before visibility filters or skipping unusable geometry.

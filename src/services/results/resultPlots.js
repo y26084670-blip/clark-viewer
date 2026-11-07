@@ -214,7 +214,6 @@ export function regionSurfaceGrid(frame, record, quantity, component, copy = 0) 
   if (!Number.isSafeInteger(copy) || copy < 0 || copy >= layout.copies) throw new Error("Образ LS вне сетки площадки");
   if (frame.count !== layout.planeCount || (frame.every ?? 1) !== 1) throw new Error("Сетка площадки не совпадает с данными");
   if (layout.n1 < 2 || layout.n2 < 2) throw new Error("Для поверхности нужны хотя бы два узла по каждому направлению. Эта область доступна на вкладке «Поле на линиях».");
-  if (layout.planeCount > 250_000) throw new Error("На площадке больше 250 000 узлов. Уменьшите сетку для просмотра поверхности.");
   const values = new Float64Array(layout.planeCount), coordinates = new Float64Array(layout.planeCount * 3);
   for (let row = 0; row < layout.planeCount; row++) {
     values[row] = scalarAt(frame, row, quantity, component);
@@ -235,7 +234,6 @@ export function surfaceGrid(frame, record, quantity, component, axis, layer, cop
   const other = [0, 1, 2].filter(i => i !== direction);
   const [width, height] = other.map(i => layout.dimensions[i]);
   if (width < 2 || height < 2) throw new Error("Для поверхности нужны хотя бы два узла по каждому направлению. Выберите другой срез.");
-  if (width * height > 250_000) throw new Error("В срезе больше 250 000 узлов. Уменьшите сетку для просмотра поверхности.");
   const values = new Float64Array(width * height);
   const coordinates = new Float64Array(width * height * 3);
   for (let i = 0; i < width; i++) for (let j = 0; j < height; j++) {
@@ -246,7 +244,7 @@ export function surfaceGrid(frame, record, quantity, component, axis, layer, cop
     values[k] = scalarAt(frame, row, quantity, component);
     coordinates.set(pointAt(frame, row), k * 3);
   }
-  if (![...values].every(Number.isFinite)) throw new Error("Поверхность содержит нечисловые значения");
+  if (!values.every(Number.isFinite)) throw new Error("Поверхность содержит нечисловые значения");
   return { width, height, values, coordinates, axes: other.map(i => `i${i + 1}`) };
 }
 

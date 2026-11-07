@@ -3,8 +3,8 @@
 // edges 1-2/1-3/1-5; region D1/D2 are edges 1-2/1-4.
 
 export const DEFAULT_DISCRETIZATION_LIMITS = Object.freeze({
-    lineSegments: 250_000,
-    points: 100_000,
+    lineSegments: Infinity,
+    points: Infinity,
 });
 
 export const REGION_SURFACE_SUBDIVISION_LIMIT = 4;
@@ -211,23 +211,26 @@ function normalizedVertices(vertices, expectedCount) {
 }
 
 function trilinearPoint(points, d1, d2, d3) {
-    const weights = [
-        (1 - d1) * (1 - d2) * (1 - d3),
-        d1 * (1 - d2) * (1 - d3),
-        (1 - d1) * d2 * (1 - d3),
-        d1 * d2 * (1 - d3),
-        (1 - d1) * (1 - d2) * d3,
-        d1 * (1 - d2) * d3,
-        (1 - d1) * d2 * d3,
-        d1 * d2 * d3,
-    ];
+    const w0 = (1 - d1) * (1 - d2) * (1 - d3);
+    const w1 = d1 * (1 - d2) * (1 - d3);
+    const w2 = (1 - d1) * d2 * (1 - d3);
+    const w3 = d1 * d2 * (1 - d3);
+    const w4 = (1 - d1) * (1 - d2) * d3;
+    const w5 = d1 * (1 - d2) * d3;
+    const w6 = (1 - d1) * d2 * d3;
+    const w7 = d1 * d2 * d3;
+    const point = [0, 0, 0];
+    for (let axis = 0; axis < 3; axis++) {
+        point[axis] = points[0][axis] * w0 + points[1][axis] * w1 + points[2][axis] * w2 + points[3][axis] * w3
+            + points[4][axis] * w4 + points[5][axis] * w5 + points[6][axis] * w6 + points[7][axis] * w7;
+    }
+    return point;
+}
 
-    return [0, 1, 2].map(axis =>
-        points.reduce(
-            (sum, point, index) => sum + point[axis] * weights[index],
-            0,
-        )
-    );
+/** Reuse the decoded vertices for all cells of the same hexahedron. */
+export function createElementPointMapper(vertices) {
+    const points = normalizedVertices(vertices, 8);
+    return points && ((u, v, w) => trilinearPoint(points, u, v, w));
 }
 
 /** Solver-compatible trilinear map for an eight-vertex element. */
@@ -246,19 +249,15 @@ export function trilinearElementPoint(vertices, d1, d2, d3) {
 }
 
 function bilinearPoint(points, d1, d2) {
-    const weights = [
-        (1 - d1) * (1 - d2),
-        d1 * (1 - d2),
-        d1 * d2,
-        (1 - d1) * d2,
-    ];
-
-    return [0, 1, 2].map(axis =>
-        points.reduce(
-            (sum, point, index) => sum + point[axis] * weights[index],
-            0,
-        )
-    );
+    const w0 = (1 - d1) * (1 - d2);
+    const w1 = d1 * (1 - d2);
+    const w2 = d1 * d2;
+    const w3 = (1 - d1) * d2;
+    const point = [0, 0, 0];
+    for (let axis = 0; axis < 3; axis++) {
+        point[axis] = points[0][axis] * w0 + points[1][axis] * w1 + points[2][axis] * w2 + points[3][axis] * w3;
+    }
+    return point;
 }
 
 /** Solver-compatible bilinear map for a four-vertex region. */
@@ -278,11 +277,6 @@ export function bilinearRegionPoint(vertices, d1, d2) {
 
 function appendPoint(target, point) {
     target.push(point[0], point[1], point[2]);
-}
-
-function appendLine(target, start, end) {
-    appendPoint(target, start);
-    appendPoint(target, end);
 }
 
 function failedBuild(reason, counts = null, preflight = null) {
@@ -333,8 +327,12 @@ export function buildElementDiscretization(
     }
 
     const [d1, d2, d3] = normalized;
-    const lines = [];
-    const centres = [];
+    const lines = new Float64Array(metrics.lineSegments * 6);
+    let lineOffset = 0;
+    const line = (a, b) => { lines.set(a, lineOffset); lines.set(b, lineOffset + 3); lineOffset += 6; };
+    const centres = new Float64Array(metrics.points * 3);
+    let pointOffset = 0;
+    const point = value => { centres.set(value, pointOffset); pointOffset += 3; };
     const pointMetadata = [];
     const map = (u, v, w) => trilinearPoint(points, u, v, w);
 
@@ -342,17 +340,17 @@ export function buildElementDiscretization(
         // Main edges use the same overlay geometry/material as internal lines.
         for (const v of [0, 1]) {
             for (const w of [0, 1]) {
-                appendLine(lines, map(0, v, w), map(1, v, w));
+                line(map(0, v, w), map(1, v, w));
             }
         }
         for (const u of [0, 1]) {
             for (const w of [0, 1]) {
-                appendLine(lines, map(u, 0, w), map(u, 1, w));
+                line(map(u, 0, w), map(u, 1, w));
             }
         }
         for (const u of [0, 1]) {
             for (const v of [0, 1]) {
-                appendLine(lines, map(u, v, 0), map(u, v, 1));
+                line(map(u, v, 0), map(u, v, 1));
             }
         }
 
@@ -362,26 +360,26 @@ export function buildElementDiscretization(
 
         for (const w of [0, 1]) {
             for (const u of p1) {
-                appendLine(lines, map(u, 0, w), map(u, 1, w));
+                line(map(u, 0, w), map(u, 1, w));
             }
             for (const v of p2) {
-                appendLine(lines, map(0, v, w), map(1, v, w));
+                line(map(0, v, w), map(1, v, w));
             }
         }
         for (const v of [0, 1]) {
             for (const u of p1) {
-                appendLine(lines, map(u, v, 0), map(u, v, 1));
+                line(map(u, v, 0), map(u, v, 1));
             }
             for (const w of p3) {
-                appendLine(lines, map(0, v, w), map(1, v, w));
+                line(map(0, v, w), map(1, v, w));
             }
         }
         for (const u of [0, 1]) {
             for (const v of p2) {
-                appendLine(lines, map(u, v, 0), map(u, v, 1));
+                line(map(u, v, 0), map(u, v, 1));
             }
             for (const w of p3) {
-                appendLine(lines, map(u, 0, w), map(u, 1, w));
+                line(map(u, 0, w), map(u, 1, w));
             }
         }
     }
@@ -391,12 +389,12 @@ export function buildElementDiscretization(
         for (let i1 = 0; i1 < d1; i1++) {
             for (let i2 = 0; i2 < d2; i2++) {
                 for (let i3 = 0; i3 < d3; i3++) {
-                    appendPoint(centres, map(
+                    point(map(
                         (i1 + 0.5) / d1,
                         (i2 + 0.5) / d2,
                         (i3 + 0.5) / d3,
                     ));
-                    pointMetadata.push({
+                    if (options?.includeMetadata !== false) pointMetadata.push({
                         kind: "element-center",
                         d1: i1 + 1,
                         d2: i2 + 1,
@@ -410,8 +408,8 @@ export function buildElementDiscretization(
     return {
         ok: true,
         reason: null,
-        lines: new Float64Array(lines),
-        points: new Float64Array(centres),
+        lines,
+        points: centres,
         pointMetadata,
         counts: metrics,
         preflight,
@@ -476,8 +474,12 @@ export function buildRegionDiscretization(
     }
 
     const [d1, d2] = normalized;
-    const lines = [];
-    const nodes = [];
+    const lines = new Float64Array(metrics.lineSegments * 6);
+    let lineOffset = 0;
+    const line = (a, b) => { lines.set(a, lineOffset); lines.set(b, lineOffset + 3); lineOffset += 6; };
+    const nodes = new Float64Array(metrics.points * 3);
+    let pointOffset = 0;
+    const point = value => { nodes.set(value, pointOffset); pointOffset += 3; };
     const pointMetadata = [];
     const map = (u, v) => bilinearPoint(points, u, v);
 
@@ -485,22 +487,22 @@ export function buildRegionDiscretization(
         if (includePoints) {
             const parameters2 = regionParameters(d2);
             for (let i2 = 0; i2 < d2; i2++) {
-                appendPoint(nodes, map(0.5, parameters2[i2]));
-                pointMetadata.push({ kind: "region-node", d2: i2 + 1 });
+                point(map(0.5, parameters2[i2]));
+                if (options?.includeMetadata !== false) pointMetadata.push({ kind: "region-node", d2: i2 + 1 });
             }
         }
     } else {
         if (includeLines) {
-            appendLine(lines, map(0, 0), map(1, 0));
-            appendLine(lines, map(0, 1), map(1, 1));
-            appendLine(lines, map(0, 0), map(0, 1));
-            appendLine(lines, map(1, 0), map(1, 1));
+            line(map(0, 0), map(1, 0));
+            line(map(0, 1), map(1, 1));
+            line(map(0, 0), map(0, 1));
+            line(map(1, 0), map(1, 1));
 
             for (const u of internalRegionParameters(d1)) {
-                appendLine(lines, map(u, 0), map(u, 1));
+                line(map(u, 0), map(u, 1));
             }
             for (const v of internalRegionParameters(d2)) {
-                appendLine(lines, map(0, v), map(1, v));
+                line(map(0, v), map(1, v));
             }
         }
 
@@ -509,11 +511,11 @@ export function buildRegionDiscretization(
             const parameters2 = regionParameters(d2);
             for (let i1 = 0; i1 < d1; i1++) {
                 for (let i2 = 0; i2 < d2; i2++) {
-                    appendPoint(nodes, map(
+                    point(map(
                         parameters1[i1],
                         parameters2[i2],
                     ));
-                    pointMetadata.push({
+                    if (options?.includeMetadata !== false) pointMetadata.push({
                         kind: "region-node",
                         d1: i1 + 1,
                         d2: i2 + 1,
@@ -526,8 +528,8 @@ export function buildRegionDiscretization(
     return {
         ok: true,
         reason: null,
-        lines: new Float64Array(lines),
-        points: new Float64Array(nodes),
+        lines,
+        points: nodes,
         pointMetadata,
         counts: metrics,
         preflight,

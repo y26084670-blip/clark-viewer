@@ -19,7 +19,7 @@ export function globalResultRange(task, quantityKey, selected) {
     if (!ids.length) return unavailable("Для этих объектов нет величины", "empty");
     // Independent J/E extrema do not determine extrema of the local ratio.
     // HEADER/RANGES v1 has no relative conductivity channel; use actual frame values.
-    if (quantity.relativeConductivity) return unavailable("Пределы σ/j_gmin за цикл вычисляются по сохранённым шагам JE");
+    if (quantity.relativeConductivity) return unavailable("Для относительной электропроводности доступны пределы текущего кадра");
     const metadata = task.metadata?.[quantity.file];
     if (metadata?.error) return unavailable(metadata.error, "invalid");
     const ranges = metadata?.ranges;
@@ -59,17 +59,16 @@ export function globalResultRange(task, quantityKey, selected) {
   }
 }
 
-/** The control retains its preference independently of data availability.
- * Incomplete bounds use the current frame for all active layers instead of silently mixing local/global maps.
+/** One checkbox enables a coherent mode for every active layer. An unavailable
+ * active channel disables the mode instead of silently mixing local/global maps.
  * Streamlines may enter unselected elements, so their range covers all eligible
  * physical elements, not just the list used to display source arrows.
  */
-export function resultGlobalScale(task, layers = [], seeds = [], conductivityRange = null) {
+export function resultGlobalScale(task, layers = [], seeds = []) {
   const layerRanges = {}, lineRanges = {}, active = [];
   for (const layer of layers) {
     if (layer.quantityKey === "none" || !layer.selected?.length) continue;
-    const range = layer.quantityKey === "sigmaRelative" && conductivityRange
-      ? conductivityRange : globalResultRange(task, layer.quantityKey, layer.selected);
+    const range = globalResultRange(task, layer.quantityKey, layer.selected);
     if (range.state === "empty") continue;
     layerRanges[layer.key] = range; active.push(range);
   }

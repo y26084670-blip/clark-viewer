@@ -47,6 +47,7 @@ const settings={};
 for(const [key,init] of Object.entries({resultElementsQuantity:'J',resultRegionsQuantity:'Bs',resultVirtualQuantity:'Av',resultVectorColorMap:true,resultVectorScale:1})) settings[key]=createGeometryViewSetting(key,init);
 const setSetting=(name,value)=>{const [,write]=settings[name]??createGeometryViewSetting(name,value);write(value);};
 let readCount=0,readyFrames=0;
+const jeSteps = new WeakMap();
 function taskFixture(kind='complete',staticTask=false){
  const task=globalRangesTask();
  task.elements=task.elements.map((e,i)=>({...e,geoType:0,geo:[[0,0,0],[2,0,0],[0,2,0],[2,2,0],[0,0,2],[2,0,2],[0,2,2],[2,2,2]].map(p=>[p[0]+i*5,p[1],p[2]]),dr:[[0],[0],[0]],symVi:[[0],[0],[0]],symR0:[[0],[0],[0]],indMove:0}));
@@ -59,7 +60,12 @@ function taskFixture(kind='complete',staticTask=false){
   }};
   task.handle=material;
  }
- const oldRead=task.reader.read;task.reader.read=async req=>{readCount++;const data=await oldRead(req);
+ const steps = [];
+ jeSteps.set(task, steps);
+ const oldRead=task.reader.read;task.reader.read=async req=>{
+  readCount++;
+  if(req.name==='JE')steps.push(req.step);
+  const data=await oldRead(req);
   if (kind==='conductivity' && req.name==='JE') for(let i=0;i<data.count;i++){
     const offset=i*data.stride;
     data.values.set([1 + req.step, 0, 0, 0.1, 0, 0],offset+3);
@@ -76,7 +82,7 @@ function Fixture(){
  const [busy,setBusy]=createSignal(false);const controller=createMovieExportController({createEncoder:createMovieWebmEncoder});
  const props={get task(){return task();},get elements(){return elements();},get regions(){return regions();},get time(){return time();},setTime,setElements,setRegions,get movieBusy(){return busy();},setMovieTime:setTime,registerMovieAdapter:controller.register};
  window.minmax={sampledColors,setTime,setBusy,setElements,setRegions,setSetting,load:(kind='complete',stat=false)=>{setTime(0);setTask(taskFixture(kind,stat));},
-  snapshot:()=>({time:time(),readCount,readyFrames,elements:elements(),regions:regions(),busy:busy()}),
+  snapshot:()=>({time:time(),readCount,readyFrames,jeSteps:[...jeSteps.get(task())],elements:elements(),regions:regions(),busy:busy()}),
   movie:async()=>{setBusy(true);try{const result=await controller.run({intervalMs:100});return {frames:result.frameCount,bytes:Array.from(new Uint8Array(await result.blob.arrayBuffer()))};}finally{setBusy(false);}}
  };
  return <div class="app-container"><header class="task-info-bar">Viewer 3D minmax — проверка</header><main class="tabs-body"><SourcesFields3D {...props}/></main></div>;

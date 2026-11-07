@@ -1,6 +1,6 @@
 import { assignedHtsElements } from "./resultMappings.js";
 import { loadCurrentMaterial } from "./currentCharacteristics.js";
-import { readObjectFrames, resultObjects } from "./resultRequests.js";
+import { readObjectFrames } from "./resultRequests.js";
 
 export async function relativeConductivityBases(task) {
   const names = [...new Set(assignedHtsElements(task).map(record => record.xapName))];
@@ -45,55 +45,4 @@ export async function readRelativeConductivityFrames(request) {
   const frames = await readObjectFrames(request);
   return frames.map(entry => ({ ...entry, frame: { ...entry.frame,
     relativeConductivityValues: relativeConductivityValues(entry.frame, entry.record, bases) } }));
-}
-
-// Store only completed per-element extrema. Selection changes can reuse them
-// without retaining any time frames or publishing an interrupted scan.
-const cycleRanges = new WeakMap();
-
-export async function relativeConductivityCycleRange(task, selected, signal) {
-  const meta = task.metadata?.JE;
-  const steps = meta?.steps ?? [];
-  if (!steps.length || steps.length !== task.general.countTimeSteps + 1
-    || steps.some((step, i) => step.index !== i)) throw new Error("JE.h5: сохранены не все шаги расчёта");
-  const selectedIds = new Set(selected);
-  const objects = resultObjects(task, "sigmaRelative").filter(obj => selectedIds.has(obj.record.id));
-  const bases = await relativeConductivityBases(task);
-  let cached = cycleRanges.get(task);
-  if (cached?.metadata !== meta) {
-    cached = { metadata: meta, byObject: new Map() };
-    cycleRanges.set(task, cached);
-  }
-  let minimum = Infinity, maximum = -Infinity;
-  for (const { record, start, count } of objects) {
-    signal?.throwIfAborted();
-    let extrema = cached.byObject.get(record.id);
-    if (!extrema) {
-      let low = Infinity, high = -Infinity;
-      if (record.model === 2) {
-        for (const { index } of steps) {
-          for (let offset = 0; offset < count; offset += 16384) {
-            signal?.throwIfAborted();
-            const frame = await task.reader.read({ name: "JE", step: index, start: start + offset,
-              count: Math.min(count - offset, 16384), every: 1 });
-            for (const value of relativeConductivityValues(frame, record, bases)) {
-              if (Number.isNaN(value)) continue; // E=0 at this node.
-              low = Math.min(low, value);
-              high = Math.max(high, value);
-            }
-          }
-        }
-      } else if (count) {
-        [low] = relativeConductivityValues({ count: 1 }, record, bases);
-        high = low;
-      }
-      signal?.throwIfAborted();
-      extrema = { minimum: low, maximum: high };
-      cached.byObject.set(record.id, extrema);
-    }
-    minimum = Math.min(minimum, extrema.minimum);
-    maximum = Math.max(maximum, extrema.maximum);
-  }
-  if (!(minimum <= maximum)) throw new Error("В выбранных элементах нет конечных значений σ/j_gmin за цикл");
-  return { available: true, minimum, maximum, runId: meta.ranges?.runId, unit: "отн. ед.", state: "complete" };
 }

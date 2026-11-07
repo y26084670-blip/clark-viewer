@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createResultFrameController, sameFrameContext } from "../src/services/results/resultFrameController.js";
+import { createResultFrameController, sameFrameContext, sameLayerFrameRequest } from "../src/services/results/resultFrameController.js";
 import { readObjectFrames, readSurfaceFrame } from "../src/services/results/resultRequests.js";
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
-function harness() {
+function harness(options = {}) {
   const scheduled = new Map(), reads = [], states = [];
   let id = 0;
   const controller = createResultFrameController({
+    ...options,
     publish: state => states.push(state),
     schedule: callback => { scheduled.set(++id, callback); return id; },
     cancel: id => scheduled.delete(id),
@@ -20,6 +21,21 @@ function harness() {
     state: () => states.at(-1),
   };
 }
+
+test("equivalent 3D requests share queued, active and published frames; suspension retains the last step", async () => {
+  const h = harness({ sameRequest: sameLayerFrameRequest });
+  const task = {}, layers = [{ key: "elements", quantityKey: "M", selected: [2, 1] }];
+  const request = (time, extra) => h.controller.request({ task, time, layers: layers.map(l => ({ ...l })), ...extra });
+  request(0); request(0); h.start(); request(0); assert.equal(h.reads.length, 1);
+  h.reads[0].resolve("M"); await tick(); const first = h.state().frame;
+  request(0); assert.equal(h.state().requested, first.request); assert.equal(h.scheduled.size, 0);
+  request(1); h.controller.setPaused(true);
+  request(2); h.start(); assert.equal(h.reads.length, 1);
+  h.controller.setPaused(false); h.start(); assert.equal(h.reads[1].request.time, 2);
+  h.reads[1].reject(new Error("retry")); await tick(); request(2); h.start();
+  assert.equal(h.reads.length, 3);
+  h.controller.close();
+});
 
 test("time bursts keep the complete frame and read only the latest pending step", async () => {
   const h = harness();

@@ -153,6 +153,7 @@ export function ResultsGeometryViewport(props) {
   const [openPanel, setOpenPanel] = createSignal(null);
   const [panelPosition, setPanelPosition] = createSignal({ left: 8, top: 40 });
   const [renderStats, setRenderStats] = createSignal(EMPTY_RENDER_STATS);
+  createEffect(() => { if (props.active === false) setOpenPanel(null); });
 
   // Scope the index to the loaded task before any frame is projected, including
   // when another task is loaded while the floating window is closed.
@@ -697,6 +698,7 @@ export function ResultsGeometryViewport(props) {
             </div>
           </Show>
           <ThreeGeometryViewport
+            active={props.active}
             enableLens={true}
             taskKey={props.taskKey}
             cameraState={props.cameraState}
@@ -714,6 +716,7 @@ export function ResultsGeometryViewport(props) {
             onCaptureReady={props.onCaptureReady}
             geometryRevision={props.model}
             resultLayers={props.resultLayers}
+            resultLayersPending={props.resultLayersPending}
             resultStreamlines={props.resultStreamlines}
             graphResults={props.graphResults} activeGraph={props.activeGraph}
             graphPreview={props.graphPreview} graphSelection={props.graphSelection}

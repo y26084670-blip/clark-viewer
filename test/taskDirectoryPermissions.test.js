@@ -162,6 +162,7 @@ const loadStart = appSource.indexOf("  let loadRevision = 0, activeReader;");
 const loadEnd = appSource.indexOf("  function changeTime(", loadStart);
 assert.ok(loadStart >= 0 && loadEnd > loadStart);
 const createViewerLoad = new Function("dependencies", `
+    const batch = callback => callback();
     const { loadTask, ResultService, mapResultObjects, setBusy, setError, setTime,
         setElements, setRegions, setActivePlotId, setPlotRecipes, setPlotSources, setProtocolEntries, plotTaskStore, setTask, setPath, setActive } = dependencies;
     ${appSource.slice(loadStart, loadEnd)}

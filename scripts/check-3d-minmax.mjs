@@ -40,7 +40,7 @@ try{
    const row=Array.from(document.querySelectorAll('.geometry-scalar-legend')).find(el=>el.querySelector('strong')?.textContent===name);
    const ends=row?.querySelector('.geometry-scalar-legend-limits');
    const number=el=>Number(el?.value ?? el?.textContent);
-   const close=(a,b)=>Number.isFinite(a) && Math.abs(a-b)<=1e-5*Math.max(Math.abs(b),1e-16);
+   const close=(a,b)=>a===Number(b.toPrecision(4));
    return ends && close(number(ends.firstElementChild),lo) && close(number(ends.lastElementChild),hi);
  },[label,min,max]);
  const quantity=async pattern=>{
@@ -64,6 +64,17 @@ try{
  await global.uncheck();await waitRange('Элементы',15,15);
  await global.check();await waitRange('Элементы',5,150);
  pass('Switching global and per-frame ranges preserves input data and avoids rereading indexed fields');
+
+ await upper.fill('1234.56789');await upper.press('Enter');
+ assert.equal(await upper.inputValue(),'1.235e+3');
+ await lower.fill('1234.56');await lower.press('Enter');
+ assert.equal(await lower.inputValue(),'1.235e+3');
+ await lower.fill('1234.568');await lower.press('Enter');
+ await elements.getByRole('status').waitFor();
+ await lower.press('Escape');
+ await lower.fill('-1000');await lower.press('Enter');
+ assert.equal(await lower.inputValue(),'-1.000e+3');
+ pass('Four significant digits on display retain the exact opposite bound during editing');
 
  await lower.fill('1');await lower.press('Enter');await upper.fill('1e2');await upper.press('Enter');
  await waitRange('Элементы',1,100);await waitRange('Области',5,100);
@@ -135,13 +146,19 @@ try{
  await waitRange('Элементы',5,150);
  pass('Derived energy and losses retain their existing units; selected IDs have independent extrema');
 
- await setTime(2);await lower.fill('1');await lower.press('Enter');await upper.fill('100');await upper.press('Enter');
- await elements.getByText('10',{exact:true}).waitFor();
+ await setTime(2);await upper.fill('100000');await upper.press('Enter');await lower.fill('1000');await lower.press('Enter');
+ await elements.getByText('1.000e+4',{exact:true}).waitFor();
  await page.screenshot({path:path.join(out,'3d-color-scales.png')});
- const dynamic=await page.evaluate(()=>window.minmax.movie());
+ const dynamic=await page.evaluate(async()=>{
+   const text=new Set(), original=CanvasRenderingContext2D.prototype.fillText;
+   CanvasRenderingContext2D.prototype.fillText=function(value,...args){text.add(value);return original.call(this,value,...args);};
+   try {return {...await window.minmax.movie(),labels:[...text]};}
+   finally {CanvasRenderingContext2D.prototype.fillText=original;}
+ });
  const webmHeader=bytes=>assert.deepEqual(bytes.slice(0,4),[0x1a,0x45,0xdf,0xa3]);
  assert.equal(dynamic.frames,3);webmHeader(dynamic.bytes);
- assert.equal((await page.evaluate(()=>window.minmax.snapshot())).time,2);await waitRange('Элементы',1,100);
+ assert.ok(['1.000e+3','1.000e+4','1.000e+5'].every(value=>dynamic.labels.includes(value)));
+ assert.equal((await page.evaluate(()=>window.minmax.snapshot())).time,2);await waitRange('Элементы',1000,100000);
  await writeFile(path.join(out,'3d-global-dynamic.webm'),Uint8Array.from(dynamic.bytes));
  await load('complete',true);await waitRange('Элементы',5,150);
  const staticMovie=await page.evaluate(()=>window.minmax.movie());

@@ -1,6 +1,6 @@
 import { elementLayout, regionLayout, virtualLayout, QUANTITIES } from "./resultMappings.js";
 import { fmmAxis, isAnisotropic } from "./fmmCharacteristics.js";
-import { expandResultDomain, expandResultScalar, expandResultVector, resultInstanceKey } from "./resultSymmetry.js";
+import { expandResultDomain, expandResultScalar, expandResultVector, resultCopyPlan, resultInstanceKey, visibleResultCopies } from "./resultSymmetry.js";
 import { meanResultCellSize } from "../visualization/resultCellSize.js";
 
 const number = value => Number.isFinite(value) ? String(Number(value.toPrecision(8))) : "—";
@@ -30,12 +30,15 @@ export function pointAt(frame, row) {
   return Array.from(frame.values.subarray(row * frame.stride, row * frame.stride + 3));
 }
 
-export function scalarScene(frames, quantity, task = null) {
+export function scalarScene(frames, quantity, task = null, symmetry) {
   const points = [];
+  const quantityKey = Object.keys(QUANTITIES).find(key => QUANTITIES[key] === quantity);
+  const visible = visibleResultCopies(symmetry);
   let minimum = Infinity, maximum = -Infinity, undefinedCount = 0;
   const label = quantity.formula ? `${quantity.label} (${quantity.formula})` : quantity.label;
   for (const { frame, record } of frames) {
     const layout = elementLayout(record);
+    const plan = task && resultCopyPlan(task, record, quantityKey);
     for (let row = 0; row < frame.count; row++) {
       const origin = pointAt(frame, row), value = scalarAt(frame, row, quantity);
       if (origin.every(Number.isFinite) && quantity.relativeConductivity && Number.isNaN(value)) {
@@ -47,9 +50,9 @@ export function scalarScene(frames, quantity, task = null) {
       const item = { origin, value, quantity: label, unit: quantity.unit,
         volumeNumber: ["MH", "JE"].includes(quantity.file) && Number.isSafeInteger(frame.start) ? frame.start + savedRow + 1 : null,
         source: { schemaId: quantity.group, recordIndex: record.recordIndex, name: record.name }, instance: { ls, as, ps } };
-      const quantityKey = Object.keys(QUANTITIES).find(key => QUANTITIES[key] === quantity);
-      const expanded = task ? expandResultScalar(task, record, quantityKey, item) : [item];
-      points.push(...expanded);
+      if (plan) {
+        for (const point of expandResultScalar(task, record, quantityKey, item, visible(plan(item.instance)))) points.push(point);
+      } else points.push(item);
       minimum = Math.min(minimum, value); maximum = Math.max(maximum, value);
     }
   }
@@ -58,12 +61,15 @@ export function scalarScene(frames, quantity, task = null) {
     notice: undefinedCount ? `При |E| = 0 значение σ/j_gmin для ВТСП не отображается. Пропущено расчётных узлов: ${undefinedCount}.` : "" };
 }
 
-export function vectorScene(frames, quantity, task = null) {
+export function vectorScene(frames, quantity, task = null, symmetry) {
   const vectors = [];
   const quantityKey = Object.keys(QUANTITIES).find(key => QUANTITIES[key] === quantity);
   let maximum = 0;
   let extent = 0;
+  const visible = visibleResultCopies(symmetry);
+  let fullCount = 0, hiddenMaximum = 0;
   for (const { frame, record } of frames) {
+    const plan = task && resultCopyPlan(task, record, quantityKey);
     const meanCellSize = meanResultCellSize(record, quantity.group);
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     const copyCount = quantity.group === "elements" ? elementLayout(record,
@@ -93,21 +99,28 @@ export function vectorScene(frames, quantity, task = null) {
         quantity: quantity.label, unit: quantity.unit, quantityKey, savedRow,
         volumeNumber: ["MH", "JE"].includes(quantity.file) && Number.isSafeInteger(frame.start) ? frame.start + savedRow + 1 : null,
         node: quantity.group === "elements" ? Math.floor(savedRow / copyCount) : null };
-      const expanded = task ? expandResultVector(task, record, quantityKey, item) : [item];
-      vectors.push(...expanded);
+      if (plan) {
+        const copies = plan(item.instance), shown = visible(copies);
+        fullCount += copies.length;
+        if (shown.length < copies.length) hiddenMaximum = Math.max(hiddenMaximum, magnitude);
+        for (const v of expandResultVector(task, record, quantityKey, item, shown)) vectors.push(v);
+      } else { vectors.push(item); fullCount++; }
     }
     extent = Math.max(extent, Math.hypot(...max.map((v, i) => v - min[i])) || 0);
   }
-  const size = extent > 0 ? extent / Math.max(4, Math.cbrt(vectors.length)) : 1;
+  const size = extent > 0 ? extent / Math.max(4, Math.cbrt(fullCount)) : 1;
   vectors.forEach(vector => { vector.characteristicSize = size; });
-  return { vectors, maximumMagnitude: { current: 0, magnetization: maximum }, sceneDiagonal: extent };
+  return { vectors, maximumMagnitude: { current: 0, magnetization: maximum }, sceneDiagonal: extent,
+    fullGridSize: fullCount ? size : 0, hiddenMaximum };
 }
 
 // Full saved grids for volumetric interpolation. Geometric copies are the
 // innermost indices in element files, but outermost in observation files.
 // Never infer spatial neighbours from the order of a sampled vector scene.
-export function resultVolumeDomains(frames, quantity, scene, task = null) {
+export function resultVolumeDomains(frames, quantity, scene, task = null, symmetry) {
   const pointsByImage = new Map();
+  const quantityKey = Object.keys(QUANTITIES).find(key => QUANTITIES[key] === quantity);
+  const visible = visibleResultCopies(symmetry);
   const imageKey = resultInstanceKey;
   for (const point of scene?.vectors ?? scene?.points ?? []) {
     const key = imageKey(point.source, point.instance);
@@ -116,6 +129,7 @@ export function resultVolumeDomains(frames, quantity, scene, task = null) {
   }
   const domains = [];
   for (const { frame, record } of frames) {
+    const plan = task && resultCopyPlan(task, record, quantityKey);
     const planar = quantity.group === "regions";
     const layout = planar ? regionLayout(record) : elementLayout(record, quantity.file === "HV" || quantity.file === "AV");
     if (frame.count !== layout.count || (frame.every ?? 1) !== 1 || frame.rowIndices) {
@@ -128,6 +142,8 @@ export function resultVolumeDomains(frames, quantity, scene, task = null) {
     for (let ls = 0; ls < copies[0]; ls++) for (let az = 0; az < copies[1]; az++) for (let ps = 0; ps < copies[2]; ps++) {
       const source = { schemaId: quantity.group, recordIndex: record.recordIndex, name: record.name };
       const instance = { ls, as: az, ps };
+      const shown = plan && visible(plan(instance));
+      if (shown && !shown.length) continue;
       const key = imageKey(source, instance);
       const positions = new Float64Array(nodeCount * 3), values = new Float64Array(nodeCount);
       const copy = (ls * copies[1] + az) * copies[2] + ps;
@@ -139,8 +155,7 @@ export function resultVolumeDomains(frames, quantity, scene, task = null) {
       }
       const domain = { key, source, instance, dimensions, positions, values,
         coordinateBytes: frame.values.BYTES_PER_ELEMENT, points: pointsByImage.get(key) ?? [] };
-      const quantityKey = Object.keys(QUANTITIES).find(key => QUANTITIES[key] === quantity);
-      const expandedDomains = task ? expandResultDomain(task, record, quantityKey, domain) : [domain];
+      const expandedDomains = plan ? expandResultDomain(task, record, quantityKey, domain, shown) : [domain];
       domains.push(...expandedDomains.map(item => ({ ...item, points: pointsByImage.get(item.key) ?? [] })));
     }
   }

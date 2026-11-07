@@ -10,9 +10,9 @@ import { attachResultVolumeSupport } from "./resultVolumeSupport.js";
 export async function readResultVolumeFrame(request, previousVolumeFields = null, processor = null) {
   const quantity = QUANTITIES[request.quantityKey];
   const frames = await (quantity.relativeConductivity ? readRelativeConductivityFrames : readObjectFrames)(request);
-  const result = { scene: quantity.components === 1 ? null : vectorScene(frames, quantity, request.task),
-    scalarScene: quantity.components === 1 ? scalarScene(frames, quantity, request.task) : null, sampled: false };
-  const savedDomains = resultVolumeDomains(frames, quantity, result.scene ?? result.scalarScene, request.task);
+  const result = { scene: quantity.components === 1 ? null : vectorScene(frames, quantity, request.task, request.symmetry),
+    scalarScene: quantity.components === 1 ? scalarScene(frames, quantity, request.task, request.symmetry) : null, sampled: false };
+  const savedDomains = resultVolumeDomains(frames, quantity, result.scene ?? result.scalarScene, request.task, request.symmetry);
   // The worker transfers grid buffers. Compute the saved range before transfer.
   let minimum = Infinity, maximum = -Infinity;
   for (const domain of savedDomains) for (const value of domain.values) if (Number.isFinite(value)) {

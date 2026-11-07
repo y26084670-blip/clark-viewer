@@ -39,10 +39,14 @@ export function useAsyncResult(source, load) {
 }
 
 // Opt-in for 3D, line and surface fields; other tabs keep useAsyncResult semantics.
-export function useResultFrame(source, load, { onPerformance, performanceEnabled } = {}) {
+export function useResultFrame(source, load, { onPerformance, performanceEnabled, enabled, sameRequest } = {}) {
   const [state, setState] = createSignal({ frame: null, requested: null, loading: false, error: "" });
-  const controller = createResultFrameController({ load, publish: setState, onPerformance, performanceEnabled });
-  createEffect(() => controller.request(source()));
+  const controller = createResultFrameController({ load, publish: setState, onPerformance, performanceEnabled, sameRequest });
+  createEffect(() => {
+    if (enabled && !enabled()) { controller.setPaused(true); return; }
+    controller.request(source());
+    if (enabled) controller.setPaused(false);
+  });
   onCleanup(() => controller.close());
   return state;
 }
@@ -67,12 +71,13 @@ export function resultObjects(task, quantityKey) {
 }
 
 // Every selected saved node is read. Display size never changes the solution grid.
-export async function readObjectFrames({ task, quantityKey, selected, time }) {
+export async function readObjectFrames({ task, quantityKey, selected, time, readSlice = slice => task.reader.read(slice) }) {
   const quantity = QUANTITIES[quantityKey];
-  const objects = resultObjects(task, quantityKey).filter(item => selected.includes(item.record.id));
+  const ids = new Set(selected);
+  const objects = resultObjects(task, quantityKey).filter(item => ids.has(item.record.id));
   if (!objects.length) throw new Error("Для выбранных объектов нет этой величины");
   return completeReads(objects.map(async object => ({
-    frame: await task.reader.read({ name: quantity.file, step: time,
+    frame: await readSlice({ name: quantity.file, step: time,
       start: object.start, count: object.count, every: 1 }),
     record: object.record, originalCount: object.count,
   })));

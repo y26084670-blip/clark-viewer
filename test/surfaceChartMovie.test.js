@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { batch, createEffect, createSignal, createRoot, onCleanup, onMount } from "solid-js/dist/solid.js";
 import { disposeSurfaceObject, resizeSurfaceLabels, updateSurfaceLabel, updateSurfaceMesh } from "../src/services/visualization/surfaceChartResources.js";
 import { updateSurfaceDecorations } from "../src/services/visualization/surfaceContours.js";
+import { formatResultScaleValue as formatValue } from "../src/services/visualization/resultScalarColors.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../src/services/movie/renderedFrameGate.js";
 
 const source = await readFile(new URL("../src/components/SurfaceChart.jsx", import.meta.url), "utf8");
@@ -16,7 +17,7 @@ const end = source.indexOf('  return <div class="surface-chart"', start);
 // mesh buffers, palettes, labels, camera and frame gates are production code.
 const component = new Function("props", "dependencies", `
   const {createEffect,createSignal,onCleanup,onMount,THREE,OrbitControls,ResizeObserver,
-    disposeSurfaceObject,resizeSurfaceLabels,updateSurfaceLabel,updateSurfaceMesh,updateSurfaceDecorations,captureMovieCanvas,
+    disposeSurfaceObject,resizeSurfaceLabels,updateSurfaceLabel,updateSurfaceMesh,updateSurfaceDecorations,captureMovieCanvas,formatValue,
     captureRenderedMovieFrame,createRenderedFrameGate,restoreMovieCamera,snapshotMovieCamera,createViewportLensHintPreference,testHost}=dependencies;
   const devicePixelRatio=2;
   ${source.slice(start, end)}
@@ -58,7 +59,7 @@ function runtime({ initial = [0, 0, 0, 0], failInit = false, viewState, onViewCh
       onViewReady: value => { viewControls = value; },
       onCaptureReady: value => { registered = value; } }, {
       createEffect, createSignal, onCleanup, onMount, THREE: { ...THREE, WebGLRenderer: Renderer }, OrbitControls: Controls,
-      ResizeObserver: class { observe() {} disconnect() {} }, disposeSurfaceObject, resizeSurfaceLabels, updateSurfaceMesh, updateSurfaceDecorations,
+      ResizeObserver: class { observe() {} disconnect() {} }, disposeSurfaceObject, resizeSurfaceLabels, updateSurfaceMesh, updateSurfaceDecorations, formatValue,
       updateSurfaceLabel: (sprite, text, position) => updateSurfaceLabel(sprite, text, position, labelCanvas),
       captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera, createViewportLensHintPreference, testHost: host,
       captureMovieCanvas: (source, options) => {
@@ -130,8 +131,8 @@ function assertAutomaticSurface(h, values) {
   assert.deepEqual(actual.userData.limits, expected.userData.limits);
   assert.deepEqual(Array.from(actual.geometry.getAttribute("position").array), Array.from(expected.geometry.getAttribute("position").array));
   assert.deepEqual(Array.from(actual.geometry.getAttribute("color").array), Array.from(expected.geometry.getAttribute("color").array));
-  assert.equal(h.labels()[3].userData.text, String(Number(expected.userData.limits.min.toPrecision(5))));
-  assert.equal(h.labels()[4].userData.text, String(Number(expected.userData.limits.max.toPrecision(5))));
+  assert.equal(h.labels()[3].userData.text, formatValue(expected.userData.limits.min));
+  assert.equal(h.labels()[4].userData.text, formatValue(expected.userData.limits.max));
   disposeSurfaceObject(expected);
 }
 
@@ -145,6 +146,7 @@ test("Surface movie keeps per-frame automatic heights/colors and original camera
     h.captureAdapter.prepare(); assert.equal(h.controls().enabled, false);
     assertAutomaticSurface(h, [0, 0, 0, 0]);
     const frames = [[0, 1000, 250, 500], [0, 1e-9, 2.5e-10, 5e-10], [-1000, 1000, -500, 0], [0, 0, 0, 0]];
+    const labels = [["0", "1.000e+3"], ["0", "1e-9"], ["-1.000e+3", "1.000e+3"], ["0", "0"]];
     for (const [index, values] of frames.entries()) {
       const key = { step: index + 1 };
       h.publish(values, key); await h.captureAdapter.renderReady(key);
@@ -155,8 +157,8 @@ test("Surface movie keeps per-frame automatic heights/colors and original camera
       const image = h.captureAdapter.capture(key, { caption: `step ${index + 1}` });
       assert.equal(h.drawCalls.length, count + 1, "capture forces a real component draw before copying");
       assert.equal(image, h.captures.at(-1).image);
-      assert.ok(h.captures.at(-1).texts.includes(String(Number(Math.min(...values).toPrecision(5)))));
-      assert.ok(h.captures.at(-1).texts.includes(String(Number(Math.max(...values).toPrecision(5)))));
+      assert.ok(h.captures.at(-1).texts.includes(labels[index][0]));
+      assert.ok(h.captures.at(-1).texts.includes(labels[index][1]));
     }
     h.publish([0, 0, 0, 0], originalKey); await h.captureAdapter.renderReady(originalKey);
     h.captureAdapter.restore(); assert.equal(h.controls().enabled, true);

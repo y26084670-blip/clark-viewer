@@ -22,8 +22,8 @@ export function referenceResultVectorLayers(task, layers = []) {
     const key = `${layer.key}:${layer.quantityKey}`;
     let reference = references.get(key);
     if (!reference) {
-      const maximum = { current: 0, magnetization: 0 };
-      let characteristicSize = 0;
+      const maximum = { current: 0, magnetization: layer.scene.hiddenMaximum ?? 0 };
+      let characteristicSize = layer.scene.fullGridSize ?? 0;
       for (const vector of layer.scene.vectors ?? []) {
         if (Object.hasOwn(maximum, vector.kind) && Number.isFinite(vector.magnitude) && vector.magnitude >= 0) {
           maximum[vector.kind] = Math.max(maximum[vector.kind], vector.magnitude);

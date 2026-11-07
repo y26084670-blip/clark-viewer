@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { createServer } from "vite";
+import h5wasm from "h5wasm/node";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const output = process.env.CHECK_OUTPUT || "/tmp/clark-task-geometry-check";
@@ -15,17 +16,34 @@ const checks = [], errors = [];
 const pass = name => { checks.push(name); console.log("PASS", name); };
 let server, browser, releaseModule;
 try {
+  await h5wasm.ready;
+  const resultFile = new h5wasm.File(resolve(fixture, "field.h5"), "w");
+  const header = resultFile.create_group("HEADER");
+  for (const [name, value] of Object.entries({ columns: 3n, arrCount: 2n, hasCoo: 1n, inds1: 1n, numbs: 6n })) {
+    header.create_dataset({ name, data: new BigInt64Array([value]) });
+  }
+  for (let step = 0; step <= 2; step++) {
+    const rows = Array.from({ length: 6 }, (_, i) => [i, 0, 0, i+1+step, 0, 0, 10+i+step, 0, 0]);
+    resultFile.create_dataset({ name: String(step).padStart(6, "0"), shape: [6, 9], data: new Float32Array(rows.flat()) });
+  }
+  resultFile.close();
   await writeFile(resolve(fixture, "index.html"), '<!doctype html><html><meta charset="utf-8"><body><div id="root"></div><script type="module" src="./fixture.jsx"></script></body></html>');
   await writeFile(resolve(fixture, "fixture.jsx"), `
 import { render } from 'solid-js/web';
 import App from '../src/App.jsx';
 import { createGeometryViewSetting } from '../src/services/visualization/geometryViewSettings.js';
+import { ResultService } from '../src/services/resultService.js';
 import '../src/App.css';
 const storage = await navigator.storage.getDirectory();
 const disk = await storage.getDirectoryHandle('Geometry check disk', {create:true});
 const catalog = await disk.getDirectoryHandle('clark.geometry', {create:true});
 const project = await catalog.getDirectoryHandle('Project', {create:true});
 const tasks = {}, records = {}, holds = new Set(), pending = [];
+const reads = [], read = ResultService.prototype.read;
+ResultService.prototype.read = function(slice) { reads.push([slice.name, slice.step]); return read.call(this, slice); };
+let settingsHeld = false, releaseSettings;
+const settingsGate = new Promise(resolve => { releaseSettings = resolve; });
+const bytes = await (await fetch(new URL('./field.h5', import.meta.url))).arrayBuffer();
 async function put(task, name, value) {
   const input = await task.getDirectoryHandle('input3XX', {create:true});
   const stream = await (await input.getFileHandle(name, {create:true})).createWritable();
@@ -33,17 +51,28 @@ async function put(task, name, value) {
 }
 for (const name of ['A','B']) {
   const task = tasks[name] = await project.getDirectoryHandle(name, {create:true});
-  const record = {name,geoType:2,geo:[20,name==='A'?2:4,3,...Array(21).fill(0)],dr:[-10,0,0],dp:[1,2,3],targ:0,model:0,rv:0,
+  const record = {name,geoType:2,geo:[20,name==='A'?2:4,3,...Array(21).fill(0)],dr:[-10,0,0],dp:[1,2,3],targ:0,model:0,rv:1,xapName:'steel',
     sym:{vi:[0,0,0],r0:[0,0,0],yl:0,ya:0,tx:0,ls:1,as:1,ps:1,kya:0,kyp:0}};
   records[name] = JSON.stringify(record);
-  await put(task,'general.txt',JSON.stringify({countTimeSteps:0,timeStep:0,mirrorSymmetryX:-1,mirrorSymmetryY:-1}));
+  await put(task,'general.txt',JSON.stringify({countTimeSteps:2,timeStep:.1,mirrorSymmetryX:-1,mirrorSymmetryY:-1}));
   await put(task,'kvs.txt',records[name]);
   await put(task,'_summary.txt',name+' geometry ready');
   if (name==='A') await put(task,'_2d.e3d','');
+  const out = await task.getDirectoryHandle('output3XX', {create:true});
+  for (const family of ['MH','JE']) {
+    const stream = await (await out.getFileHandle(family+'.h5',{create:true})).createWritable();
+    await stream.write(bytes); await stream.close();
+  }
+  if (name==='B') {
+    const config = await (await task.getFileHandle('clark.viewer-graphs.json',{create:true})).createWritable();
+    await config.write(JSON.stringify({version:1,settings:{view:{resultElementsQuantity:'M',elementsMode:'all'},selections:{elements:[],regions:[]}}}));
+    await config.close();
+  }
 }
 const nativeRead = FileSystemFileHandle.prototype.getFile;
 FileSystemFileHandle.prototype.getFile = async function() {
   const file = await nativeRead.call(this);
+  if (this.name==='clark.viewer-graphs.json') { settingsHeld=true; await settingsGate; }
   if(this.name==='kvs.txt') {
     let name; try {name=JSON.parse(await file.text()).name;} catch {return file;}
     if(holds.has(name)) await new Promise(resolve=>pending.push({name,resolve}));
@@ -51,8 +80,9 @@ FileSystemFileHandle.prototype.getFile = async function() {
   return file;
 };
 window.showDirectoryPicker = async ()=>disk;
-for (const key of ['resultElementsQuantity','resultRegionsQuantity','resultVirtualQuantity']) createGeometryViewSetting(key,'none')[1]('none');
+createGeometryViewSetting('resultElementsQuantity','M');
 window.geometryFixture = {
+  reads, settingsHeld:()=>settingsHeld, releaseSettings,
   hold:name=>holds.add(name), pending:name=>pending.filter(p=>p.name===name).length,
   release(name){holds.delete(name);for(let i=pending.length-1;i>=0;i--)if(pending[i].name===name)pending.splice(i,1)[0].resolve();},
   corrupt:name=>put(tasks[name],'kvs.txt','invalid input'),
@@ -81,7 +111,8 @@ window.geometryFixture.ready=true;
     const inspect = node => {
       if (node.nodeType === 1 && ["SCRIPT", "STYLE"].includes(node.tagName)) return;
       const matches = (node.textContent || "").match(/Чтение геометрии…|Загрузка геометрии…|Геометрия выбранного задания|Загрузка 3D-модуля…|Нет геометрии для текущих настроек|Загрузка вкладки…/g);
-      if (matches) geometryTextTrace.push(...matches);
+      const activeTab = document.querySelector('.tabs-header [aria-current="page"]')?.textContent;
+      if (matches) geometryTextTrace.push(...matches.filter(text => text !== "Загрузка вкладки…" || activeTab === "Источники / Поле 3D"));
     };
     new MutationObserver(records => records.forEach(record => {
       if (record.type === "characterData") inspect(record.target);
@@ -134,11 +165,68 @@ window.geometryFixture.ready=true;
   await page.locator('.source-geometry-viewport .three-geometry-viewport[aria-busy="false"] canvas').waitFor();
   pass(baseline ? "reproduced the lazy 3D tab loading message" : "the initial lazy 3D tab opens without a text placeholder");
 
+  if (!baseline) {
+    await page.waitForFunction(() => geometryFixture.settingsHeld());
+    const reads = () => page.evaluate(() => geometryFixture.reads);
+    const nextPaint = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await nextPaint();
+    assert.deepEqual(await reads(), []);
+    await page.evaluate(() => geometryFixture.releaseSettings());
+    const legend = name => page.locator(".source-geometry-viewport .geometry-scalar-legend").filter({ hasText: name });
+    await legend("Намагниченность M").waitFor();
+    assert.deepEqual(await reads(), [["MH", 0]]);
+    pass("restoring settings starts exactly one real MH.h5 slice");
+
+    const choose = async (radio, name) => {
+      const menu = page.getByRole("button", { name: "Элементы", exact: true });
+      if (await menu.getAttribute("aria-expanded") !== "true") await menu.click();
+      await page.getByRole("radio", { name: radio }).check();
+      await legend(name).waitFor();
+    };
+    await choose(/Напряженность МП/, "Напряжённость H");
+    await choose(/Намагниченность,/, "Намагниченность M");
+    await choose(/Плотность тока,/, "Плотность тока J");
+    await choose(/Напряженность ЭП/, "Напряжённость E");
+    assert.deepEqual(await reads(), [["MH", 0], ["JE", 0]]);
+    pass("M/H/M and J/E update visible legends from one slice per file");
+
+    await page.evaluate(() => {
+      geometryFixture.canvas = document.querySelector(".source-geometry-viewport canvas");
+      geometryFixture.gl = geometryFixture.canvas.getContext("webgl2");
+      geometryFixture.buffers = 0;
+      const gl = geometryFixture.gl, original = gl.createBuffer.bind(gl);
+      gl.createBuffer = () => { geometryFixture.buffers++; return original(); };
+    });
+    const tab = name => page.locator(".tabs-header").getByRole("button", { name, exact: true }).click();
+    await tab("Поле на линиях");
+    await page.getByRole("slider", {name:"Текущий момент времени"}).waitFor();
+    await page.keyboard.press("ArrowRight"); await nextPaint();
+    assert.equal(await page.getByRole("slider", {name:"Текущий момент времени"}).inputValue(), "0");
+    await tab("Источники / Поле 3D"); await legend("Напряжённость E").waitFor(); await nextPaint();
+    assert.ok(await page.evaluate(() => geometryFixture.gl && !geometryFixture.gl.isContextLost()
+      && document.querySelector(".source-geometry-viewport canvas") === geometryFixture.canvas && geometryFixture.buffers === 0));
+    assert.deepEqual(await reads(), [["MH", 0], ["JE", 0]]);
+    pass("tab return retains the canvas, live WebGL context and buffers with zero reads");
+
+    await tab("Поле на линиях");
+    await page.getByRole("slider", {name:"Текущий момент времени"}).fill("2"); await nextPaint();
+    assert.deepEqual(await reads(), [["MH", 0], ["JE", 0]]);
+    await tab("Источники / Поле 3D");
+    await page.waitForFunction(() => geometryFixture.reads.some(([name,step]) => name==="JE" && step===2));
+    await nextPaint();
+    assert.deepEqual(await reads(), [["MH", 0], ["JE", 0], ["JE", 2]]);
+    pass("time changes on another tab read only the final step when 3D resumes");
+  }
+
   await page.getByRole("button", { name: "Выбор задания", exact: true }).click();
   await pick("A"); await previewReady("A");
   await page.getByRole("button", { name: "Загрузить для просмотра", exact: true }).click();
   await page.locator('.source-geometry-viewport .three-geometry-viewport[aria-busy="false"] canvas').waitFor();
   assert.equal(await page.locator(".source-geometry-viewport .geometry-planar-mode").count(), 1);
+  if (!baseline) {
+    await page.waitForFunction(() => geometryFixture.gl.isContextLost());
+    assert.ok(await page.evaluate(() => !geometryFixture.canvas.isConnected));
+  }
   pass("a second task loads into the main 3D view and retains its 2D marker");
 
   await page.getByRole("button", { name: "Выбор задания", exact: true }).click();

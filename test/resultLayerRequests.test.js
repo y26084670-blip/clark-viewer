@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createResultLayerReader } from "../src/services/results/resultLayerRequests.js";
 import { createResultFrameController, sameFrameContext } from "../src/services/results/resultFrameController.js";
 import { buildResultVolumeField } from "../src/services/visualization/resultVolumeField.js";
+import { createResultSliceCache } from "../src/services/results/resultSliceCache.js";
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function fixture(counts = [8, 6, 8]) {
@@ -34,6 +35,39 @@ function fixture(counts = [8, 6, 8]) {
   ].map(layer => ({ ...layer, ...changes[layer.key] })) });
   return { task, reads, request, makeFrame };
 }
+
+test("3D switches M/H and J/E from the shared rows and keeps unchanged groups at the same step", async () => {
+  const f = fixture(), reader = createResultLayerReader();
+  const show = (quantityKey, step = 0) => reader.read(f.request(step, { elements: { quantityKey } }));
+  try {
+    const m = await show("M"), h = await show("H");
+    assert.equal(h.layers[0].scene.vectors[0].vector[0], 2);
+    assert.equal(h.layers[1].scene, m.layers[1].scene);
+    assert.equal(h.layers[2].scene, m.layers[2].scene);
+    await show("M"); await show("J"); await show("E");
+    assert.deepEqual(f.reads.map(r => r.name), ["MH", "HS", "HV", "JE"]);
+    await show("H", 1); await show("M", 0);
+    assert.deepEqual(f.reads.filter(r => r.name === "MH").map(r => r.step), [0, 1, 0]);
+    const other = fixture(); await reader.read(other.request(0));
+    assert.equal(other.reads.filter(r => r.name === "MH").length, 1);
+  } finally { reader.close(); }
+});
+
+test("raw frame cache shares in-flight reads, evicts by allocated bytes and retries failures", async () => {
+  const f = fixture(), read = createResultSliceCache(f.task, 2 * 9 * 8);
+  const slice = start => ({ name: "MH", step: 0, start, count: 1 });
+  const [first, same] = await Promise.all([read(slice(0)), read(slice(0))]);
+  assert.equal(first, same); assert.equal(f.reads.length, 1);
+  await read(slice(1)); await read(slice(0)); await read(slice(2)); await read(slice(1));
+  assert.deepEqual(f.reads.map(r => r.start), [0, 1, 2, 1]);
+  const original = f.task.reader.read;
+  f.task.reader.read = async () => { throw new Error("sample unavailable"); };
+  await assert.rejects(read(slice(3)), /sample unavailable/);
+  f.task.reader.read = original;
+  assert.equal((await read(slice(3))).start, 3);
+  const large = { ...slice(0), count: 8 };
+  assert.notEqual(await read(large), await read(large));
+});
 
 test("three independent result choices read one time and retain their quantities and units", async () => {
   const f = fixture(), reader = createResultLayerReader();

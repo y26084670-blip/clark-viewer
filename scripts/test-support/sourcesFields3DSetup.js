@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { QUANTITIES, assignedHtsElements } from "../../src/services/results/resultMappings.js";
 import { resultDisplaySelection } from "../../src/services/results/resultRequests.js";
+import { sameLayerFrameRequest } from "../../src/services/results/resultFrameController.js";
 import { RESULT_LAYER_GROUPS } from "../../src/services/results/resultLayerDefinitions.js";
 import { createResultLayerReader } from "../../src/services/results/resultLayerRequests.js";
 import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS } from "../../src/services/visualization/resultStreamlineField.js";
@@ -53,7 +54,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
   let requestSource, load, graphSource, graphLoad;
   let graphState = { frame: null, requested: null, error: "", loading: false };
   let state = { frame: null, requested: null, error: "", loading: false };
-  const run = new Function("props", "createGeometryViewSetting", "createMemo", "onCleanup", "createSignal", "createEffect",
+  const run = new Function("props", "sameLayerFrameRequest", "createGeometryViewSetting", "createMemo", "onCleanup", "createSignal", "createEffect",
     "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_METHODS", "streamlineSessions", "cameraSessions",
     "QUANTITIES", "assignedHtsElements", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
     "createMovieTabAdapter", "completedMovieFrame", "onMount", "applyResultGlobalRange", "resultGlobalScale",
@@ -67,7 +68,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
       controls: ${controlBindings},
       streamlineControls: ${streamlineBindings},
       globalMinMax, setGlobalMinMax, globalRanges, effectiveGlobalMinMax, resultLayers, timeIndex, selections }; } return SourcesFields3D(props);`);
-  const api = run(props, options.createGeometryViewSetting ?? ((name, initial) => [() => settings[name] ?? initial, value => { settings[name] = value; }]),
+  const api = run(props, sameLayerFrameRequest, options.createGeometryViewSetting ?? ((name, initial) => [() => settings[name] ?? initial, value => { settings[name] = value; }]),
     options.createMemo ?? (compute => compute), callback => cleanup.push(callback),
     options.createSignal ?? (initial => { let value = initial; return [() => value, next => { value = typeof next === "function" ? next(value) : next; }]; }),
     options.createEffect ?? (callback => { effects.push(callback); callback(); }),

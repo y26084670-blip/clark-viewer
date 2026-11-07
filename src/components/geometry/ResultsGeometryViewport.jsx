@@ -22,26 +22,12 @@ import {
   geometryCameraCommandFromKeyboardEvent,
   isGeometryCameraShortcutTarget,
 } from "../../services/visualization/geometryCameraView.js";
-import {
-  GEOMETRY_INSTANCE_BUDGET,
-  ThreeGeometryViewport,
-} from "./ThreeGeometryViewport.jsx";
+import { ThreeGeometryViewport } from "./ThreeGeometryViewport.jsx";
 import { RESULT_SCALAR_PALETTES } from "../../services/visualization/resultScalarColors.js";
 import { RESULT_SIZE_SCALE } from "../../services/visualization/resultVectorScale.js";
 import "./ResultsGeometryViewport.css";
 
-const EMPTY_RENDER_STATS = Object.freeze({
-  discretizationLineSegments: 0,
-  discretizationPoints: 0,
-  discretizationTruncated: false,
-  renderedInstances: 0,
-  renderedPrimitives: 0,
-  selectedInstances: 0,
-  truncated: false,
-});
-
 const DIAGNOSTIC_REASONS = Object.freeze({
-  "instance-budget-exceeded": "превышен лимит образов",
   "invalid-geometry": "неполные или нечисловые координаты геометрии",
   "invalid-discretization": "слой дискретизации недоступен",
   "invalid-symmetry": "некорректное число образов симметрии",
@@ -152,7 +138,6 @@ export function ResultsGeometryViewport(props) {
   const [showMirrorSymmetry, setShowMirrorSymmetry] = createGeometryViewSetting("showMirrorSymmetry", true);
   const [openPanel, setOpenPanel] = createSignal(null);
   const [panelPosition, setPanelPosition] = createSignal({ left: 8, top: 40 });
-  const [renderStats, setRenderStats] = createSignal(EMPTY_RENDER_STATS);
   createEffect(() => { if (props.active === false) setOpenPanel(null); });
 
   // Scope the index to the loaded task before any frame is projected, including
@@ -205,24 +190,6 @@ export function ResultsGeometryViewport(props) {
     ...(timeFrame()?.diagnostics ?? []),
     ...(displayScene()?.diagnostics ?? []),
   ];
-  const budgetWarning = () => {
-    const stats = renderStats();
-    const messages = [];
-    if (stats.truncated) {
-      messages.push(
-        `Показаны первые ${stats.renderedInstances} экземпляров из ` +
-        `${stats.selectedInstances}. Измените режимы показа.`,
-      );
-    }
-    if (stats.discretizationTruncated) {
-      messages.push(
-        "Часть линий дискретизации или точек скрыта из-за ограничения " +
-        "объёма 3D-сцены.",
-      );
-    }
-    return messages.join(" ");
-  };
-
   const updatePanelPosition = () => {
     if (!openPanel() || !viewerElement || !activePanelButton) return;
 
@@ -325,12 +292,10 @@ export function ResultsGeometryViewport(props) {
       setViewRequest(null);
       setSceneModel(null);
       setSceneError("");
-      setRenderStats(EMPTY_RENDER_STATS);
       return;
     }
 
     const model = props.model;
-    setRenderStats(EMPTY_RENDER_STATS);
 
     try {
       setSceneModel(buildGeometryScene(model));
@@ -746,8 +711,6 @@ export function ResultsGeometryViewport(props) {
             projection={orthographicView() ? "orthographic" : "perspective"}
             viewRequest={viewRequest()}
             fitAllPadding={GEOMETRY_FIT_ALL_PADDING}
-            instanceBudget={GEOMETRY_INSTANCE_BUDGET}
-            onRenderStats={setRenderStats}
             performanceEnabled={performanceEnabled()}
             onPerformance={setRenderPerformance}
           />
@@ -755,13 +718,6 @@ export function ResultsGeometryViewport(props) {
             <div class="geometry-viewer-error" role="alert">
               {sceneError() || displaySceneResult().error || props.resultError}
             </div>
-          </Show>
-          <Show when={budgetWarning()} keyed>
-            {(warning) => (
-              <div class="geometry-viewer-budget-warning" role="status">
-                {warning}
-              </div>
-            )}
           </Show>
         </div>
 

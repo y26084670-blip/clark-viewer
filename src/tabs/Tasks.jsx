@@ -262,7 +262,7 @@ export function Tasks(props) {
   const info = useAsyncResult(() => candidate(), async item => {
     const [summary, model] = await Promise.allSettled([readTaskSummaries(item.handle), loadTaskInput(item.handle)]);
     return { summary: summary.status === "fulfilled" ? summary.value : { input: summary.reason.message, output: summary.reason.message },
-      scene: model.status === "fulfilled" ? buildGeometryScene(model.value) : null,
+      scene: model.status === "fulfilled" ? buildGeometryScene(model.value, { originalOnly: true }) : null,
       error: model.status === "rejected" ? model.reason.message : "" };
   });
   async function load() {

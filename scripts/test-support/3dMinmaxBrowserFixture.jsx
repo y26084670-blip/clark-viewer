@@ -1,5 +1,7 @@
 import {createSignal} from 'solid-js';
 import {render} from 'solid-js/web';
+import { ThreeGeometryViewport } from '/src/components/geometry/ThreeGeometryViewport.jsx';
+import { buildGeometryScene } from '/src/services/visualization/geometrySceneModel.js';
 import {SourcesFields3D} from '/src/tabs/SourcesFields3D.jsx';
 import {createGeometryViewSetting} from '/src/services/visualization/geometryViewSettings.js';
 import {createMovieExportController} from '/src/services/movie/movieExportController.js';
@@ -14,6 +16,23 @@ import {resultLogScale, resultScalarColor} from '/src/services/visualization/res
 
 // Check the colour of a physical midpoint, which differs from the average of
 // the colours at its endpoints on a log scale. Both shaders run on real WebGL2.
+function checkLargeOverlay() {
+ const model = taskFixture();
+ const element = {...model.elements[0], dp:[[65_537],[2],[1]], symLs:1, symAs:1, symPs:1, symYl:0, symYa:0, symTx:0};
+ const scene = buildGeometryScene({general:{mirrorSymmetryX:-1,mirrorSymmetryY:-1}, elements:[element]});
+ if (scene.diagnostics.length) throw new Error(JSON.stringify(scene.diagnostics));
+ const host = document.createElement('div');
+ host.style.cssText = 'position:fixed;inset:0;background:#222'; document.body.append(host);
+ return new Promise((resolve, reject) => {
+   let dispose;
+   const timer = setTimeout(() => finish(reject, new Error("Large overlay did not draw")), 15000);
+   const finish = (fn, value) => queueMicrotask(() => { clearTimeout(timer); dispose?.(); host.remove(); fn(value); });
+   dispose = render(() => <ThreeGeometryViewport scene={scene} showDiscretizationLines showCentersAndNodes
+     performanceEnabled onError={message => { if (message) finish(reject, new Error(message)); }}
+     onPerformance={stats => { if (stats.points >= 131074) finish(resolve, stats); }} />, host);
+ });
+}
+
 function sampledColors() {
  const renderer=new THREE.WebGLRenderer({antialias:false});
  renderer.setSize(65,65); renderer.setClearColor(0);
@@ -81,7 +100,7 @@ function Fixture(){
  const [task,setTask]=createSignal(taskFixture()),[time,setTime]=createSignal(0),[elements,setElements]=createSignal([1]),[regions,setRegions]=createSignal([1]);
  const [busy,setBusy]=createSignal(false);const controller=createMovieExportController({createEncoder:createMovieWebmEncoder});
  const props={get task(){return task();},get elements(){return elements();},get regions(){return regions();},get time(){return time();},setTime,setElements,setRegions,get movieBusy(){return busy();},setMovieTime:setTime,registerMovieAdapter:controller.register};
- window.minmax={sampledColors,setTime,setBusy,setElements,setRegions,setSetting,load:(kind='complete',stat=false)=>{setTime(0);setTask(taskFixture(kind,stat));},
+ window.minmax={checkLargeOverlay,sampledColors,setTime,setBusy,setElements,setRegions,setSetting,load:(kind='complete',stat=false)=>{setTime(0);setTask(taskFixture(kind,stat));},
   snapshot:()=>({time:time(),readCount,readyFrames,jeSteps:[...jeSteps.get(task())],elements:elements(),regions:regions(),busy:busy()}),
   movie:async()=>{setBusy(true);try{const result=await controller.run({intervalMs:100});return {frames:result.frameCount,bytes:Array.from(new Uint8Array(await result.blob.arrayBuffer()))};}finally{setBusy(false);}}
  };

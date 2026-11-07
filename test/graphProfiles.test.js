@@ -12,7 +12,7 @@ const request = f => ({ task: f.task, time: 0, quantities: { elements: "J", regi
 test("1D slices use every native EO centre, all XYZ values, original units and the selected symmetry image", async () => {
   const f = graph3DTask({ dimensions: [150, 3, 2] }), r = reader(), base = request(f);
   const first = await r.read(base), surface = first.graphs.find(g => g.id === 1).surfaces.find(s => s.instance.ps === 1);
-  assert.equal(surface.dimensions[0], 65);
+  assert.equal(surface.dimensions[0], 151);
   const selected = { id: 7, graphId: 1, instanceKey: surface.instanceKey, direction: 0, index: 2 };
   const output = await r.read({ ...base, profiles: [selected] });
   const p = output.profiles[0]; assert.equal(p.distances.length, 150); assert.equal(p.components, 3); assert.equal(p.id, 7);

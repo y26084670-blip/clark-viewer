@@ -20,7 +20,6 @@ import {
   primitiveVisible,
 } from "../../services/visualization/geometryRenderFilters.js";
 import {
-  DEFAULT_DISCRETIZATION_LIMITS,
   buildElementDiscretization,
   buildRegionDiscretization,
   countElementDiscretization,
@@ -82,11 +81,6 @@ import { loadGraphContourRenderer, resizeGraphContours, sameContourSurface } fro
 import { installGraphContourInteraction } from "../../services/visualization/resultGraphContourInteraction.js";
 import "../../services/visualization/resultGraphContours.css";
 
-export const GEOMETRY_INSTANCE_BUDGET = 20_000;
-export const GEOMETRY_DISCRETIZATION_SEGMENT_BUDGET =
-  DEFAULT_DISCRETIZATION_LIMITS.lineSegments;
-export const GEOMETRY_DISCRETIZATION_POINT_BUDGET =
-  DEFAULT_DISCRETIZATION_LIMITS.points;
 
 const INSTANCE_CATEGORIES = Object.freeze(["base", "copy", "mirror"]);
 const DEFAULT_PROJECTION = "orthographic";
@@ -1184,10 +1178,10 @@ function renderableFor(
   return object;
 }
 
-// Render every selected primitive within the instance expansion budget. Surface
+// Render all selected images by default. Surface
 // edges are decoration and must not consume a separate object quota.
 export function createGeometryObjects(THREE, sceneModel, filters, mode, showEdges,
-  budget = GEOMETRY_INSTANCE_BUDGET, onObject = () => {}) {
+  budget = Infinity, onObject = () => {}) {
   let remaining = budget;
   let selectedInstances = 0;
   let renderedInstances = 0;
@@ -1223,7 +1217,7 @@ export function createGeometryObjects(THREE, sceneModel, filters, mode, showEdge
         continue;
       }
 
-      const accepted = validInstances.slice(0, remaining);
+      const accepted = validInstances.length > remaining ? validInstances.slice(0, remaining) : validInstances;
       const object = renderableFor(
         THREE,
         primitive,
@@ -1316,16 +1310,13 @@ function discretizationMetrics(primitive) {
   return null;
 }
 
-function buildDiscretizationLayer(primitive, layer, limit) {
+function buildDiscretizationLayer(primitive, layer) {
   const descriptor = primitive?.discretization;
   const vertices = primitive?.controlVertices ?? primitive?.vertices;
   const options = {
     includeLines: layer === "lines",
     includePoints: layer === "points",
-    limits: {
-      lineSegments: layer === "lines" ? limit : 0,
-      points: layer === "points" ? limit : 0,
-    },
+    includeMetadata: false,
   };
 
   if (descriptor?.kind === "element-cells") {
@@ -1351,57 +1342,17 @@ function buildDiscretizationLayer(primitive, layer, limit) {
   return null;
 }
 
-function appendTransformedPositions(
-  THREE,
-  sourcePositions,
-  instances,
-  targetPositions,
-) {
-  const sourcePointCount = Math.floor((sourcePositions?.length ?? 0) / 3);
-  if (sourcePointCount === 0 || sourcePositions.length % 3 !== 0) return;
-
+function appendTransformedPositions(THREE, sourcePositions, instances, targetPositions, offset = targetPositions.length) {
   const matrix = new THREE.Matrix4();
   const point = new THREE.Vector3();
   for (const instance of instances) {
     matrix.fromArray(instance.matrix);
-    for (let index = 0; index < sourcePointCount; index += 1) {
-      const offset = index * 3;
-      point.set(
-        sourcePositions[offset],
-        sourcePositions[offset + 1],
-        sourcePositions[offset + 2],
-      ).applyMatrix4(matrix);
-      targetPositions.push(point.x, point.y, point.z);
+    for (let i = 0; i < sourcePositions.length; i += 3) {
+      point.fromArray(sourcePositions, i).applyMatrix4(matrix).toArray(targetPositions, offset);
+      offset += 3;
     }
   }
-}
-
-function appendDiscretizationPointBatch(
-  THREE,
-  primitive,
-  instances,
-  sourcePositions,
-  positions,
-  ranges,
-) {
-  const sourcePointCount = Math.floor(sourcePositions.length / 3);
-  if (sourcePointCount === 0) return;
-
-  const start = positions.length / 3;
-  appendTransformedPositions(
-    THREE,
-    sourcePositions,
-    instances,
-    positions,
-  );
-  ranges.push({
-    end: positions.length / 3,
-    grid: primitive.discretization,
-    instances,
-    source: primitive.source,
-    sourcePointCount,
-    start,
-  });
+  return offset;
 }
 
 function createDiscretizationLines(THREE, positions) {
@@ -1410,7 +1361,7 @@ function createDiscretizationLines(THREE, positions) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(
     "position",
-    new THREE.BufferAttribute(new Float32Array(positions), 3),
+    new THREE.BufferAttribute(positions, 3),
   );
   geometry.computeBoundingSphere();
   const lines = new THREE.LineSegments(
@@ -1504,7 +1455,7 @@ export function ThreeGeometryViewport(props) {
   let legendPanel;
   const [legendLeft, setLegendLeft] = createGeometryViewSetting("scalarLegendLeft", null);
   const [legendTop, setLegendTop] = createGeometryViewSetting("scalarLegendTop", null);
-  const [autoColorLimits, setAutoColorLimits] = createGeometryViewSetting("resultDefaultColorLimits", false);
+  const [autoColorLimits, setAutoColorLimits] = createGeometryViewSetting("resultDefaultColorLimits", true);
   const [logColors, setLogColors] = createGeometryViewSetting("resultLogColors", false);
   // Manual limits belong to the loaded task and quantity. A new task starts
   // from its own ranges while both header switches retain their preferences.
@@ -1607,7 +1558,6 @@ export function ThreeGeometryViewport(props) {
   let resultPalette = "Viridis";
   const geometryMaterialDefaults = new WeakMap();
   let baseRenderStats = {
-    budget: GEOMETRY_INSTANCE_BUDGET,
     invalidInstances: 0,
     renderedInstances: 0,
     renderedPrimitives: 0,
@@ -1616,9 +1566,9 @@ export function ThreeGeometryViewport(props) {
   };
   let discretizationStats = {
     lineSegments: 0,
-    linesTruncated: false,
+
     points: 0,
-    pointsTruncated: false,
+
   };
   let controlsInteracting = false;
   let contextLost = false;
@@ -1653,10 +1603,6 @@ export function ThreeGeometryViewport(props) {
   };
 
   const publishRenderStats = () => {
-    const linesTruncated = discretizationLinesVisible &&
-      discretizationStats.linesTruncated;
-    const pointsTruncated = discretizationPointsVisible &&
-      discretizationStats.pointsTruncated;
     props.onRenderStats?.({
       ...baseRenderStats,
       discretizationLineSegments: discretizationLinesVisible
@@ -1665,7 +1611,7 @@ export function ThreeGeometryViewport(props) {
       discretizationPoints: discretizationPointsVisible
         ? discretizationStats.points
         : 0,
-      discretizationTruncated: linesTruncated || pointsTruncated,
+
     });
   };
 
@@ -2322,152 +2268,74 @@ export function ThreeGeometryViewport(props) {
     });
   };
 
-  const layerInstanceCount = (instances, cost, remaining) => {
-    if (!Number.isSafeInteger(cost) || cost < 0) return 0;
-    if (cost === 0) return instances.length;
-    return Math.min(instances.length, Math.floor(remaining / cost));
-  };
+  function buildOverlay(layer, cache) {
+    const isPoints = layer === "points";
+    const batches = [];
+    let vertices = 0;
+    for (const { primitive, instances } of discretizationBatches) {
+      const metrics = discretizationMetrics(primitive);
+      const count = isPoints ? metrics?.points : metrics?.lineSegments * 2;
+      if (!Number.isSafeInteger(count)) throw new Error("Число узлов или линий не представимо для отрисовки.");
+      if (!count || !instances.length) continue;
+      batches.push({ primitive, instances, count });
+      vertices += count * instances.length;
+    }
+    // WebGL drawArrays takes a signed GLsizei vertex count.
+    if (!Number.isSafeInteger(vertices) || vertices > 0x7fffffff) {
+      throw new Error("Слой дискретизации превышает адресуемый размер буфера WebGL.");
+    }
+    const positions = isPoints ? new Float64Array(vertices * 3) : new Float32Array(vertices * 3);
+    const ranges = [];
+    let offset = 0;
+    for (const { primitive, instances, count } of batches) {
+      let local = cache.get(primitive);
+      if (!local) {
+        const built = buildDiscretizationLayer(primitive, layer);
+        if (!built?.ok) throw new Error("Невозможно построить дискретизацию для выбранного объекта.");
+        local = built[layer];
+        cache.set(primitive, local);
+      }
+      const start = offset / 3;
+      offset = appendTransformedPositions(THREE, local, instances, positions, offset);
+      ranges.push({ start, end: offset / 3, source: primitive.source, instances,
+        grid: primitive.discretization, sourcePointCount: count });
+    }
+    return { positions, ranges };
+  }
 
   const materializeDiscretizationLines = () => {
-    if (
-      !THREE ||
-      !helperRoot ||
-      discretizationLinesMaterialized
-    ) {
-      return;
-    }
-    discretizationLinesMaterialized = true;
-
-    const budget = Math.max(
-      0,
-      Math.floor(
-        props.discretizationSegmentBudget ??
-        GEOMETRY_DISCRETIZATION_SEGMENT_BUDGET,
-      ),
-    );
-    const positions = [];
-    const motionRanges = [];
-    let remaining = budget;
-    let truncated = false;
-
-    for (const batch of discretizationBatches) {
-      const metrics = discretizationMetrics(batch.primitive);
-      const cost = metrics?.lineSegments;
-      const acceptedCount = layerInstanceCount(
-        batch.instances,
-        cost,
-        remaining,
-      );
-      if (acceptedCount < batch.instances.length) truncated = true;
-      if (acceptedCount === 0 || cost === 0) continue;
-
-      let built = discretizationLineCache.get(batch.primitive);
-      if (!built) {
-        built = buildDiscretizationLayer(
-          batch.primitive,
-          "lines",
-          cost,
-        );
-        discretizationLineCache.set(batch.primitive, built);
+    if (!THREE || !helperRoot || discretizationLinesMaterialized) return;
+    try {
+      const { positions, ranges } = buildOverlay("lines", discretizationLineCache);
+      discretizationLines = createDiscretizationLines(THREE, positions);
+      if (discretizationLines) {
+        discretizationLines.visible = discretizationLinesVisible;
+        helperRoot.add(discretizationLines);
+        if (props.geometryRevision) motionBuffers.push(captureMotionBuffer(THREE, discretizationLines, ranges));
       }
-      if (!built?.ok) {
-        truncated = true;
-        continue;
-      }
-
-      const start = positions.length / 3;
-      appendTransformedPositions(
-        THREE,
-        built.lines,
-        batch.instances.slice(0, acceptedCount),
-        positions,
-      );
-      motionRanges.push({start, end: positions.length / 3,
-        source: batch.primitive.source, instances: batch.instances.slice(0, acceptedCount)});
-      remaining -= cost * acceptedCount;
-    }
-
-    discretizationLines = createDiscretizationLines(THREE, positions);
-    if (discretizationLines) {
-      discretizationLines.visible = discretizationLinesVisible;
-      helperRoot.add(discretizationLines);
-      if (props.geometryRevision) motionBuffers.push(captureMotionBuffer(THREE, discretizationLines, motionRanges));
-    }
-    discretizationStats.lineSegments = positions.length / 6;
-    discretizationStats.linesTruncated = truncated;
+      discretizationStats.lineSegments = positions.length / 6;
+      discretizationLinesMaterialized = true;
+    } catch (error) { reportError(error); }
     updateGeometryOpacity();
     updateSurfacePolygonOffset();
     publishRenderStats();
   };
 
   const materializeDiscretizationPoints = () => {
-    if (
-      !THREE ||
-      !helperRoot ||
-      discretizationPointsMaterialized
-    ) {
-      return;
-    }
-    discretizationPointsMaterialized = true;
-
-    const budget = Math.max(
-      0,
-      Math.floor(
-        props.discretizationPointBudget ??
-        GEOMETRY_DISCRETIZATION_POINT_BUDGET,
-      ),
-    );
-    const positions = [];
-    discretizationPointRanges = [];
-    let remaining = budget;
-    let truncated = false;
-
-    for (const batch of discretizationBatches) {
-      const metrics = discretizationMetrics(batch.primitive);
-      const cost = metrics?.points;
-      const acceptedCount = layerInstanceCount(
-        batch.instances,
-        cost,
-        remaining,
-      );
-      if (acceptedCount < batch.instances.length) truncated = true;
-      if (acceptedCount === 0 || cost === 0) continue;
-
-      let built = discretizationPointCache.get(batch.primitive);
-      if (!built) {
-        built = buildDiscretizationLayer(
-          batch.primitive,
-          "points",
-          cost,
-        );
-        discretizationPointCache.set(batch.primitive, built);
+    if (!THREE || !helperRoot || discretizationPointsMaterialized) return;
+    try {
+      const { positions, ranges } = buildOverlay("points", discretizationPointCache);
+      discretizationPointRanges = ranges;
+      discretizationWorldPositions = positions;
+      discretizationPoints = createDiscretizationPoints(THREE, positions);
+      if (discretizationPoints) {
+        discretizationPoints.visible = discretizationPointsVisible;
+        helperRoot.add(discretizationPoints);
+        if (props.geometryRevision) motionBuffers.push(captureMotionBuffer(THREE, discretizationPoints, ranges, positions));
       }
-      if (!built?.ok) {
-        truncated = true;
-        continue;
-      }
-
-      appendDiscretizationPointBatch(
-        THREE,
-        batch.primitive,
-        batch.instances.slice(0, acceptedCount),
-        built.points,
-        positions,
-        discretizationPointRanges,
-      );
-      remaining -= cost * acceptedCount;
-    }
-
-    discretizationWorldPositions = new Float64Array(positions);
-    discretizationPoints = createDiscretizationPoints(THREE, positions);
-    if (discretizationPoints) {
-      discretizationPoints.visible = discretizationPointsVisible;
-      helperRoot.add(discretizationPoints);
-      if (props.geometryRevision) motionBuffers.push(captureMotionBuffer(THREE, discretizationPoints,
-        discretizationPointRanges, discretizationWorldPositions));
-    }
-    discretizationStats.points = positions.length / 3;
-    discretizationStats.pointsTruncated = truncated;
+      discretizationStats.points = positions.length / 3;
+      discretizationPointsMaterialized = true;
+    } catch (error) { reportError(error); }
     updateGeometryOpacity();
     updateSurfacePolygonOffset();
     publishRenderStats();
@@ -2577,9 +2445,6 @@ export function ThreeGeometryViewport(props) {
     // Preview callers without a revision continue to use full replacement.
     if (!revision || !context || revision !== context.revision
       || filters !== context.filters || mode !== context.mode || showEdges !== context.showEdges
-      || props.instanceBudget !== context.instanceBudget
-      || props.discretizationSegmentBudget !== context.segmentBudget
-      || props.discretizationPointBudget !== context.pointBudget
       || sceneModel?.primitives?.length !== context.primitiveCount) return false;
     const key = source => `${source.schemaId}:${source.recordIndex}`;
     const images = new Map(sceneModel.primitives.map(p => [key(p.source),
@@ -2656,18 +2521,14 @@ export function ThreeGeometryViewport(props) {
     discretizationPointsMaterialized = false;
     discretizationStats = {
       lineSegments: 0,
-      linesTruncated: false,
+
       points: 0,
-      pointsTruncated: false,
+
     };
     clearHoverTooltip();
 
-    const budget = Math.max(
-      1,
-      Math.floor(props.instanceBudget ?? GEOMETRY_INSTANCE_BUDGET),
-    );
     const stats = createGeometryObjects(THREE, sceneModel, filters, mode, showEdges,
-      budget, (object, primitive, accepted) => {
+      undefined, (object, primitive, accepted) => {
         rememberFlightSourceSize(primitive);
         geometryRoot.add(object);
         geometryPickTargets.push(object);
@@ -2694,23 +2555,21 @@ export function ThreeGeometryViewport(props) {
 
     currentBounds = new THREE.Box3().setFromObject(geometryRoot);
 
+    if (!contextLost) {
+      setError("");
+      props.onError?.("");
+    }
     baseRenderStats = stats;
     if (verticesVisible) materializeVertexPoints();
     if (discretizationLinesVisible) materializeDiscretizationLines();
     if (discretizationPointsVisible) materializeDiscretizationPoints();
     geometryContext = {
       revision: props.geometryRevision, filters, mode, showEdges,
-      instanceBudget: props.instanceBudget,
-      segmentBudget: props.discretizationSegmentBudget, pointBudget: props.discretizationPointBudget,
       primitiveCount: sceneModel?.primitives?.length ?? 0,
     };
     sourcesDirty = vectorsDirty = graphsDirty = true;
     updateGeometryOpacity();
     publishRenderStats();
-    if (!contextLost) {
-      setError("");
-      props.onError?.("");
-    }
     requestRender();
   };
 
@@ -3024,8 +2883,6 @@ export function ThreeGeometryViewport(props) {
   createEffect(() => {
     const sceneModel = props.scene;
     props.geometryRevision;
-    props.instanceBudget;
-    props.discretizationSegmentBudget; props.discretizationPointBudget;
     const filters = props.filters;
     const mode = props.mode ?? "solid";
     const showEdges = props.showEdges !== false;

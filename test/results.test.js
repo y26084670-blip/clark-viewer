@@ -193,3 +193,15 @@ test("Input adapter preserves column-major MHJ and motion tables", () => {
   assert.deepEqual(data.moves[0].angle, [[0,10,20,30], [1,11,21,31]]);
   assert.deepEqual(data.mhj[0].v, [[1,3,5], [2,4,6]]);
 });
+
+test("area and volume slice retain every node above 250000", () => {
+  const n1 = 501, n2 = 500, count = n1 * n2;
+  const frame = { stride: 6, count, values: new Float32Array(count * 6) };
+  frame.values[(count - 1) * 6 + 3] = 7;
+  const surface = regionSurfaceGrid(frame, { dp: [[n1],[n2]], symLs: 1 }, QUANTITIES.Bs, "0", 0);
+  const slice = surfaceGrid(frame, { dp: [[n1],[n2],[1]], symLs: 1, symAs: 1, symPs: 1 }, QUANTITIES.Bv, "0", 2, 0, 0);
+  for (const grid of [surface, slice]) {
+    assert.equal(grid.values.length, count);
+    assert.equal(grid.values.at(-1), 7);
+  }
+});

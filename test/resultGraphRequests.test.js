@@ -174,3 +174,11 @@ test("warped hexahedra use the parametric EO-layer surface with consistently ori
   const mid = Math.floor(patch.positions.length / 6); const p = patch.positions.subarray(mid * 3, mid * 3 + 3);
   assert.ok(p[2] > 1); for (let n = 0; n < patch.normals.length / 3; n++) assert.ok(patch.normals[n * 3 + 2] > 0);
 });
+
+test("slice drawing preserves all intervals beyond 64 on either varying axis", () => {
+  const vertices = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]];
+  const patch = graphSlicePatch(vertices, 0, [1, 82, 67], 1);
+  assert.deepEqual(patch.dimensions, [83, 68]);
+  assert.equal(patch.sampled, false);
+  assert.deepEqual(Array.from(patch.positions.slice(-3)), [.5, 1, 1]);
+});

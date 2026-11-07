@@ -1,5 +1,5 @@
 // The contour cuts the displayed triangles. Snapping uses the original grid,
-// including EO centres when a slice drawing was limited to 64 intervals.
+// including EO centres between vertices of the drawing mesh.
 export const sameContourSurface = (hit, selected) => !!hit && !!selected
   && hit.graphId === selected.graphId && (selected.instanceKey
     ? hit.surface.instanceKey === selected.instanceKey && (selected.surfaceComponent == null || selected.surfaceComponent === hit.surface.component)

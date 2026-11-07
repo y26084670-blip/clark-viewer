@@ -1,7 +1,6 @@
 import { createEffect, createSignal, Show } from "solid-js";
-import { resultScaleMidpoint } from "../../services/visualization/resultScalarColors.js";
+import { formatResultScaleValue, resultScaleMidpoint } from "../../services/visualization/resultScalarColors.js";
 
-const compact = value => Number(value.toPrecision(6)).toString();
 const numberValue = text => {
   const value = text.trim().replace(",", ".");
   return /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value) ? Number(value) : NaN;
@@ -12,14 +11,18 @@ export function ColorScaleLimits(props) {
   const [error, setError] = createSignal("");
   const reset = () => { setDraft(null); setError(""); };
   createEffect(() => { props.task; props.automatic; reset(); });
-  const value = which => draft()?.[which] ?? String(props.limits?.[which] ?? props.legend[which]);
+  const exact = which => props.limits?.[which] ?? props.legend[which];
+  const value = which => draft()?.[which] ?? formatResultScaleValue(draft()?.original[which] ?? exact(which));
   function change(which, text) {
-    setDraft({ minimum: value("minimum"), maximum: value("maximum"), [which]: text });
+    setDraft(previous => ({ original: previous?.original ?? { minimum: exact("minimum"), maximum: exact("maximum") },
+      ...previous, [which]: text }));
     setError("");
   }
   function apply() {
-    if (!draft()) return;
-    const min = numberValue(value("minimum")), max = numberValue(value("maximum"));
+    const edit = draft();
+    if (!edit) return;
+    const boundValue = which => edit[which] === undefined ? edit.original[which] : numberValue(edit[which]);
+    const min = boundValue("minimum"), max = boundValue("maximum");
     if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) {
       setError("Введите два конечных числа: минимум должен быть меньше максимума.");
       return;
@@ -39,13 +42,13 @@ export function ColorScaleLimits(props) {
   }
   return <>
     <div class="geometry-scalar-legend-limits">
-      <Show when={!props.automatic} fallback={<span>{compact(props.legend.minimum)}</span>}>
+      <Show when={!props.automatic} fallback={<span>{formatResultScaleValue(props.legend.minimum)}</span>}>
         {bound("minimum", "Нижний предел")}
       </Show>
       <Show when={props.legend.logScale}>
-        <span class="geometry-scale-middle" title="Значение в середине цветовой шкалы">{compact(resultScaleMidpoint(props.legend.minimum, props.legend.maximum, props.legend.logScale))}</span>
+        <span class="geometry-scale-middle" title="Значение в середине цветовой шкалы">{formatResultScaleValue(resultScaleMidpoint(props.legend.minimum, props.legend.maximum, props.legend.logScale))}</span>
       </Show>
-      <Show when={!props.automatic} fallback={<span>{compact(props.legend.maximum)}</span>}>
+      <Show when={!props.automatic} fallback={<span>{formatResultScaleValue(props.legend.maximum)}</span>}>
         {bound("maximum", "Верхний предел")}
       </Show>
     </div>

@@ -1,5 +1,5 @@
 import { readTaskPlanarMode } from "./services/taskStatusService.js";
-import { createEffect, createSignal, ErrorBoundary, For, lazy, onCleanup, onMount, Show, Switch, Match, Suspense } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, ErrorBoundary, For, lazy, onCleanup, onMount, Show, Switch, Match, Suspense } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Tasks } from "./tabs/Tasks.jsx";
 import { loadTask } from "./services/taskLoadService.js";
@@ -38,6 +38,13 @@ const SourcesFields3D = tabComponent("SourcesFields3D");
 const WorkingPoints = tabComponent("WorkingPoints");
 const FieldLines = tabComponent("FieldLines");
 const PlotConstructor = tabComponent("PlotConstructor");
+function tabError(failure) {
+  return <div class="empty-task">
+    <p>Версия Viewer обновлена. Перезагрузите страницу.</p>
+    <p class="tab-load-error">{failure?.message ?? String(failure)}</p>
+    <button type="button" onClick={() => window.location.reload()}>Перезагрузить</button>
+  </div>;
+}
 export default function App() {
   let workspace;
   onMount(() => {
@@ -49,6 +56,11 @@ export default function App() {
   });
   const [active, setActive] = createSignal(0), [task, setTask] = createSignal(null), [path, setPath] = createSignal("");
   const [time, setTime] = createSignal(0), [elements, setElements] = createSignal([]), [regions, setRegions] = createSignal([]);
+  // A hidden 3D tab keeps its last input and GPU resources until its task is replaced.
+  const retainedTask = createMemo(previous => active() === 1 ? task() : previous === task() ? previous : null);
+  const sceneTime = createMemo(previous => active() === 1 ? time() : previous, 0);
+  const sceneElements = createMemo(previous => active() === 1 ? elements() : previous, []);
+  const sceneRegions = createMemo(previous => active() === 1 ? regions() : previous, []);
   const [toolsSelection, setToolsSelection] = createSignal(null);
   const [plotRecipes, setPlotRecipes] = createSignal([]);
   const [protocolEntries, setProtocolEntries] = createSignal({});
@@ -118,14 +130,16 @@ export default function App() {
         }
       }
       activeReader?.close(); activeReader = reader;
-      setTime(0); setElements([]); setRegions([]);
-      setPlotRecipes([]);
-      setProtocolEntries({});
-      plotTaskStore.clear();
-      setPlotSources([]);
-      setActivePlotId(null);
-      setTask({ ...data, reader, metadata, workspace, plotLabel: newPath }); setPath(newPath);
-      setActive(1);
+      batch(() => {
+        setTime(0); setElements([]); setRegions([]);
+        setPlotRecipes([]);
+        setProtocolEntries({});
+        plotTaskStore.clear();
+        setPlotSources([]);
+        setActivePlotId(null);
+        setTask({ ...data, reader, metadata, workspace, plotLabel: newPath }); setPath(newPath);
+        setActive(1);
+      });
       return true;
     } catch (error) {
       reader?.close(); if (revision === loadRevision) setError(`Не удалось загрузить задание: ${error.message}`);
@@ -196,15 +210,18 @@ export default function App() {
         <Tasks active={active() === 0} onToolsSelection={setToolsSelection} onRootChange={setPlotRoot} onShowTasks={() => setActive(0)} onLoad={(...args) => { if (!movieBusy()) return load(...args); }} loadedHandle={task()?.handle} busy={busy() || movieBusy()} error={error()}
           onTaskListRefresh={refreshLoadedPlanarMode} onEditProtocol={editProtocol} docsRevision={docsRevision()} />
       </div>
-      <Show when={active() !== 0}>
+      <Show when={retainedTask()} keyed>{loaded =>
+        <div style={{ display: active() === 1 ? "contents" : "none" }} inert={active() !== 1}>
+          <ErrorBoundary fallback={tabError}><Suspense>
+            <SourcesFields3D {...shared} task={loaded} active={active() === 1}
+              time={sceneTime()} elements={sceneElements()} regions={sceneRegions()} />
+          </Suspense></ErrorBoundary>
+        </div>
+      }</Show>
+      <Show when={active() !== 0 && (active() !== 1 || !task())}>
         <Show when={task()} fallback={<div class="empty-task"><p>Загрузите задание на первой вкладке</p><button onClick={() => setActive(0)}>Выбор задания</button></div>}>
-          <ErrorBoundary fallback={(failure, reset) => <div class="empty-task">
-            <p>Версия Viewer обновлена. Перезагрузите страницу.</p>
-            <p class="tab-load-error">{failure?.message ?? String(failure)}</p>
-            <button type="button" onClick={() => window.location.reload()}>Перезагрузить</button>
-          </div>}>
-            <Suspense fallback={<Show when={active() !== 1}><div class="empty-task">Загрузка вкладки…</div></Show>}><Switch>
-              <Match when={active() === 1}><SourcesFields3D {...shared} /></Match>
+          <ErrorBoundary fallback={tabError}>
+            <Suspense fallback={<div class="empty-task">Загрузка вкладки…</div>}><Switch>
               <Match when={active() === 2}><WorkingPoints {...shared} /></Match>
               <Match when={active() === 3}><FieldLines {...shared} /></Match>
               <Match when={active() === 4}><PlotConstructor {...shared} /></Match>

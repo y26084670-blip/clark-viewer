@@ -9,6 +9,8 @@ import { readResultVolumeFrame } from "./resultVolumeRequests.js";
 import { createResultVolumeProcessor } from "./resultVolumeProcessor.js";
 import { createResultStreamlineProcessor } from "./resultStreamlineProcessor.js";
 import { readResultStreamlines } from "./resultStreamlineRequests.js";
+import { createResultSliceCache } from "./resultSliceCache.js";
+import { sameLayerRequest } from "./resultFrameController.js";
 
 const message = error => error?.message ?? String(error);
 const cancelled = () => Object.assign(new Error("Чтение слоёв результатов отменено"), { name: "AbortError" });
@@ -49,8 +51,10 @@ function prepareLayer(request, layer) {
  * its own lazy processor, preserving its spatial plan across time frames.
  */
 export function createResultLayerReader({ processorFactory = createResultVolumeProcessor,
-  streamlineProcessorFactory = createResultStreamlineProcessor, residualReader = readWorkResidualFrames } = {}) {
+  streamlineProcessorFactory = createResultStreamlineProcessor, residualReader = readWorkResidualFrames, maxSliceBytes } = {}) {
   const processors = new Map();
+  let frameTask, frameTime, readSlice;
+  let readyLayers = new Map();
   let streamlineProcessor = null;
   let streamlineFrame = null;
   let closed = false, active = false;
@@ -64,11 +68,20 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
       if (active) throw new Error("Предыдущий кадр результатов ещё читается");
       active = true;
       try {
+        if (request.task !== frameTask || request.time !== frameTime) {
+          frameTask = request.task; frameTime = request.time;
+          readSlice = createResultSliceCache(frameTask, maxSliceBytes);
+          readyLayers.clear();
+        }
         const keys = new Set();
         const prepared = request.layers.map(layer => {
           try {
             if (keys.has(layer.key)) throw new Error("Группа результатов повторяется в кадре");
             keys.add(layer.key);
+            const cached = readyLayers.get(layer.key);
+            if (cached && cached.symmetry === request.symmetry && sameLayerRequest(cached.definition, layer)) {
+              return { result: cached.result, cached: true };
+            }
             return prepareLayer(request, layer);
           } catch (error) {
             return { result: { ...emptyLayer(layer), state: "error", error: message(error) } };
@@ -78,11 +91,14 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
         // This runs only after the preceding atomic frame drained. None/empty,
         // another quantity/task releases old plans.
         for (const [key, owner] of processors) {
+          if (prepared.some(layer => layer.cached && layer.result.key === key)) continue;
           const next = reads.find(layer => layer.key === key && layer.volumeMode);
           if (!next || owner.task !== request.task || owner.quantityKey !== next.request.quantityKey) release(key);
         }
         const loaded = await Promise.allSettled(reads.map(async layer => {
           let value;
+          layer.request.readSlice = readSlice;
+          layer.request.symmetry = request.symmetry;
           if (layer.volumeMode) {
             if (!processors.has(layer.key)) processors.set(layer.key, {
               task: request.task, quantityKey: layer.request.quantityKey, processor: processorFactory(),
@@ -91,8 +107,8 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
           } else {
             const frames = await (layer.quantity.workResidual ? residualReader
               : layer.quantity.relativeConductivity ? readRelativeConductivityFrames : readObjectFrames)(layer.request);
-            value = { scene: layer.quantity.components === 1 ? null : vectorScene(frames, layer.quantity, request.task),
-              scalarScene: layer.quantity.components === 1 ? scalarScene(frames, layer.quantity, request.task) : null,
+            value = { scene: layer.quantity.components === 1 ? null : vectorScene(frames, layer.quantity, request.task, request.symmetry),
+              scalarScene: layer.quantity.components === 1 ? scalarScene(frames, layer.quantity, request.task, request.symmetry) : null,
               sampled: frames.some(item => item.frame.count < item.originalCount) };
           }
           return { ...layer.result, ...value, state: "ready" };
@@ -103,6 +119,12 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
           layer.result = item.status === "fulfilled" ? item.value
             : { ...layer.result, state: "error", error: message(item.reason) };
           if (item.status === "rejected") release(layer.key);
+        });
+        readyLayers = new Map();
+        prepared.forEach(({ result }, i) => {
+          if (result.state === "ready" && !QUANTITIES[result.quantityKey]?.workResidual) {
+            readyLayers.set(result.key, { result, definition: request.layers[i], symmetry: request.symmetry });
+          }
         });
         const layers = referenceResultVectorLayers(request.task, prepared.map(layer => layer.result));
         let streamlines = [];
@@ -137,6 +159,7 @@ export function createResultLayerReader({ processorFactory = createResultVolumeP
     },
     close() {
       closed = true;
+      readyLayers.clear(); readSlice = frameTask = undefined;
       for (const key of processors.keys()) release(key);
       streamlineProcessor?.close(); streamlineProcessor = null;
       streamlineFrame = null;

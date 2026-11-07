@@ -53,6 +53,11 @@ export function resultScalarPosition(value, minimum, maximum, logScale) {
   return logScale.mode < 0 ? 1 - fraction : fraction;
 }
 
+export function formatResultScaleValue(value) {
+  if (!Number.isFinite(value)) return "—";
+  return Math.abs(value) >= 1000 ? value.toExponential(3) : Number(value.toPrecision(4)).toString();
+}
+
 export function resultScaleMidpoint(minimum, maximum, logScale) {
   if (!logScale) return minimum / 2 + maximum / 2;
   if (logScale.mode !== 2) return logScale.mode * Math.exp((Math.log(logScale.low) + Math.log(logScale.high)) / 2);

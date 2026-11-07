@@ -5,6 +5,27 @@ import { readFileSync } from "node:fs";
 import { sourcesFields3DSetup } from "../scripts/test-support/sourcesFields3DSetup.js";
 import { RESULT_LAYER_GROUPS, RESULT_LAYER_QUANTITY_LABELS } from "../src/services/results/resultLayerDefinitions.js";
 
+test("a retained 3D tab yields the movie adapter while hidden and restores it on return", () => {
+  execFileSync(process.execPath, ["--conditions=browser", "--input-type=module", "-e", `
+    import assert from "node:assert/strict";
+    import { createRoot, createSignal } from "solid-js";
+    import { createMovieTabAdapter } from "./src/services/movie/movieTabAdapter.js";
+    import { createMovieExportController } from "./src/services/movie/movieExportController.js";
+    let active, activate, dispose;
+    const controller = createMovieExportController({onAdapterChange: next => { active = next; }});
+    createRoot(cleanup => {
+      dispose = cleanup; const [shown, setShown] = createSignal(true); activate = setShown;
+      createMovieTabAdapter({get active(){return shown();}, registerMovieAdapter: controller.register}, {title: "3D"});
+    });
+    const scene = active; assert.equal(scene.getContext().title, "3D");
+    activate(false); assert.equal(active, null);
+    const other = {getContext: () => ({title: "Графики"})};
+    const release = controller.register(other); assert.equal(active, other);
+    activate(true); release(); assert.equal(active, scene);
+    dispose(); assert.equal(active, null); controller.dispose();
+  `], { cwd: new URL("../", import.meta.url), stdio: "pipe" });
+});
+
 function fixture() {
   const task = { elements: [{ id: 1, targ: 0 }, { id: 2, targ: 3 }, { id: 3, targ: 2 }],
     regions: [{ id: 1 }, { id: 2 }] };

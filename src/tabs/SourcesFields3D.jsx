@@ -9,6 +9,7 @@ import { GeometryMaterialLegend } from "../components/geometry/GeometryMaterialL
 import { TimeSlider } from "../components/TimeSlider.jsx";
 import { QUANTITIES, assignedHtsElements } from "../services/results/resultMappings.js";
 import { resultDisplaySelection, useResultFrame } from "../services/results/resultRequests.js";
+import { sameLayerFrameRequest } from "../services/results/resultFrameController.js";
 import { RESULT_LAYER_GROUPS, RESULT_LAYER_QUANTITY_LABELS } from "../services/results/resultLayerDefinitions.js";
 import { createResultLayerReader } from "../services/results/resultLayerRequests.js";
 import { applyResultGlobalRange, resultGlobalScale } from "../services/results/resultGlobalScale.js";
@@ -23,8 +24,7 @@ import { graphContourIdentity } from "../services/visualization/resultGraphConto
 import { Graph1DCollection } from "../components/Graph1DCollection.jsx";
 import "./SourcesFields3D.css";
 
-// Switching tabs unmounts this component. Retain task-owned choices,
-// not HDF5 buffers or worker/GPU resources.
+// Small task-owned preferences also survive explicit viewport remounts.
 const streamlineSessions = new WeakMap();
 const cameraSessions = new WeakMap();
 const graphSessions = new WeakMap();
@@ -36,7 +36,8 @@ export function SourcesFields3D(props) {
   const [flightState, setFlightState] = createSignal("idle");
   const flightBusy = () => flightState() !== "idle";
   const changeTime = index => { if (!flightBusy()) props.setTime(index); };
-  onMount(()=>{
+  onMount(()=>createEffect(() => {
+    if (props.active === false) { setOpenSourceMenu(null); return; }
     const remove=installSourcesFieldsKeyboard(window,{blocked:()=>props.movieBusy,flightBusy,
       time:()=>props.time,maxTime:()=>props.task?.general.countTimeSteps??0,setTime:changeTime,
       view:command=>setCameraRequest(previous=>({command,sequence:(previous?.sequence??0)+1}))});
@@ -45,7 +46,7 @@ export function SourcesFields3D(props) {
     };
     window.addEventListener("pointerdown", closeMenus, true);
     onCleanup(() => { remove(); window.removeEventListener("pointerdown", closeMenus, true); });
-  });
+  }));
   const savedStreamlines = props.task && streamlineSessions.get(props.task);
   const [streamlineSeeds, setStreamlineSeeds] = createSignal(savedStreamlines?.seeds ?? []);
   const [selectedStreamline, setSelectedStreamline] = createSignal(savedStreamlines?.selected ?? null);
@@ -223,6 +224,10 @@ export function SourcesFields3D(props) {
   const [elementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode] = createGeometryViewSetting("regionsMode", "all");
   const graphView = Object.fromEntries(Object.entries(GRAPH_VIEW_DEFAULTS).map(([key, initial]) => [key, createGeometryViewSetting(key, initial)]));
+  const resultSymmetry = createMemo(() => ({
+    local: graphView.showLocalSymmetry[0](), axial: graphView.showAxialSymmetry[0](),
+    periodic: graphView.showPeriodicSymmetry[0](), mirror: graphView.showMirrorSymmetry[0](),
+  }));
   untrack(() => {
     const view = Object.fromEntries(Object.entries(graphView).map(([key, [read]]) => [key, read()]));
     for (const [key, value] of Object.entries(migrateGraphVisibility(view))) graphView[key][1](value);
@@ -311,7 +316,8 @@ export function SourcesFields3D(props) {
         .filter(r => r.geoType !== 2 && (wanted.has(`region:${r.recordIndex}`) || areaGraphs() && requestedLayers().find(g => g.key === "regions").selected.includes(r.id))).map(r => r.recordIndex) : [] };
     return { ...request, quantityKey: graphRequestKey(request) };
   });
-  const graphResult = useResultFrame(graphRequest, request => graphReader.read(request));
+  const frameEnabled = () => props.active !== false && graphReady();
+  const graphResult = useResultFrame(graphRequest, request => graphReader.read(request), { enabled: frameEnabled, sameRequest: Object.is });
   const graphResults = () => (graphResult().frame?.value.graphs ?? []).filter(g => g.kind === "region" ? areaGraphs() : sliceGraphs() && graphSlices().some(s => s.id === g.id));
   const profileResults = () => graphResult().frame?.value.profiles ?? [];
   const graphBusy = () => graphResult().loading;
@@ -324,10 +330,12 @@ export function SourcesFields3D(props) {
   // Even a completely disabled frame reaches the reader so it can release its
   // workers; no HDF5 is read, and geometry follows the requested time immediately.
   const result = useResultFrame(() => props.task && ({ task: props.task, time: props.time,
+    symmetry: resultSymmetry(),
     layers: graphsOnly() ? requestedLayers().map(layer => ({ ...layer, quantityKey: "none" })) : requestedLayers(),
     streamlineSeeds: graphsOnly() ? [] : streamlineSeeds(), streamlineTolerance: STREAMLINE_DEFAULT_TOLERANCE,
     streamlineMethod: streamlineMethod(), performanceEnabled }),
-    request => layerReader.read(request), { onPerformance: onFramePerformance, performanceEnabled });
+    request => layerReader.read(request), { onPerformance: onFramePerformance, performanceEnabled,
+      enabled: frameEnabled, sameRequest: sameLayerFrameRequest });
   const displayed = () => result().frame;
   const value = () => displayed()?.value;
   const streamlines = createMemo(() => (value()?.streamlines ?? [])
@@ -596,13 +604,14 @@ export function SourcesFields3D(props) {
       <div class="source-graph-workspace"><div class="embedded-geometry source-geometry-viewport">
         <GeometryMaterialLegend buttonClass="source-toolbar-menu-button"
           onOpen={() => setOpenSourceMenu(null)} />
-        <ResultsGeometryViewport toolbarMount={geometryToolbarHost()} cameraState={cameraState()} onCameraStateChange={rememberCamera} open={true} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
+        <ResultsGeometryViewport toolbarMount={geometryToolbarHost()} cameraState={cameraState()} onCameraStateChange={rememberCamera} open={true} active={props.active} model={props.task} moves={props.task?.moves} amplitudes={props.task?.amps}
           allowFlight={true} flightBlocked={props.movieBusy || graphBusy()} flightDisabledReason={flightDisabledReason()}
           resultScaleBlocked={props.movieBusy || flightBusy()}
           onFlightStateChange={setFlightState}
           cameraRequest={cameraRequest()}
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={timeIndex()}
           selections={selections()} resultLayers={graphsOnly() ? [] : resultLayers()}
+          resultLayersPending={hasRequestedResults() && result().loading}
           resultError={[result().error, ...(value()?.errors ?? []).map(error => error.message)].filter(Boolean).join(" · ")}
           resultStreamlines={graphsOnly() ? [] : streamlines()} selectedStreamline={selectedStreamline()}
           graphResults={graphResults()} activeGraph={activeSlice()} graphPreview={previewSlice()} graphSelection={selectedSlice()}

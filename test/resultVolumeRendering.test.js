@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as THREE from "three";
-import { RESULT_SCALAR_PALETTES, resultScalarColor, resultScalarLegendBackground, resultScalarPosition, resultLogScale, resultScaleMidpoint } from "../src/services/visualization/resultScalarColors.js";
+import { RESULT_SCALAR_PALETTES, formatResultScaleValue, resultScalarColor, resultScalarLegendBackground, resultScalarPosition, resultLogScale, resultScaleMidpoint } from "../src/services/visualization/resultScalarColors.js";
 import { updateResultVolumeMeshes, disposeResultVolumeMesh } from "../src/services/visualization/resultVolumeRenderer.js";
+
+test("colour legend labels use four significant digits and scientific notation at both thresholds", () => {
+  for (const [value, label] of [[0,"0"], [-0,"0"], [1.234567,"1.235"], [-0.00123456,"-0.001235"],
+    [999.9,"999.9"], [-999.9,"-999.9"], [1000,"1.000e+3"], [-1000,"-1.000e+3"],
+    [1234567,"1.235e+6"], [-99999,"-1.000e+5"], [1.23456e-10,"1.235e-10"]]) {
+    assert.equal(formatResultScaleValue(value), label);
+  }
+});
 
 function domain(key = "element:1:0:0:0") {
   return { key, dimensions: [4, 4, 4], bounds: { min: [10, 20, 30], max: [12, 24, 36] },

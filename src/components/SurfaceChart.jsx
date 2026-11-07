@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { disposeSurfaceObject, resizeSurfaceLabels, updateSurfaceLabel, updateSurfaceMesh } from "../services/visualization/surfaceChartResources.js";
 import { updateSurfaceDecorations } from "../services/visualization/surfaceContours.js";
+import { formatResultScaleValue as formatValue } from "../services/visualization/resultScalarColors.js";
 import { captureMovieCanvas } from "../services/movie/movieCanvas.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../services/movie/renderedFrameGate.js";
 
@@ -24,7 +25,6 @@ export function SurfaceChart(props) {
   const [hover, setHover] = createSignal("");
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  const formatValue = value => Number(value.toPrecision(5)).toString();
   function draw() {
     if (!renderer || !scene || !camera || disposed || contextLost) return;
     try {

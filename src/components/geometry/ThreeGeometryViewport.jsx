@@ -67,7 +67,7 @@ import {
 import {
   resultScalarColor,
   resultLogScale,
-  resultScaleMidpoint,
+  formatResultScaleValue, resultScaleMidpoint,
   normalizeResultPalette,
   resultScalarLegendBackground,
 } from "../../services/visualization/resultScalarColors.js";
@@ -1549,6 +1549,8 @@ export function ThreeGeometryViewport(props) {
   const [graphContourPreview, setGraphContourPreview] = createSignal(null);
   let streamlineWidth = 2, streamlineColorMap = true;
   let resultLayerStates = new Map();
+  let parkedResultLayers = new Map(), waitingForLayers = false;
+  let suspended = props.active === false;
   let resultVectorScale = 1;
   let resultVectorColorMap = false;
   let resultNormalizeVectors = false;
@@ -1674,7 +1676,7 @@ export function ThreeGeometryViewport(props) {
   };
 
   const renderNow = (timestamp) => {
-    if (!renderer || !threeScene || !camera || disposed || contextLost || rendering) return;
+    if (!renderer || !threeScene || !camera || disposed || contextLost || rendering || suspended) return;
     if (renderFrame) { cancelAnimationFrame(renderFrame); renderFrame = 0; }
     rendering = true;
     const profile = props.performanceEnabled === true;
@@ -1774,7 +1776,7 @@ export function ThreeGeometryViewport(props) {
     }
   };
   const requestRender = () => {
-    if (!renderer || !threeScene || !camera || renderFrame || rendering || disposed) return;
+    if (!renderer || !threeScene || !camera || renderFrame || rendering || disposed || suspended) return;
     renderFrame = requestAnimationFrame(timestamp => { renderFrame = 0; renderNow(timestamp); });
   };
 
@@ -1841,13 +1843,13 @@ export function ThreeGeometryViewport(props) {
       }
       context.fillStyle = gradient; context.fillRect(x + 7, y + 41, boxWidth - 14, 10);
       context.fillStyle = "#f1f5f8";
-      context.fillText(Number(legend.minimum.toPrecision(6)).toString(), x + 7, y + 57);
+      context.fillText(formatResultScaleValue(legend.minimum), x + 7, y + 57);
       if (legend.logScale) {
         context.textAlign = "center";
-        context.fillText(Number(resultScaleMidpoint(legend.minimum, legend.maximum, legend.logScale).toPrecision(5)).toString(), x + boxWidth / 2, y + 57);
+        context.fillText(formatResultScaleValue(resultScaleMidpoint(legend.minimum, legend.maximum, legend.logScale)), x + boxWidth / 2, y + 57);
       }
       context.textAlign = "right";
-      context.fillText(Number(legend.maximum.toPrecision(6)).toString(), x + boxWidth - 7, y + 57);
+      context.fillText(formatResultScaleValue(legend.maximum), x + boxWidth - 7, y + 57);
       context.textAlign = "left";
     });
   };
@@ -2532,10 +2534,19 @@ export function ThreeGeometryViewport(props) {
   const replaceResultLayers = () => {
     if (!THREE || !helperRoot) return;
     clearHoverTooltip();
-    resultLayerStates = updateResultLayers(THREE, resultLayerStates, resultLayers, {
-      filters: activeResultFilters, colorMap: resultVectorColorMap, normalizeVectors: resultNormalizeVectors, style: resultVectorStyle,
-      scale: resultVectorScale, palette: resultPalette, opacity: geometryOpacity ?? 1, logarithmic: logColors(), manualLimits: activeLimits(),
-    });
+    if (waitingForLayers && !resultLayers.length) {
+      if (resultLayerStates.size) {
+        parkedResultLayers = resultLayerStates;
+        for (const root of resultLayerRoots(parkedResultLayers)) root.removeFromParent();
+        resultLayerStates = new Map();
+      }
+    } else {
+      resultLayerStates = updateResultLayers(THREE, parkedResultLayers.size ? parkedResultLayers : resultLayerStates, resultLayers, {
+        filters: activeResultFilters, colorMap: resultVectorColorMap, normalizeVectors: resultNormalizeVectors, style: resultVectorStyle,
+        scale: resultVectorScale, palette: resultPalette, opacity: geometryOpacity ?? 1, logarithmic: logColors(), manualLimits: activeLimits(),
+      });
+      parkedResultLayers.clear();
+    }
     for (const root of resultLayerRoots(resultLayerStates)) {
       if (root.parent !== helperRoot) helperRoot.add(root);
     }
@@ -2784,7 +2795,7 @@ export function ThreeGeometryViewport(props) {
       viewCubeControls = installViewCubeControls({
         THREE, element: renderer.domElement, root: viewCubeRoot, viewCamera: viewCubeCamera,
         getCamera: () => camera, getControls: () => controls, getSize: viewCubeSize,
-        canInteract: () => ready() && !disposed && !contextLost && !movieSnapshot && !error()
+        canInteract: () => ready() && !suspended && !disposed && !contextLost && !movieSnapshot && !error()
           && (!flightController || flightController.state === "idle") && !axisRotationController?.active,
         onChange: changed => {
           if (changed) { hasFramedGeometry = true; rebuildOrbitControls(); clearHoverTooltip(); }
@@ -2796,7 +2807,7 @@ export function ThreeGeometryViewport(props) {
         THREE, element: renderer.domElement,
         getCamera: () => camera, getTarget: () => controls.target,
         getSpeed: () => flightSceneScale * 0.5,
-        canStart: () => ready() && !disposed && !contextLost && !movieSnapshot && !error()
+        canStart: () => ready() && !suspended && !disposed && !contextLost && !movieSnapshot && !error()
           && props.allowFlight === true && !props.flightBlocked && !props.flightDisabledReason
           && currentBounds && !currentBounds.isEmpty(),
         onActivate: () => {
@@ -2842,7 +2853,7 @@ export function ThreeGeometryViewport(props) {
 
       axisRotationController = createGeometryAxisRotationController({
         element: renderer.domElement, getCamera: () => camera, getControls: () => controls,
-        canStart: () => !disposed && !contextLost && !movieSnapshot && !error() && flightController.state === "idle",
+        canStart: () => !suspended && !disposed && !contextLost && !movieSnapshot && !error() && flightController.state === "idle",
         onStateChange: active => {
           controlsInteracting = active || flightController.active;
           if (active) clearHoverTooltip();
@@ -2971,6 +2982,7 @@ export function ThreeGeometryViewport(props) {
     resultLayers = props.resultLayers ?? [{ key: "result", scene: props.resultVectorScene,
       scalarScene: props.resultScalarScene, volumeFields: props.resultVolumeFields,
       color: props.resultVectorColor }];
+    waitingForLayers = props.resultLayersPending === true;
     resultPalette = normalizeResultPalette(props.resultPalette);
     logColors(); activeLimits(); props.taskKey;
     resultVectorColorMap = props.resultVectorColorMap === true;
@@ -3060,6 +3072,15 @@ export function ThreeGeometryViewport(props) {
     if (ready()) requestRender();
   });
 
+  createEffect(() => {
+    suspended = props.active === false;
+    if (suspended) {
+      if (renderFrame) { cancelAnimationFrame(renderFrame); renderFrame = 0; }
+      flightController?.stop(); axisRotationController?.stop();
+      cancelPendingPick(); clearHoverTooltip();
+    } else if (ready()) resizeRenderer();
+  });
+
   onCleanup(() => {
     rememberCamera();
     disposed = true;
@@ -3084,6 +3105,7 @@ export function ThreeGeometryViewport(props) {
     // the owning renderer before the generic helper traversal.
     if (THREE && streamlineRoot) updateStreamlineMeshes(THREE, streamlineRoot, []);
     disposeGraphScene(graphRoot);
+    for (const root of resultLayerRoots(parkedResultLayers)) releaseResultRoot(root);
     disposeObject(helperRoot);
     disposeObject(viewCubeRoot);
     if (renderer?.domElement) {

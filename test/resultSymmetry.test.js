@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { expandResultScalar, expandResultVector, resultSymmetryCopies } from "../src/services/results/resultSymmetry.js";
+import { vectorScene, scalarScene, resultVolumeDomains } from "../src/services/results/resultPlots.js";
+import { QUANTITIES } from "../src/services/results/resultMappings.js";
+import { referenceResultVectorLayers } from "../src/services/visualization/resultVectorScale.js";
+import { instanceVisible } from "../src/services/visualization/geometryRenderFilters.js";
 
 const record = {
   id:1, recordIndex:0, targ:0, dp:[[1],[1],[1]],
@@ -11,6 +15,27 @@ const record = {
 const source = { schemaId:"elements", recordIndex:0, name:"box" };
 const base = { origin:[1,2,3], vector:[1,2,3], magnitude:Math.sqrt(14), source,
   instance:{ls:0,as:0,ps:0}, quantity:"q", unit:"u" };
+
+test("saved images share matrices across nodes and M/H; early filters preserve full-grid scales and signs", () => {
+  const task = { general: { mirrorSymmetryX: 1, mirrorSymmetryY: 0 } };
+  const physical = { ...record, symLs: 2, symYl: 45, symKya: 0 };
+  const rows = [0, 1, 2, 3].flatMap(i => [i, 2, 3, i + 1, -2, 3, 0, 0, 2]);
+  const frames = [{ record: physical, frame: { count: 4, stride: 9, values: Float64Array.from(rows) } }];
+  const instance = { ls: 1, as: 1, ps: 0 };
+  const plan = resultSymmetryCopies(task, physical, "M", instance);
+  assert.equal(plan, resultSymmetryCopies(task, physical, "H", { ...instance }));
+  assert.equal(plan.length, 8);
+  const filters = { local: false, axial: false, periodic: true, mirror: false };
+  const choose = item => instanceVisible(item.instance, filters);
+  const full = vectorScene(frames, QUANTITIES.M, task), visible = vectorScene(frames, QUANTITIES.M, task, filters);
+  assert.deepEqual(visible.vectors, full.vectors.filter(choose));
+  const reference = scene => referenceResultVectorLayers({}, [{ key: "elements", quantityKey: "M", scene }])[0].vectorLengthReference;
+  assert.deepEqual(reference(visible), reference(full));
+  const scalars = scalarScene(frames, QUANTITIES.MHdot, task, filters);
+  assert.deepEqual(scalars.points, scalarScene(frames, QUANTITIES.MHdot, task).points.filter(choose));
+  const domains = resultVolumeDomains(frames, QUANTITIES.M, full, task);
+  assert.deepEqual(resultVolumeDomains(frames, QUANTITIES.M, visible, task, filters), domains.filter(choose));
+});
 
 test("mirror settings are defined for H/B/M and opposite for J/E/A", () => {
   for (const [setting, magnetic, opposite] of [

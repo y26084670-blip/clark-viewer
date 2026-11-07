@@ -72,11 +72,14 @@ export function createMovieTabAdapter(props, { title, filenamePrefix, readFrame 
       } finally { await target.restore(); }
     },
   };
-  const unregister = props.registerMovieAdapter?.(adapter);
+  createEffect(() => {
+    if (props.active === false) return;
+    const unregister = props.registerMovieAdapter?.(adapter);
+    if (unregister) onCleanup(unregister);
+  });
   onCleanup(() => {
     alive = false;
     lifetime.abort(new DOMException("Вкладка закрыта", "AbortError"));
-    unregister?.();
   });
   return { onCaptureReady: target => setRenderer(() => target), adapter };
 }

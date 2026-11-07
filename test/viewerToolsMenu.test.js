@@ -443,6 +443,8 @@ const appSource = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8
 const appSetup = appSource.slice(appSource.indexOf("export default function App"), appSource.indexOf('  return <div class="app-container"'))
   .replace("export default function", "function");
 const createApp = new Function("createSignal", "onCleanup", "onMount", "preloadViewerTabs", "createMovieExportController", "createMovieWebmEncoder", "installBrowserDefaults", "window", "createEffect", "createPlotTaskStore", `
+  const createMemo = calculate => calculate;
+  const batch = callback => callback();
   ${appSetup}
     return { shared, movieDisabledReason, setTask, setActive, setBusy, setMovieBusy };
   } return App();

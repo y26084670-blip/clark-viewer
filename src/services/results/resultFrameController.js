@@ -28,27 +28,41 @@ export function sameFrameContext(a, b) {
 }
 
 function sameSelection(a = [], b = []) {
+  if (a === b) return true;
   const left = [...a].sort((x, y) => x - y);
   const right = [...b].sort((x, y) => x - y);
   return left.length === right.length && left.every((id, i) => id === right[i]);
 }
 
-export function createResultFrameController({ load, publish, onPerformance, performanceEnabled,
+export function sameLayerRequest(a, b) {
+  return a?.key === b?.key && a?.quantityKey === b?.quantityKey && a?.volumeMode === b?.volumeMode
+    && a?.budget === b?.budget && a?.residualRevision === b?.residualRevision && sameSelection(a?.selected, b?.selected);
+}
+
+export function sameLayerFrameRequest(a, b) {
+  return a.task === b.task && a.time === b.time && a.symmetry === b.symmetry
+    && a.layers.length === b.layers.length && a.layers.every((layer, i) => sameLayerRequest(layer, b.layers[i]))
+    && a.streamlineMethod === b.streamlineMethod && a.streamlineTolerance === b.streamlineTolerance
+    && a.streamlineSeeds?.length === b.streamlineSeeds?.length
+    && (a.streamlineSeeds ?? []).every((seed, i) => seed === b.streamlineSeeds[i]);
+}
+
+export function createResultFrameController({ load, publish, onPerformance, performanceEnabled, sameRequest,
   now = () => performance.now(),
   schedule = callback => requestAnimationFrame(callback),
   cancel = id => cancelAnimationFrame(id) }) {
   let requested = null, pending = null, frame = null;
-  let active = false, disposed = false, revision = 0, scheduled = null;
+  let active = false, disposed = false, paused = false, failed = false, revision = 0, scheduled = null;
   let requests = 0, started = 0, published = 0, skipped = 0;
   const profiling = () => Boolean(onPerformance) && (typeof performanceEnabled !== "function" || performanceEnabled());
   const emit = (loading, error = "") => publish({ frame, requested, loading, error });
   function enqueue() {
-    if (disposed || active || !pending || scheduled !== null) return;
+    if (disposed || paused || active || !pending || scheduled !== null) return;
     scheduled = schedule(run);
   }
   async function run() {
     scheduled = null;
-    if (disposed || active || !pending) return;
+    if (disposed || paused || active || !pending) return;
     const item = pending;
     pending = null;
     active = true;
@@ -59,6 +73,7 @@ export function createResultFrameController({ load, publish, onPerformance, perf
       const value = await load(item.request);
       if (!disposed && item.revision === revision) {
         frame = { request: item.request, value };
+        failed = Boolean(value?.errors?.length);
         emit(false);
         if (profile) published++;
         if (profile) {
@@ -69,7 +84,7 @@ export function createResultFrameController({ load, publish, onPerformance, perf
         }
       } else if (!disposed && profile) skipped++;
     } catch (error) {
-      if (!disposed && item.revision === revision) emit(false, error.message ?? String(error));
+      if (!disposed && item.revision === revision) { failed = true; emit(false, error.message ?? String(error)); }
     } finally {
       active = false;
       enqueue();
@@ -77,7 +92,8 @@ export function createResultFrameController({ load, publish, onPerformance, perf
   }
   return {
     request(next) {
-      if (disposed) return;
+      if (disposed || (next && requested && !failed && sameRequest?.(requested, next))) return;
+      failed = false;
       revision++;
       const profile = profiling();
       if (next && profile) requests++;
@@ -88,6 +104,11 @@ export function createResultFrameController({ load, publish, onPerformance, perf
       if (!next && scheduled !== null) { cancel(scheduled); scheduled = null; }
       emit(Boolean(next));
       enqueue();
+    },
+    setPaused(value) {
+      paused = value;
+      if (paused && scheduled !== null) { cancel(scheduled); scheduled = null; }
+      if (!paused) enqueue();
     },
     close() {
       disposed = true; revision++; pending = null; frame = null; requested = null;

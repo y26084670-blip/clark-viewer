@@ -368,6 +368,43 @@
   pointer-events: auto;
 }
 
+.geometry-scale-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 7px;
+  padding: 2px 5px;
+  border: 1px solid #697683;
+  border-radius: 3px;
+  background: #303943;
+  color: #edf2f7;
+  font-size: 12px;
+}
+.geometry-scale-header .geometry-overlay-drag-handle {
+  flex: 1;
+  padding: 2px 0;
+  border: 0;
+  white-space: nowrap;
+}
+.geometry-scale-header label { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.geometry-scale-header input { margin: 0; }
+.geometry-scale-header .geometry-overlay-drag-handle:active { cursor: grabbing; }
+.geometry-scalar-legend-limits input {
+  box-sizing: border-box;
+  width: 39%;
+  min-width: 0;
+  margin-top: 2px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  background: #222b34;
+  border: 1px solid #8393a1;
+  border-radius: 2px;
+  pointer-events: auto;
+}
+.geometry-scalar-legend-limits input:last-child { text-align: right; }
+.geometry-scale-middle { align-self: center; }
+.geometry-scale-error { color: #ffd6a2; }
 .geometry-scalar-legend-list { display: flex; flex-direction: column-reverse; gap: 8px; }
 
 .geometry-scalar-legend {

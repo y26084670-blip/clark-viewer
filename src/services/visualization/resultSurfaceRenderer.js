@@ -1,4 +1,4 @@
-import { normalizeResultPalette, resultScalarColor } from "./resultScalarColors.js";
+import { normalizeResultPalette, resultScalarColor, resultFieldCoordinate, RESULT_COLOR_SCALE_GLSL } from "./resultScalarColors.js";
 
 export const RESULT_SURFACE_VERTEX_SHADER = `
 attribute float aScalar;
@@ -8,12 +8,13 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 export const RESULT_SURFACE_FRAGMENT_SHADER = `
+${RESULT_COLOR_SCALE_GLSL}
 uniform sampler2D uPalette;
 uniform float uOpacity;
 varying float vScalar;
 void main() {
   if (uOpacity <= 0.0) discard;
-  float value = clamp(vScalar, 0.0, 1.0);
+  float value = palettePosition(vScalar);
   vec3 color = texture2D(uPalette, vec2((value * 255.0 + 0.5) / 256.0, 0.5)).rgb;
   gl_FragColor = vec4(color, uOpacity);
   #include <colorspace_fragment>
@@ -43,7 +44,7 @@ function geometryFor(THREE, surface) {
 function newSurfaceMesh(THREE, surface) {
   const palette = paletteTexture(THREE);
   const material = new THREE.ShaderMaterial({
-    uniforms: { uPalette: { value: palette }, uOpacity: { value: 1 } },
+    uniforms: { uColorScale: { value: new THREE.Vector3() }, uPalette: { value: palette }, uOpacity: { value: 1 } },
     vertexShader: RESULT_SURFACE_VERTEX_SHADER, fragmentShader: RESULT_SURFACE_FRAGMENT_SHADER,
     side: THREE.DoubleSide, transparent: true, depthTest: true, depthWrite: false,
     forceSinglePass: true, toneMapped: false,
@@ -62,17 +63,8 @@ export function disposeResultSurfaceMesh(mesh) {
   for (const texture of mesh.material.userData.resultOwnedTextures ?? []) texture.dispose();
   mesh.material.dispose();
 }
-function scalarPosition(value, minimum, maximum) {
-  if (!(maximum > minimum)) return 0.5;
-  const span = maximum - minimum;
-  // Keep values outside the range until fragment interpolation; clamping vertex
-  // values or interpolating RGB would change the field within each triangle.
-  return Number.isFinite(span) ? (value - minimum) / span
-    : (value / 2 - minimum / 2) / (maximum / 2 - minimum / 2);
-}
-
 /** Reuse surface geometry, materials and palette across time and display changes. */
-export function updateResultSurfaceMeshes(THREE, root, surfaces, { minimum, maximum, palette = "Viridis", opacity = 1 } = {}) {
+export function updateResultSurfaceMeshes(THREE, root, surfaces, { minimum, maximum, logScale, palette = "Viridis", opacity = 1 } = {}) {
   const remaining = new Map(root.children.filter(child => child.name === "result-surface-domain")
     .map(child => [child.userData.domainKey, child]));
   for (const surface of surfaces) {
@@ -103,12 +95,14 @@ export function updateResultSurfaceMeshes(THREE, root, surfaces, { minimum, maxi
       position.needsUpdate = true; geometry.computeBoundingBox(); geometry.computeBoundingSphere();
     }
     if (rebuilt || previous !== surface || mesh.userData.fieldRevision !== surface.revision
-      || mesh.userData.minimum !== minimum || mesh.userData.maximum !== maximum) {
+      || mesh.userData.minimum !== minimum || mesh.userData.maximum !== maximum || mesh.userData.logMode !== (logScale?.mode ?? 0)) {
       const scalar = geometry.getAttribute("aScalar");
-      for (let i = 0; i < scalar.array.length; i++) scalar.array[i] = scalarPosition(surface.values[i], minimum, maximum);
+      for (let i = 0; i < scalar.array.length; i++) scalar.array[i] = resultFieldCoordinate(surface.values[i], minimum, maximum, logScale);
       scalar.needsUpdate = true;
     }
     mesh.userData.field = surface; mesh.userData.fieldRevision = surface.revision;
+    mesh.userData.logMode = logScale?.mode ?? 0;
+    mesh.material.uniforms.uColorScale.value.set(logScale?.mode ?? 0, logScale?.a ?? 0, logScale?.b ?? 0);
     mesh.userData.minimum = minimum; mesh.userData.maximum = maximum;
     mesh.material.uniforms.uOpacity.value = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
     updatePalette(mesh.material.uniforms.uPalette.value, normalizeResultPalette(palette));

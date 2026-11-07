@@ -1,5 +1,5 @@
 import { primitiveVisible, instanceVisible } from "./geometryRenderFilters.js";
-import { normalizeResultPalette, resultScalarColor } from "./resultScalarColors.js";
+import { normalizeResultPalette, resultScalarColor, resultLogScale } from "./resultScalarColors.js";
 
 let Line2, LineGeometry, LineMaterial, rendererModules;
 // Keep Three.js out of the initial application bundle, just like the viewport's
@@ -128,11 +128,17 @@ export function resizeStreamlineMaterials(root, width, height) {
 }
 
 export function updateStreamlineMeshes(THREE,root,lines=[],{
-  filters={},selected=null,width=2,colorMap=true,palette="Rainbow",resolution=[1,1],
+  filters={},selected=null,width=2,colorMap=true,palette="Rainbow",logarithmic=false,manualLimits,resolution=[1,1],
 }={}) {
   width = Number.isFinite(width) ? Math.max(1, Math.min(10, width)) : 2;
   palette = normalizeResultPalette(palette);
   const ranges = colorMap ? colorRanges(lines, filters) : new Map();
+  for (const range of ranges.values()) {
+    range.scaleId = range.key;
+    const limits = manualLimits?.get(range.key);
+    if (limits) { range.minimum = limits.minimum; range.maximum = limits.maximum; }
+    range.logScale = resultLogScale(range.minimum, range.maximum, logarithmic);
+  }
   const rgb = new THREE.Color();
   const old=new Map(root.children.map(object=>[object.userData.streamlinePart,object]));
   for(const line of lines)for(let i=0;i<line.paths.length;i++) {
@@ -166,12 +172,12 @@ export function updateStreamlineMeshes(THREE,root,lines=[],{
     }
     const range = ranges.get(line.quantityKey ?? line.id);
     const colored = !!(colorMap && range && path.magnitudes?.length === path.positions.length / 3);
-    const colorKey = `${palette}:${range?.minimum}:${range?.maximum}`;
+    const colorKey = `${palette}:${range?.minimum}:${range?.maximum}:${logarithmic}`;
     if (colored && (object.userData.colorPath !== path || object.userData.colorKey !== colorKey)) {
       const starts=object.geometry.getAttribute("instanceColorStart"),ends=object.geometry.getAttribute("instanceColorEnd");
       for(let n=0;n<path.magnitudes.length;n++) {
         const value=path.magnitudes[n];
-        if(Number.isFinite(value) && value>=0) rgb.setRGB(...resultScalarColor(value,range.minimum,range.maximum,palette),THREE.SRGBColorSpace);
+        if(Number.isFinite(value) && value>=0) rgb.setRGB(...resultScalarColor(value,range.minimum,range.maximum,palette,range.logScale),THREE.SRGBColorSpace);
         else rgb.setHex(0xf4f4f4); // An undefined boundary value must not become a false zero.
         if(n<starts.count)starts.setXYZ(n,rgb.r,rgb.g,rgb.b);
         if(n>0)ends.setXYZ(n-1,rgb.r,rgb.g,rgb.b);

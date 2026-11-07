@@ -31,7 +31,7 @@ function coneMaterial(THREE, background) {
 }
 
 export function updateResultCones(THREE, root, vectors, { scales, maximumMagnitude, sceneDiagonal,
-  lengthReference, normalizedLength = null, displayRange, palette, background = 0x141a20 }) {
+  lengthReference, normalizedLength = null, displayRange, palette, logScale, background = 0x141a20 }) {
   let minimum = Infinity, maximum = -Infinity;
   const cones = [];
   for (const item of vectors) {
@@ -61,7 +61,7 @@ export function updateResultCones(THREE, root, vectors, { scales, maximumMagnitu
     direction.fromArray(item.vector).normalize(); rotation.setFromUnitVectors(up, direction);
     position.fromArray(item.origin).addScaledVector(direction, length / 2);
     mesh.setMatrixAt(index, matrix.compose(position, rotation, scale.set(radius, length, radius)));
-    color.setRGB(...resultScalarColor(item.magnitude, minimum, maximum, palette), THREE.SRGBColorSpace);
+    color.setRGB(...resultScalarColor(item.magnitude, minimum, maximum, palette, logScale), THREE.SRGBColorSpace);
     mesh.setColorAt(index, color);
   });
   mesh.count = cones.length; mesh.visible = cones.length > 0;

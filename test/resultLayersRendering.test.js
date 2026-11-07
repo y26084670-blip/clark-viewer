@@ -557,3 +557,25 @@ for (const style of ["thin", "solid", "cones"]) test(`ordinary ${style} vectors 
   assert.equal(root.visible, true);
   detail.dispose(); clean(states);
 });
+
+test("one manual decade midpoint colours points, sticks, arrows and cones without changing magnitudes", () => withCanvas(() => {
+  const data = layer("elements", [item(1), item(10), item(100)], {quantityKey: "M"});
+  const limits = new Map([["elements:vector:M", {minimum: 1, maximum: 100}]]);
+  const options = {manualLimits: limits, logarithmic: true, palette: "Rainbow"};
+  let states = new Map();
+  for (const [style, colorMap, name, index] of [
+    ["thin", true, "result-vector-color-nodes", 1],
+    ["thin", false, "prescribed-source-magnetization", 2],
+    ["solid", false, "prescribed-source-magnetization-shaft", 1],
+    ["cones", false, "result-cones", 1],
+  ]) {
+    states = run(states, [data], {...options, style, colorMap});
+    const state = states.get("elements"), mesh = state.vectorRoot.getObjectByName(name);
+    const color = new THREE.Color().fromBufferAttribute(mesh.instanceColor ?? mesh.geometry.getAttribute("color"), index);
+    assert.ok(color.r < 1e-5 && color.g > .999 && color.b < 1e-5, name);
+    assert.deepEqual([state.legends[0].minimum, state.legends[0].maximum], [1,100]);
+    assert.equal(state.legends[0].logScale.mode, 1);
+  }
+  assert.deepEqual(data.scene.vectors.map(point => point.magnitude), [1,10,100]);
+  clean(states);
+}));

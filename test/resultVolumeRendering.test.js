@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as THREE from "three";
-import { RESULT_SCALAR_PALETTES, resultScalarColor, resultScalarLegendBackground } from "../src/services/visualization/resultScalarColors.js";
+import { RESULT_SCALAR_PALETTES, resultScalarColor, resultScalarLegendBackground, resultScalarPosition, resultLogScale, resultScaleMidpoint } from "../src/services/visualization/resultScalarColors.js";
 import { updateResultVolumeMeshes, disposeResultVolumeMesh } from "../src/services/visualization/resultVolumeRenderer.js";
 
 function domain(key = "element:1:0:0:0") {
@@ -90,4 +90,37 @@ test("volume camera transform is correct for both projections and a camera insid
     }
   }
   disposeResultVolumeMesh(mesh);
+});
+
+test("log colours use decades, support signed/zero data, clamp limits and preserve constants", () => {
+  for (const [low, high, mid] of [[1, 100, 10], [-100, -1, -10], [-100, 100, 0], [1e-300, 1e300, 1]]) {
+    const log = resultLogScale(low, high, true);
+    assert.equal(resultScalarPosition(low, low, high, log), 0);
+    assert.equal(resultScalarPosition(high, low, high, log), 1);
+    assert.ok(Math.abs(resultScalarPosition(mid, low, high, log) - 0.5) < 1e-12);
+    assert.ok(Math.abs(resultScaleMidpoint(low, high, log) - mid) < 1e-11);
+    assert.equal(resultScalarPosition(-Infinity,low,high,log),0);
+    assert.equal(resultScalarPosition(Infinity,low,high,log),1);
+  }
+  for (const [low, high] of [[0, 1000], [-10, 0], [-1, 100]]) {
+    const log = resultLogScale(low, high, true);
+    const middle = resultScaleMidpoint(low, high, log);
+    assert.ok(Math.abs(resultScalarPosition(middle, low, high, log) - 0.5) < 1e-12);
+  }
+  assert.equal(resultScalarPosition(5, 5, 5, resultLogScale(5, 5, true)), 0.5);
+});
+
+test("custom/log volume fields retain physical coordinates and the mask until GPU interpolation", () => {
+  const root = new THREE.Group(), field = domain();
+  field.values.set([-4, 1, 10, 100, 201]); field.mask[2] = 0;
+  const opts = {minimum: 1, maximum: 100, manual: true};
+  updateResultVolumeMeshes(THREE, root, [field], opts);
+  const mesh = root.children[0], uniforms = mesh.material.uniforms, data = uniforms.uField.value.image.data;
+  assert.ok(data instanceof Float32Array); assert.equal(uniforms.uField.value.minFilter, THREE.NearestFilter);
+  assert.ok(data[0] < 0 && data[8] > 1);
+  assert.deepEqual([...data.slice(2,8)], [0,1,0,0,1,1]);
+  updateResultVolumeMeshes(THREE, root, [field], {...opts, logScale: resultLogScale(1,100,true)});
+  assert.equal(root.children[0], mesh); assert.equal(uniforms.uColorScale.value.x, 1);
+  updateResultVolumeMeshes(THREE, root, [field], {...opts, manual: false});
+  assert.ok(root.children[0].material.uniforms.uField.value.image.data instanceof Uint8Array);
 });

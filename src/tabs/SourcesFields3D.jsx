@@ -7,10 +7,11 @@ import { ELEMENT_SELECTION_PRESETS, selectElementPreset } from "../services/elem
 import { ResultsGeometryViewport } from "../components/geometry/ResultsGeometryViewport.jsx";
 import { GeometryMaterialLegend } from "../components/geometry/GeometryMaterialLegend.jsx";
 import { TimeSlider } from "../components/TimeSlider.jsx";
-import { QUANTITIES, assignedHtsElements } from "../services/results/resultMappings.js";
+import { QUANTITIES, assignedHtsElements, sourceRecords } from "../services/results/resultMappings.js";
 import { resultDisplaySelection, useResultFrame } from "../services/results/resultRequests.js";
 import { RESULT_LAYER_GROUPS, RESULT_LAYER_QUANTITY_LABELS } from "../services/results/resultLayerDefinitions.js";
 import { createResultLayerReader } from "../services/results/resultLayerRequests.js";
+import { relativeConductivityCycleRange } from "../services/results/relativeConductivity.js";
 import { applyResultGlobalRange, resultGlobalScale } from "../services/results/resultGlobalScale.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import { movie3DFilenamePrefix } from "../services/movie/movieFilename.js";
@@ -316,7 +317,30 @@ export function SourcesFields3D(props) {
   const profileResults = () => graphResult().frame?.value.profiles ?? [];
   const graphBusy = () => graphResult().loading;
   const graphError = () => [graphResult().error, ...(graphResult().frame?.value.errors ?? []).map(e => e.message)].filter(Boolean).join(" · ");
-  const globalRanges = createMemo(() => resultGlobalScale(props.task, requestedLayers(), streamlineSeeds()));
+  const conductivityIds = createMemo(() => {
+    if (!globalMinMax() || graphsOnly() || !props.task) return "";
+    const layer = requestedLayers().find(item => item.quantityKey === "sigmaRelative");
+    if (!layer?.selected.length) return "";
+    const selected = new Set(layer.selected);
+    return sourceRecords(props.task, "JE").filter(record => record.targ === 0 && selected.has(record.id))
+      .map(record => record.id).join(",");
+  });
+  const [cycleRange, setCycleRange] = createSignal(null);
+  createEffect(() => {
+    const task = props.task, ids = conductivityIds();
+    if (!task || !ids) { setCycleRange(null); return; }
+    const controller = new AbortController();
+    const publish = range => { if (!controller.signal.aborted) setCycleRange({ task, ids, range }); };
+    onCleanup(() => controller.abort());
+    publish({ available: false, state: "loading", reason: "Читаются пределы σ/j_gmin за весь расчёт" });
+    relativeConductivityCycleRange(task, ids.split(",").map(Number), controller.signal).then(publish,
+      error => publish({ available: false, state: "unavailable", reason: error.message }));
+  });
+  const conductivityRange = () => {
+    const current = cycleRange();
+    return current && current.task === props.task && current.ids === conductivityIds() ? current.range : null;
+  };
+  const globalRanges = createMemo(() => resultGlobalScale(props.task, requestedLayers(), streamlineSeeds(), conductivityRange()));
   const effectiveGlobalMinMax = createMemo(() => globalMinMax() && globalRanges().available);
   const hasRequestedResults = createMemo(() => !graphsOnly() && requestedLayers().some(layer => layer.quantityKey !== "none" && layer.selected.length > 0));
   const layerReader = createResultLayerReader();
@@ -346,9 +370,10 @@ export function SourcesFields3D(props) {
   const selections = createMemo(() => ({
     elements: props.elements.map(id => id - 1), regions: props.regions.map(id => id - 1),
   }));
-  const captureFrameKey = createMemo(() => ({ frame: displayed(), graphs: graphResult().frame }));
+  const captureFrameKey = createMemo(() => ({ frame: displayed(), graphs: graphResult().frame, ranges: globalMinMax() ? globalRanges() : null }));
   const movie = createMovieTabAdapter(props, { title: "Источники / Поле 3D",
     filenamePrefix: () => movie3DFilenamePrefix(requestedLayers(), streamlines()), readFrame: index => {
+    if (conductivityIds() && (!conductivityRange() || conductivityRange().state === "loading")) return { ready: false };
     const status = completedMovieFrame(result(), { task: props.task, index });
     if (!status.ready) return status;
     const graphs = completedMovieFrame(graphResult(), { task: props.task, index });
@@ -448,12 +473,13 @@ export function SourcesFields3D(props) {
                   disabled={!hasVectors() || props.movieBusy}
                   onChange={event => changeNormalizeVectors(event.currentTarget.checked)} /> Нормализовать вектора
               </label>
-              <label title={globalRanges().available ? "Общие пределы за весь расчёт из HDF5." : globalRanges().reason}>
-                <input type="checkbox" aria-label="Общий минимакс" checked={effectiveGlobalMinMax()}
-                  disabled={props.movieBusy || !globalRanges().available}
-                  onChange={event => !props.movieBusy && globalRanges().available
-                    && setGlobalMinMax(event.currentTarget.checked)} /> Общий минимакс
+              <label title={globalRanges().available ? "Общие пределы за весь расчёт." : globalRanges().reason}>
+                <input type="checkbox" aria-label="Общий минимакс" checked={globalMinMax()}
+                  onChange={event => setGlobalMinMax(event.currentTarget.checked)} /> Общий минимакс
               </label>
+              <Show when={globalMinMax() && !globalRanges().available}>
+                <div class="source-toolbar-empty" role="status">{globalRanges().reason}. Показаны покадровые пределы.</div>
+              </Show>
               <button type="button" class="source-toolbar-menu-button" aria-haspopup="dialog"
                 title="Открыть панель графиков" onClick={() => setOpenSourceMenu("graphs")}>Графики</button>
             </div>

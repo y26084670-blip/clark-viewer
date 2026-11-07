@@ -17,17 +17,87 @@ const PALETTE_TABLES = Object.fromEntries(Object.entries(HEX_PALETTES).map(([nam
 export function normalizeResultPalette(value) {
   return RESULT_SCALAR_PALETTES.includes(value) ? value : "Viridis";
 }
-export function resultScalarPosition(value, minimum, maximum) {
+function linearCoordinate(value, minimum, maximum) {
+  if (!(maximum > minimum)) return 0.5;
   const span = maximum - minimum;
-  return maximum > minimum
-    ? Math.max(0, Math.min(1, Number.isFinite(span)
-      ? (value - minimum) / span
-      : (value / 2 - minimum / 2) / (maximum / 2 - minimum / 2)))
-    : 0.5;
+  return Number.isFinite(span) ? (value - minimum) / span
+    : (value / 2 - minimum / 2) / (maximum / 2 - minimum / 2);
 }
+
+const signedLog = x => Math.sign(x) * Math.log1p(Math.abs(x) * 1e6);
+function logRatio(value, base) {
+  const difference = (value - base) / base;
+  return Number.isFinite(difference) ? Math.log1p(difference) : Math.log(value) - Math.log(base);
+}
+
+/** Positive and negative decades are exact. At zero use a unit-independent
+ * symmetric log with a linear neighbourhood of one millionth of the extent. */
+export function resultLogScale(minimum, maximum, enabled) {
+  if (!enabled || !(maximum > minimum)) return null;
+  if (minimum > 0 || maximum < 0) {
+    const negative = maximum < 0;
+    const low = negative ? -maximum : minimum, high = negative ? -minimum : maximum;
+    return { mode: negative ? -1 : 1, low, high, a: logRatio(high, low), b: 0 };
+  }
+  const extent = Math.max(-minimum, maximum);
+  return { mode: 2, extent, a: signedLog(minimum / extent), b: signedLog(maximum / extent) };
+}
+
+export function resultScalarPosition(value, minimum, maximum, logScale) {
+  if (!(maximum > minimum)) return 0.5;
+  if (value <= minimum) return 0;
+  if (value >= maximum) return 1;
+  if (!logScale) return linearCoordinate(value, minimum, maximum);
+  if (logScale.mode === 2) return (signedLog(value / logScale.extent) - logScale.a) / (logScale.b - logScale.a);
+  const fraction = logRatio(Math.abs(value), logScale.low) / logScale.a;
+  return logScale.mode < 0 ? 1 - fraction : fraction;
+}
+
+export function resultScaleMidpoint(minimum, maximum, logScale) {
+  if (!logScale) return minimum / 2 + maximum / 2;
+  if (logScale.mode !== 2) return logScale.mode * Math.exp((Math.log(logScale.low) + Math.log(logScale.high)) / 2);
+  const middle = (logScale.a + logScale.b) / 2;
+  return logScale.extent * (Math.sign(middle) * Math.expm1(Math.abs(middle)) / 1e6);
+}
+
+// Keep a linear physical coordinate until interpolation at the actual fragment.
+export function resultFieldCoordinate(value, minimum, maximum, logScale) {
+  let coordinate;
+  if (logScale?.mode === 2) coordinate = value / logScale.extent;
+  else if (logScale?.mode === -1) coordinate = linearCoordinate(-value, logScale.low, logScale.high);
+  else coordinate = linearCoordinate(value, minimum, maximum);
+  // A narrow manual window may place valid field samples beyond Float32.
+  // Keep zero interpolation weights from producing 0 * Infinity on the GPU.
+  const maxFloat32 = 3.4028234663852886e38;
+  return Math.max(-maxFloat32, Math.min(maxFloat32, coordinate));
+}
+
+export const RESULT_COLOR_SCALE_GLSL = `
+uniform vec3 uColorScale;
+float palettePosition(float coordinate) {
+  float mode = uColorScale.x;
+  float t = clamp(coordinate, 0.0, 1.0);
+  if (mode == 0.0) return t;
+  if (mode == 2.0) {
+    float x = clamp(coordinate, -1.0, 1.0) * 1e6;
+    float y = sign(x) * (abs(x) < 0.0001 ? abs(x) : log(1.0 + abs(x)));
+    return clamp((y - uColorScale.y) / (uColorScale.z - uColorScale.y), 0.0, 1.0);
+  }
+  float d = uColorScale.y;
+  if (t > 0.0 && t < 1.0) {
+    if (d < 0.001) t += 0.5 * d * t * (1.0 - t);
+    else if (d < 16.0) t = log(1.0 + t * (exp(d) - 1.0)) / d;
+    else {
+      float z = log(t) + d;
+      t = (max(z, 0.0) + log(1.0 + exp(-abs(z)))) / d;
+    }
+  }
+  return mode < 0.0 ? 1.0 - t : t;
+}`;
+
 /** sRGB in [0,1]. Constant fields, including all-zero frames, use the midpoint. */
-export function resultScalarColor(value, minimum, maximum, palette = "Viridis") {
-  const position = resultScalarPosition(value, minimum, maximum);
+export function resultScalarColor(value, minimum, maximum, palette = "Viridis", logScale) {
+  const position = resultScalarPosition(value, minimum, maximum, logScale);
   const name = normalizeResultPalette(palette);
   if (name === "Rainbow") {
     const last = RAINBOW.findIndex(stop => stop[0] >= position);

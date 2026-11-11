@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createTaskSelectionChannel, readTaskSelection, TASK_SELECTION_CHANNEL } from "../src/services/taskSelectionChannel.js";
+import { BroadcastChannel as NativeBroadcastChannel } from "node:worker_threads";
+import { createTaskSelectionChannel as createChannel, readTaskSelection, TASK_SELECTION_CHANNEL } from "../src/services/taskSelectionChannel.js";
+
+const createTaskSelectionChannel = options => createChannel({ discoveryMs: 0, ...options });
 
 function directory(name, children = [], options = {}) {
   return { name, kind: "directory", identity: options.identity ?? {},
@@ -120,8 +123,11 @@ test("both directions receive and acknowledge exactly once without echo requests
     await editor.select(selection(root)); await viewer.select(selection(root));
     assert.deepEqual(received, ["viewer", "editor"]);
     assert.deepEqual(focused, ["viewer", "editor"]);
-    assert.deepEqual(transport.messages.map(item => item.type), ["select-task", "selection-result", "select-task", "selection-result"]);
-    assert.notEqual(transport.messages[0].requestId, transport.messages[2].requestId);
+    assert.deepEqual(transport.messages.map(item => item.type), [
+      "find-receiver", "receiver-offer", "select-task", "selection-result",
+      "find-receiver", "receiver-offer", "select-task", "selection-result",
+    ]);
+    assert.notEqual(transport.messages[0].requestId, transport.messages[4].requestId);
   } finally { editor.dispose(); viewer.dispose(); }
 });
 
@@ -156,10 +162,10 @@ test("wrong targets, unknown versions and unrelated responses are ignored", asyn
     onSelection() { called++; } });
   const remote = new transport.Channel(TASK_SELECTION_CHANNEL);
   try {
-    const message = { version: 1, type: "select-task", source: "viewer", target: "editor", requestId: "test" };
+    const message = { version: 2, type: "select-task", source: "viewer", target: "editor", requestId: "test", sourceInstanceId: "remote" };
     remote.postMessage({ ...message, target: "viewer" });
     remote.postMessage({ ...message, source: "editor" });
-    remote.postMessage({ ...message, version: 2 });
+    remote.postMessage({ ...message, version: 1 });
     remote.postMessage({ ...message, type: "selection-result", ok: true });
     await new Promise(resolve => queueMicrotask(resolve)); assert.equal(called, 0);
   } finally { remote.close(); editor.dispose(); }
@@ -253,5 +259,150 @@ test("selection transport includes the granted disk for both directions", async 
     const sender = createTaskSelectionChannel({ app, BroadcastChannelClass: Channel });
     try { await sender.select({ ...selection(root), diskHandle: disk }); assert.equal(received.diskHandle, disk); }
     finally { sender.dispose(); receiver.dispose(); }
+  }
+});
+
+test("several ready tabs execute in the most recently active receiver only, in both directions", async () => {
+  for (const app of ["editor", "viewer"]) {
+    const transport = bus(), { root } = fixture(), selected = [], focused = [];
+    const target = app === "editor" ? "viewer" : "editor";
+    const peers = [10, 20].map(lastActiveAt => createTaskSelectionChannel({
+      app: target, BroadcastChannelClass: transport.Channel,
+      getActivity: () => ({ focused: false, lastActiveAt }),
+      onSelection: () => selected.push(lastActiveAt), focusWindow: () => focused.push(lastActiveAt),
+    }));
+    const sender = createTaskSelectionChannel({ app, BroadcastChannelClass: transport.Channel });
+    try {
+      await sender.select(selection(root));
+      assert.deepEqual(selected, [20]); assert.deepEqual(focused, [20]);
+      assert.equal(transport.messages.filter(message => message.type === "select-task").length, 1);
+    } finally { sender.dispose(); peers.forEach(peer => peer.dispose()); }
+  }
+});
+
+test("a busy recent tab cannot overrule a successful fallback tab, in both directions", async () => {
+  for (const app of ["editor", "viewer"]) {
+    const transport = bus(), { root } = fixture(), calls = [], focused = [];
+    const target = app === "editor" ? "viewer" : "editor";
+    const busy = createTaskSelectionChannel({ app: target, BroadcastChannelClass: transport.Channel,
+      getActivity: () => ({ lastActiveAt: 20 }),
+      onSelection() { calls.push("busy"); throw new Error("Занятое окно"); },
+      focusWindow() { assert.fail("busy receiver requested focus"); } });
+    const ready = createTaskSelectionChannel({ app: target, BroadcastChannelClass: transport.Channel,
+      getActivity: () => ({ lastActiveAt: 10 }),
+      async onSelection(request) { await readTaskSelection(root, request); calls.push("ready"); },
+      focusWindow() { focused.push("ready"); } });
+    const sender = createTaskSelectionChannel({ app, BroadcastChannelClass: transport.Channel });
+    try {
+      await sender.select(selection(root));
+      assert.deepEqual(calls, ["busy", "ready"]); assert.deepEqual(focused, ["ready"]);
+      const commands = transport.messages.filter(message => message.type === "select-task");
+      assert.equal(commands.length, 2); assert.notEqual(commands[0].targetInstanceId, commands[1].targetInstanceId);
+    } finally { sender.dispose(); busy.dispose(); ready.dispose(); }
+  }
+});
+
+test("all busy tabs return a failure after each addressed receiver has refused", async () => {
+  const transport = bus(), { root } = fixture(), calls = [];
+  const peers = [10, 20].map(lastActiveAt => createTaskSelectionChannel({
+    app: "viewer", BroadcastChannelClass: transport.Channel, getActivity: () => ({ lastActiveAt }),
+    onSelection() { calls.push(lastActiveAt); throw new Error(`Занято ${lastActiveAt}`); },
+  }));
+  const sender = createTaskSelectionChannel({ app: "editor", BroadcastChannelClass: transport.Channel });
+  try {
+    await assert.rejects(sender.select(selection(root)), /Занято 20/);
+    assert.deepEqual(calls, [20, 10]);
+  } finally { sender.dispose(); peers.forEach(peer => peer.dispose()); }
+});
+
+test("unaddressed, stale and legacy replies cannot finish an active request", async () => {
+  const transport = bus(), { root } = fixture();
+  let release, started, settled = false;
+  const begun = new Promise(resolve => { started = resolve; });
+  const pause = new Promise(resolve => { release = resolve; });
+  const sender = createTaskSelectionChannel({ app: "editor", BroadcastChannelClass: transport.Channel });
+  const busy = createTaskSelectionChannel({ app: "viewer", BroadcastChannelClass: transport.Channel,
+    getActivity: () => ({ lastActiveAt: 20 }), onSelection() { throw new Error("занят"); } });
+  const receiver = createTaskSelectionChannel({ app: "viewer", BroadcastChannelClass: transport.Channel,
+    getActivity: () => ({ lastActiveAt: 10 }), async onSelection() { started(); await pause; } });
+  const remote = new transport.Channel(TASK_SELECTION_CHANNEL);
+  try {
+    const result = sender.select(selection(root)).finally(() => { settled = true; });
+    await begun;
+    const replies = transport.messages.filter(message => message.type === "selection-result");
+    const stale = replies[0];
+    const command = transport.messages.filter(message => message.type === "select-task").at(-1);
+    remote.postMessage({ ...stale, ok: true });
+    remote.postMessage({ ...stale, sourceInstanceId: command.targetInstanceId, targetInstanceId: "other-tab", ok: true });
+    remote.postMessage({ ...stale, sourceInstanceId: command.targetInstanceId, version: 1, ok: true });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(settled, false);
+    release(); await result; assert.equal(settled, true);
+  } finally { release(); sender.dispose(); busy.dispose(); receiver.dispose(); remote.close(); }
+});
+
+test("disposal during discovery never executes a command later", async () => {
+  const transport = bus(), { root } = fixture(); let calls = 0;
+  const sender = createTaskSelectionChannel({ app: "editor", BroadcastChannelClass: transport.Channel, discoveryMs: 10 });
+  const receiver = createTaskSelectionChannel({ app: "viewer", BroadcastChannelClass: transport.Channel,
+    onSelection() { calls++; } });
+  try {
+    const result = sender.select(selection(root));
+    sender.dispose(); await assert.rejects(result, /Страница закрыта/);
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(calls, 0);
+    assert.equal(transport.messages.filter(message => message.type === "select-task").length, 0);
+  } finally { sender.dispose(); receiver.dispose(); }
+});
+
+test("a peer discovered after the initial collection window can still receive the command", async () => {
+  const transport = bus(), { root } = fixture(); let calls = 0, receiver;
+  class DelayedChannel extends transport.Channel {
+    postMessage(message) {
+      if (message.type === "receiver-offer") setTimeout(() => super.postMessage(message), 10);
+      else super.postMessage(message);
+    }
+  }
+  const sender = createTaskSelectionChannel({ app: "editor", BroadcastChannelClass: DelayedChannel });
+  receiver = createTaskSelectionChannel({ app: "viewer", BroadcastChannelClass: DelayedChannel,
+    onSelection() { calls++; } });
+  try { await sender.select(selection(root)); assert.equal(calls, 1); }
+  finally { sender.dispose(); receiver.dispose(); }
+});
+
+test("a structured-clone failure after discovery does not execute any receiver", async () => {
+  const transport = bus(), { root } = fixture(); let calls = 0;
+  class BrokenCommandChannel extends transport.Channel {
+    postMessage(message) {
+      if (message.type === "select-task") throw new DOMException("Cannot clone handle", "DataCloneError");
+      super.postMessage(message);
+    }
+  }
+  const sender = createTaskSelectionChannel({ app: "editor", BroadcastChannelClass: BrokenCommandChannel });
+  const receiver = createTaskSelectionChannel({ app: "viewer", BroadcastChannelClass: transport.Channel,
+    onSelection() { calls++; } });
+  try { await assert.rejects(sender.select(selection(root)), /Cannot clone handle/); assert.equal(calls, 0); }
+  finally { sender.dispose(); receiver.dispose(); }
+});
+
+test("native BroadcastChannel selects one receiver despite a busy duplicate in both directions", async () => {
+  for (const app of ["editor", "viewer"]) {
+    const suffix = globalThis.crypto.randomUUID(), calls = [];
+    class Channel extends NativeBroadcastChannel {
+      constructor(name) { super(`${name}.${suffix}`); }
+    }
+    const target = app === "editor" ? "viewer" : "editor";
+    const options = { BroadcastChannelClass: Channel, discoveryMs: 25, timeoutMs: 2000 };
+    const sender = createTaskSelectionChannel({ app, ...options });
+    const busy = createTaskSelectionChannel({ app: target, ...options,
+      getActivity: () => ({ lastActiveAt: 20 }),
+      onSelection() { calls.push("busy"); throw new Error("занят"); } });
+    const ready = createTaskSelectionChannel({ app: target, ...options,
+      getActivity: () => ({ lastActiveAt: 10 }),
+      onSelection(request) { calls.push("ready"); assert.equal(request.baseHandle.name, "disk"); } });
+    try {
+      await sender.select(selection({ name: "disk" }));
+      assert.deepEqual(calls, ["busy", "ready"]);
+    } finally { sender.dispose(); busy.dispose(); ready.dispose(); }
   }
 });

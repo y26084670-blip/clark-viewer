@@ -71,6 +71,12 @@ export function loadGraphContourRenderer() {
     }).catch(error => { modules = null; throw error; });
 }
 const dispose = object => object.traverse(child => { child.geometry?.dispose(); child.material?.dispose(); });
+export function createContourSegments(positions, materialOptions) {
+  const geometry = new LineSegmentsGeometry();
+  geometry.setPositions(positions);
+  const material = new LineMaterial({ worldUnits: false, toneMapped: false, depthWrite: false, ...materialOptions });
+  return new LineSegments2(geometry, material);
+}
 export function resizeGraphContours(root, width, height) {
   root?.traverse(object => { if (object.name === "graph-contour-line") object.material.resolution.set(width, height); });
 }
@@ -90,11 +96,10 @@ export function updateGraphContours(THREE, root, selected, preview, resolution =
     if (!positions.length) continue;
     const contour = new THREE.Group(); contour.name = "graph-contour"; contour.userData = { key, selection: current, preview };
     for (const [color, width, order] of [[0x111820, current.id === activeId ? 6 : 5, 40], [preview ? 0xffffff : 0xffdd38, 2.5, 41]]) {
-      const geometry = new LineSegmentsGeometry(); geometry.setPositions(positions);
-      const material = new LineMaterial({ color, linewidth: width, worldUnits: false, depthTest: true, depthWrite: false,
-        toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
-      material.resolution.set(...resolution);
-      const line = new LineSegments2(geometry, material); line.name = "graph-contour-line"; line.renderOrder = order;
+      const line = createContourSegments(positions, { color, linewidth: width, depthTest: true,
+        polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+      line.material.resolution.set(...resolution);
+      line.name = "graph-contour-line"; line.renderOrder = order;
       if (preview || order === 40) line.raycast = () => {};
       else line.userData = { contourId: current.id, tooltip: graphContourTooltip(mesh.userData.graph, mesh.userData.surface, current) };
       contour.add(line);

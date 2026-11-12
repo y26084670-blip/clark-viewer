@@ -1,8 +1,8 @@
-import { createMemo, createSignal, createUniqueId, For, Index, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, Index, onCleanup, onMount, Show } from "solid-js";
 import { useResultFrame } from "../services/results/resultRequests.js";
 import { installGeometryOverlayDrag } from "../services/visualization/geometryOverlayDrag.js";
 import { elementFaceCurrentsTableText } from "../services/visualization/chartTable.js";
-import { faceCurrentCellKey, formatSignificantNumber, selectedFaceCurrentTotal } from "../services/visualization/elementFaceCurrentsTable.js";
+import { faceCurrentCellKey, formatSignificantNumber, selectedFaceCurrentSections, selectedFaceCurrentTotal } from "../services/visualization/elementFaceCurrentsTable.js";
 import "./ElementFaceCurrentsDialog.css";
 
 const directions = ["D1 · 1→2", "D2 · 1→3", "D3 · 1→5"];
@@ -26,6 +26,14 @@ export function ElementFaceCurrentsDialog(props) {
   const [sumEnabled, setSumEnabled] = createSignal(false);
   const [selected, setSelected] = createSignal(new Set());
   const total = createMemo(() => !sumEnabled() ? 0 : error() ? null : selectedFaceCurrentTotal(groups(), selected()));
+  createEffect(() => {
+    const shown = frame();
+    const selection = shown && sumEnabled() && selected().size && !error()
+      ? { ...shown.request, sections: selectedFaceCurrentSections(shown.value, selected()) }
+      : null;
+    props.onFaceCurrentSelection?.(selection);
+  });
+  onCleanup(() => props.onFaceCurrentSelection?.(null));
   function changeSumMode(enabled) {
     setSumEnabled(enabled);
     if (!enabled) setSelected(new Set());
@@ -75,7 +83,7 @@ export function ElementFaceCurrentsDialog(props) {
           <span class="face-currents-step" title={stepLabel()}>{stepLabel()}</span>
           <span class="face-currents-task" title={props.task.name}>{props.task.name}</span>
         </div>
-        <label class="face-currents-sum-mode" title="Суммировать выбранные ячейки; повторный щелчок снимает выделение">
+        <label class="face-currents-sum-mode" title="Суммировать выбранные ячейки и показать контуры их сечений в 3D. Повторный щелчок снимает выделение.">
           <input type="checkbox" checked={sumEnabled()} onChange={event => changeSumMode(event.currentTarget.checked)} />
           Сумма
         </label>

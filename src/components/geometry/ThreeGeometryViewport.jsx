@@ -77,7 +77,8 @@ import { loadStreamlineRenderer, resizeStreamlineMaterials, streamlinePointerHan
 import { captureMovieCanvas } from "../../services/movie/movieCanvas.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../../services/movie/renderedFrameGate.js";
 import { updateGraphScene, disposeGraphScene } from "../../services/visualization/resultGraphRenderer.js";
-import { loadGraphContourRenderer, resizeGraphContours, sameContourSurface } from "../../services/visualization/resultGraphContours.js";
+import { createContourSegments, loadGraphContourRenderer, resizeGraphContours, sameContourSurface } from "../../services/visualization/resultGraphContours.js";
+import { faceCurrentContourPositions } from "../../services/visualization/elementFaceCurrentsTable.js";
 import { installGraphContourInteraction } from "../../services/visualization/resultGraphContourInteraction.js";
 import "../../services/visualization/resultGraphContours.css";
 
@@ -1495,6 +1496,7 @@ export function ThreeGeometryViewport(props) {
   let resultLayers = [];
   let streamlines = [], selectedStreamline = null, streamlineRoot = null;
   let graphRoot, graphsDirty = false;
+  let faceCurrentLines, faceCurrentContoursDirty = false;
   let graphContourInteraction, graphMenuElement;
   const [graphContourMenu, setGraphContourMenu] = createSignal(null);
   const [graphContourPreview, setGraphContourPreview] = createSignal(null);
@@ -1634,7 +1636,9 @@ export function ThreeGeometryViewport(props) {
         const {sceneModel, filters, mode, showEdges} = pendingGeometry;
         pendingGeometry = null;
         untrack(() => replaceGeometry(sceneModel, filters, mode, showEdges));
+        faceCurrentContoursDirty = true;
       }
+      if (faceCurrentContoursDirty) { faceCurrentContoursDirty = false; replaceFaceCurrentContours(); }
       if (sourcesDirty) { sourcesDirty = false; replacePrescribedSources(); }
       if (vectorsDirty) { vectorsDirty = false; replaceResultLayers(); }
       if (graphsDirty) { graphsDirty = false; replaceGraphs(); }
@@ -2438,6 +2442,18 @@ export function ThreeGeometryViewport(props) {
     if (graphRoot.parent !== helperRoot) helperRoot.add(graphRoot);
   };
 
+  const replaceFaceCurrentContours = () => {
+    releaseResultRoot(faceCurrentLines);
+    faceCurrentLines = null;
+    const positions = faceCurrentContourPositions(props.faceCurrentSections, vertexBatches);
+    if (!positions.length) return;
+    // Interior sections must remain legible through an opaque hexahedron.
+    faceCurrentLines = createContourSegments(positions, { color: 0x7ed3ff, linewidth: 3, transparent: true, depthTest: false });
+    faceCurrentLines.name = "face-current-contours";
+    faceCurrentLines.renderOrder = 50;
+    threeScene.add(faceCurrentLines);
+  };
+
   const updateMovingGeometry = (sceneModel, filters, mode, showEdges) => {
     const revision = props.geometryRevision;
     const context = geometryContext;
@@ -2866,6 +2882,13 @@ export function ThreeGeometryViewport(props) {
   });
 
   createEffect(() => {
+    props.faceCurrentSections;
+    if (!ready()) return;
+    faceCurrentContoursDirty = true;
+    requestRender();
+  });
+
+  createEffect(() => {
     props.graphResults; props.taskKey; props.graphInteractionBlocked; props.filters; props.resultVectorScale;
     if (ready()) untrack(() => graphContourInteraction?.close());
   });
@@ -2962,6 +2985,7 @@ export function ThreeGeometryViewport(props) {
     // the owning renderer before the generic helper traversal.
     if (THREE && streamlineRoot) updateStreamlineMeshes(THREE, streamlineRoot, []);
     disposeGraphScene(graphRoot);
+    releaseResultRoot(faceCurrentLines);
     for (const root of resultLayerRoots(parkedResultLayers)) releaseResultRoot(root);
     disposeObject(helperRoot);
     disposeObject(viewCubeRoot);

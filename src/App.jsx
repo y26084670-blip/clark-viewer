@@ -62,6 +62,7 @@ export default function App() {
   const sceneElements = createMemo(previous => active() === 1 ? elements() : previous, []);
   const sceneRegions = createMemo(previous => active() === 1 ? regions() : previous, []);
   const [toolsSelection, setToolsSelection] = createSignal(null);
+  const [faceCurrentSelection, setFaceCurrentSelection] = createSignal(null);
   const [plotRecipes, setPlotRecipes] = createSignal([]);
   const [protocolEntries, setProtocolEntries] = createSignal({});
   const [protocolSession, setProtocolSession] = createSignal({ handle: null, files: new Map(), lastFilename: "protocol.html" });
@@ -199,6 +200,7 @@ export default function App() {
         disabled={movieBusy()} onClick={() => { if (!movieBusy()) setActive(i()); }}>{title}</button>}</For>
       <ViewerToolsMenu task={task()} tabIndex={active()} frameCount={(task()?.general.countTimeSteps ?? 0) + 1}
         time={time()} getWorkspace={() => workspace}
+        onFaceCurrentSelection={setFaceCurrentSelection}
         onCreateProtocol={createProtocol}
         eligible={!movieDisabledReason()}
         taskActionsEligible={Boolean(task()) && !busy() && !movieBusy()}
@@ -214,6 +216,7 @@ export default function App() {
         <div style={{ display: active() === 1 ? "contents" : "none" }} inert={active() !== 1}>
           <ErrorBoundary fallback={tabError}><Suspense>
             <SourcesFields3D {...shared} task={loaded} active={active() === 1}
+              faceCurrentSelection={faceCurrentSelection()}
               time={sceneTime()} elements={sceneElements()} regions={sceneRegions()} />
           </Suspense></ErrorBoundary>
         </div>

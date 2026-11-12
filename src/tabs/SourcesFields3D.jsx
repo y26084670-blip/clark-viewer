@@ -610,6 +610,7 @@ export function SourcesFields3D(props) {
           onFlightStateChange={setFlightState}
           cameraRequest={cameraRequest()}
           prescribedSources={props.task?.mhj} taskKey={props.task} timeIndex={timeIndex()}
+          faceCurrentSelection={props.faceCurrentSelection}
           selections={selections()} resultLayers={graphsOnly() ? [] : resultLayers()}
           resultLayersPending={hasRequestedResults() && result().loading}
           resultError={[result().error, ...(value()?.errors ?? []).map(error => error.message)].filter(Boolean).join(" · ")}

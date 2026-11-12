@@ -360,7 +360,8 @@ export function ViewerToolsMenu(props) {
         </div>
       </Show>
       <Show when={currentsTask() && currentsTask() === props.task}>
-        <ElementFaceCurrentsDialog task={props.task} time={props.time} workspace={props.getWorkspace()} hidden={selectionTab()} onClose={closeFaceCurrents} />
+        <ElementFaceCurrentsDialog task={props.task} time={props.time} workspace={props.getWorkspace()} hidden={selectionTab()}
+          onFaceCurrentSelection={props.onFaceCurrentSelection} onClose={closeFaceCurrents} />
       </Show>
       <dialog ref={protocolsDialog} class="viewer-movie-dialog viewer-protocols-dialog" aria-labelledby={protocolsTitleId}
         aria-busy={protocolScanning() || Boolean(protocolOpening())}

@@ -167,6 +167,11 @@ export function ResultsGeometryViewport(props) {
   // Equal scene references suppress surface rebuilds for amplitude-only time
   // changes when the geometry itself has no trajectory.
   const displayScene = createMemo(() => displaySceneResult().scene);
+  const faceCurrentSections = () => {
+    const selection = props.faceCurrentSelection;
+    return selection && selection.task === props.model && selection.time === timeState().index
+      ? selection.sections : null;
+  };
   const cancelTimeSelection = () => {};
 
   const filters = createMemo(() => ({
@@ -677,6 +682,7 @@ export function ResultsGeometryViewport(props) {
             onFlightProjectionRestore={projection => setOrthographicView(projection === "orthographic")}
             onFlightError={setFlightNotice}
             scene={displayScene()}
+            faceCurrentSections={faceCurrentSections()}
             captureFrameKey={props.captureFrameKey}
             onCaptureReady={props.onCaptureReady}
             geometryRevision={props.model}

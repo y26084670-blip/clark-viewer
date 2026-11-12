@@ -112,6 +112,7 @@ export function ResultsGeometryViewport(props) {
     if (state) setOrthographicView(state.projection === "orthographic");
   });
   const [showEdges, setShowEdges] = createGeometryViewSetting("showEdges", true);
+  const [showOrigin, setShowOrigin] = createGeometryViewSetting("showOrigin", false);
   const [showVertices, setShowVertices] = createGeometryViewSetting("showVertices", false);
   const [showDiscretizationLines, setShowDiscretizationLines] =
     createGeometryViewSetting("showDiscretizationLines", false);
@@ -563,6 +564,11 @@ export function ResultsGeometryViewport(props) {
             <Show when={openPanel() === "general"}>
               <div class="geometry-viewer-options-title">Общие опции</div>
               <label>
+                <input type="checkbox" checked={showOrigin()}
+                  onChange={event => setShowOrigin(event.currentTarget.checked)} />
+                Показать начало СК
+              </label>
+              <label>
                 <input
                   type="checkbox"
                   checked={orthographicView()}
@@ -711,6 +717,7 @@ export function ResultsGeometryViewport(props) {
             mode="solid"
             geometryOpacity={1 - geometryTransparency() / 100}
             showEdges={showEdges()}
+            showOrigin={showOrigin()}
             showVertices={showVertices()}
             showDiscretizationLines={showDiscretizationLines()}
             showCentersAndNodes={showCentersAndNodes()}

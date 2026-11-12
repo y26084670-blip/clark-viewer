@@ -1404,6 +1404,28 @@ function createDiscretizationPoints(THREE, positions) {
   return points;
 }
 
+function createOriginAxes(THREE) {
+  const root = new THREE.Group();
+  root.name = "world-origin-axes";
+  for (const [direction, color] of [
+    [[1, 0, 0], 0xf05252],
+    [[0, 1, 0], 0x4bc26b],
+    [[0, 0, 1], 0x4c8ff2],
+  ]) {
+    const arrow = new THREE.Group();
+    const material = new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false });
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.72, 12), material);
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.28, 16), material.clone());
+    shaft.position.y = 0.36;
+    head.position.y = 0.86;
+    shaft.renderOrder = head.renderOrder = 30;
+    arrow.add(shaft, head);
+    arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...direction));
+    root.add(arrow);
+  }
+  return root;
+}
+
 function worldUnitsPerPixel(camera, target, viewportHeight) {
   const height = Math.max(1, viewportHeight);
   if (camera.isOrthographicCamera) {
@@ -1493,6 +1515,8 @@ export function ThreeGeometryViewport(props) {
   let pendingCameraState = props.cameraState;
   let geometryRoot;
   let helperRoot;
+  let originAxesRoot;
+  let originAxesVisible = false;
   let resultLayers = [];
   let streamlines = [], selectedStreamline = null, streamlineRoot = null;
   let graphRoot, graphsDirty = false;
@@ -1604,6 +1628,20 @@ export function ThreeGeometryViewport(props) {
     captureGate.fail(new Error(message));
   };
 
+  const updateOriginAxes = () => {
+    if (originAxesVisible && !originAxesRoot) {
+      originAxesRoot = createOriginAxes(THREE);
+      // The global frame stays independent of geometry motion, filters and opacity.
+      threeScene.add(originAxesRoot);
+    }
+    if (!originAxesRoot) return;
+    originAxesRoot.visible = originAxesVisible;
+    if (!originAxesVisible) return;
+    const diagonal = currentBounds?.isEmpty() === false
+      ? currentBounds.getSize(new THREE.Vector3()).length() : 0;
+    originAxesRoot.scale.setScalar(Number.isFinite(diagonal) && diagonal > 0 ? diagonal * 0.06 : 1);
+  };
+
   const publishRenderStats = () => {
     props.onRenderStats?.({
       ...baseRenderStats,
@@ -1642,6 +1680,7 @@ export function ThreeGeometryViewport(props) {
       if (sourcesDirty) { sourcesDirty = false; replacePrescribedSources(); }
       if (vectorsDirty) { vectorsDirty = false; replaceResultLayers(); }
       if (graphsDirty) { graphsDirty = false; replaceGraphs(); }
+      updateOriginAxes();
       if (pendingCameraState && currentBounds && !currentBounds.isEmpty()) {
         // OrbitControls caches its up-axis transform in the constructor. Restore
         // that basis before applying a flight pose, including axial approaches.
@@ -2794,6 +2833,11 @@ export function ThreeGeometryViewport(props) {
   });
 
   createEffect(() => {
+    originAxesVisible = props.showOrigin === true;
+    if (ready()) requestRender();
+  });
+
+  createEffect(() => {
     verticesVisible = props.showVertices === true;
     if (!ready()) return;
     if (verticesVisible && !vertexPoints) materializeVertexPoints();
@@ -2989,6 +3033,7 @@ export function ThreeGeometryViewport(props) {
     for (const root of resultLayerRoots(parkedResultLayers)) releaseResultRoot(root);
     disposeObject(helperRoot);
     disposeObject(viewCubeRoot);
+    disposeObject(originAxesRoot);
     if (renderer?.domElement) {
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       renderer.domElement.removeEventListener("click", handleClick);

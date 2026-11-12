@@ -1,4 +1,7 @@
+import { installTrafficTracking } from "../services/trafficService.js";
 import { buildResultVolumeField } from "../services/visualization/resultVolumeField.js";
+
+installTrafficTracking("viewer");
 
 // Only the previous spatial plan is retained. Values and masks are transferred
 // to the renderer; transferred buffers are never used to interpolate a new step.

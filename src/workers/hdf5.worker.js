@@ -1,6 +1,9 @@
+import { installTrafficTracking } from "../services/trafficService.js";
 import h5wasm from "h5wasm";
 import { Hdf5ResultFile } from "../services/results/hdf5ResultFile.js";
 import { elementFaceCurrents } from "../services/results/elementFaceCurrents.js";
+
+installTrafficTracking("viewer");
 
 const files = new Map();
 let mounted = false;

@@ -1,0 +1,71 @@
+.traffic-panel {
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.traffic-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    white-space: nowrap;
+    font-size: 14px;
+}
+
+.traffic-panel .traffic-show-button,
+.traffic-panel .traffic-period,
+.traffic-panel .traffic-value {
+    box-sizing: border-box;
+    min-height: 30px;
+    margin: 0;
+    padding: 4px 8px;
+    border: 1px solid #7f8d99;
+    border-radius: 3px;
+    color: #f0f4f7;
+    background: #3a4650;
+    font: inherit;
+}
+
+.traffic-panel .traffic-show-button {
+    cursor: pointer;
+}
+
+.traffic-panel .traffic-show-button:hover,
+.traffic-panel .traffic-show-button:focus-visible,
+.traffic-panel .traffic-period:focus-visible {
+    border-color: #a9bac7;
+    background: #4a5965;
+}
+
+.traffic-panel .traffic-period {
+    width: auto;
+}
+
+.traffic-result {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.traffic-panel .traffic-value {
+    width: 100px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    appearance: textfield;
+}
+
+.traffic-value::-webkit-inner-spin-button,
+.traffic-value::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+}
+
+.traffic-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+}

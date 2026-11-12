@@ -1,4 +1,7 @@
+import { installTrafficTracking } from "../services/trafficService.js";
 import { calculateResultGraphs } from "../services/visualization/resultGraphField.js";
+
+installTrafficTracking("viewer");
 self.onmessage = ({ data }) => {
   try {
     const result = calculateResultGraphs(data.input);

@@ -1,7 +1,10 @@
+import { installTrafficTracking } from "../services/trafficService.js";
 import h5wasm from "h5wasm";
 import { Hdf5ResultFile } from "../services/results/hdf5ResultFile.js";
 import { loadTaskInput } from "../services/taskLoadService.js";
 import { createTextProtocols, deleteTextProtocols, TEXT_PROTOCOL_FAMILIES } from "../services/taskTextProtocols.js";
+
+installTrafficTracking("viewer");
 
 let running = false, cancelled = false;
 self.onmessage = async ({ data }) => {

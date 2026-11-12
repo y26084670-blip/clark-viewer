@@ -1,4 +1,7 @@
+import { installTrafficTracking } from "../services/trafficService.js";
 import { createMovieGifSession } from "../services/movie/movieGifCore.js";
+
+installTrafficTracking("viewer");
 
 let session = null;
 self.onmessage = ({ data }) => {

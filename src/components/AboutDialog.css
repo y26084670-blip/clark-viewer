@@ -124,6 +124,11 @@
     background: #4a5965;
 }
 
+.about-dialog > .about-close-button {
+    align-self: center;
+    width: 144px;
+}
+
 /* Override the viewer's shared button sizing and hover background. */
 .about-close-button {
     min-height: 0;

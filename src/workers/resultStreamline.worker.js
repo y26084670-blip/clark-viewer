@@ -1,4 +1,7 @@
+import { installTrafficTracking } from "../services/trafficService.js";
 import { calculateStreamlines } from "../services/visualization/resultStreamlineField.js";
+
+installTrafficTracking("viewer");
 self.onmessage=({data})=>{
   try {
     const result=calculateStreamlines(data.input);

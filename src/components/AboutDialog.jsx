@@ -1,6 +1,7 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import aboutIconUrl from "../assets/zaica.BMP?url";
 import packageMetadata from "../../package.json";
+import { TrafficControls } from "./TrafficControls.jsx";
 import "./AboutDialog.css";
 
 // About panel and icon follow web-gui's TaskInfoBar.
@@ -67,15 +68,16 @@ export function AboutDialog() {
         <div class="about-curator-stack">
           <div>Куратор: Кулаев Ю.</div>
           <div>2026 г.</div>
-          <button
-            ref={(el) => (aboutCloseButton = el)}
-            class="about-close-button"
-            onClick={() => setAboutOpen(false)}
-          >
-            Закрыть
-          </button>
         </div>
       </div>
+      <TrafficControls application="viewer" />
+      <button
+        ref={(el) => (aboutCloseButton = el)}
+        class="about-close-button"
+        onClick={() => setAboutOpen(false)}
+      >
+        Закрыть
+      </button>
     </dialog>
   </>;
 }

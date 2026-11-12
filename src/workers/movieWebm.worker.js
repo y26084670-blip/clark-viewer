@@ -1,4 +1,7 @@
+import { installTrafficTracking } from "../services/trafficService.js";
 import { createMovieWebmCore } from "../services/movie/movieWebmCore.js";
+
+installTrafficTracking("viewer");
 
 let core, libav;
 self.onmessage = async ({ data: message }) => {

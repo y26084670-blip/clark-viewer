@@ -96,7 +96,7 @@ window.geometryFixture.ready=true;
   await server.listen();
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_EXECUTABLE, headless: true,
-    args: ["--no-sandbox", "--disable-dev-shm-usage", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
+    args: [...JSON.parse(process.env.CHROMIUM_ARGS || "[]"), "--no-sandbox", "--disable-dev-shm-usage", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.setDefaultTimeout(20000);
   page.on("pageerror", e => errors.push(e.message));
@@ -176,6 +176,11 @@ window.geometryFixture.ready=true;
     await legend("Намагниченность M").waitFor();
     assert.deepEqual(await reads(), [["MH", 0]]);
     pass("restoring settings starts exactly one real MH.h5 slice");
+    const generalOptions = page.getByRole("button", { name: "Общие опции отображения", exact: true });
+    await generalOptions.click();
+    await page.getByRole("checkbox", { name: "Ортогональный вид", exact: true }).waitFor();
+    assert.equal(await page.getByRole("checkbox", { name: "Показать начало СК", exact: true }).count(), 0);
+    await generalOptions.click();
 
     const choose = async (radio, name) => {
       const menu = page.getByRole("button", { name: "Элементы", exact: true });

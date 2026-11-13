@@ -18,6 +18,18 @@ const directory = files => ({ async getFileHandle(name) {
 } });
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 
+test("recommendations are optional, ordered and separate from dated notifications", () => {
+  const journal = feed([entry("news")]);
+  const tips = [{ title: "Один", summary: "Первый приём." }, { title: "Два", summary: "Второй приём." }];
+  assert.deepEqual(validateUpdatesFeed(journal).recommendations, []);
+  const parsed = validateUpdatesFeed({ ...journal, recommendations: tips });
+  assert.deepEqual(parsed.recommendations, tips);
+  assert.deepEqual(parsed.entries, journal.entries);
+  for (const value of [null, {}, [null], [{ title: " ", summary: "Описание" }], [{ title: "Название" }]]) {
+    assert.throws(() => validateUpdatesFeed({ ...journal, recommendations: value }), /рекомендации/i);
+  }
+});
+
 test("package versions compare numerically, including large patch numbers; unknown stays unknown", () => {
   assert.equal(compareVersions("0.10.9", "0.10.10"), -1);
   assert.equal(compareVersions("1.0.0", "0.999.999"), 1);

@@ -57,7 +57,13 @@ export function validateUpdatesFeed(value) {
   if (value.recommendedClark !== null && (!value.recommendedClark || !validVersion(value.recommendedClark.version))) {
     throw new Error("Некорректная рекомендуемая версия Clark.");
   }
-  return { ...value, entries: [...value.entries].sort((a, b) => b.date.localeCompare(a.date)) };
+  const recommendations = value.recommendations === undefined ? [] : value.recommendations;
+  if (!Array.isArray(recommendations) || !recommendations.every(item =>
+    typeof item?.title === "string" && item.title.trim()
+    && typeof item.summary === "string" && item.summary.trim())) {
+    throw new Error("Некорректные рекомендации в журнале.");
+  }
+  return { ...value, recommendations, entries: [...value.entries].sort((a, b) => b.date.localeCompare(a.date)) };
 }
 
 // A separate key for each read acknowledgement prevents simultaneous tabs from

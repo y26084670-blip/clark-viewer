@@ -114,37 +114,52 @@ export function WhatsNewDialog(props) {
           </div>
           <Show when={versionNotice()}><div role="status">{versionNotice()}</div></Show>
         </section>
-        <div class="whats-new-categories" role="tablist" aria-label="Разделы уведомлений">
+        <div class="whats-new-categories" role="tablist" aria-label="Разделы окна Что нового">
+          <button type="button" role="tab" aria-selected={category() === "recommendations"}
+            onClick={() => setCategory("recommendations")}>Рекомендации</button>
           <For each={Object.entries(NEWS_CATEGORIES)}>{([key, label]) => <button type="button" role="tab"
             aria-selected={category() === key} onClick={() => setCategory(key)}>{label} ({unread(key)})</button>}</For>
         </div>
-        <div class="whats-new-filters">
-          <label><input type="checkbox" checked={onlyUnread()} onChange={e => setOnlyUnread(e.currentTarget.checked)} /> Только непрочитанные</label>
-          <button type="button" disabled={!unread(category())} onClick={() => store.markRead(state().feed?.entries.filter(item => item.category === category()) ?? [])}>
-            Отметить раздел прочитанным</button>
-        </div>
-        <div class="whats-new-messages" role="tabpanel" aria-label={NEWS_CATEGORIES[category()]}>
-          <For each={entries()}>{item => <article class="whats-new-entry" classList={{ unread: !read(item), important: item.importance === "important" }}>
-            <div class="whats-new-entry-top">
-              <div class="whats-new-entry-title"><h3>{item.title}<Show when={item.titleNote}>{" "}<span class="whats-new-entry-title-note">{item.titleNote}</span></Show></h3>
-                <Show when={item.status}><span class="whats-new-entry-status">{item.status}</span></Show>
-              </div>
-              <span>{item.date}</span>
+        <Show when={category() === "recommendations"} fallback={
+          <>
+            <div class="whats-new-filters">
+              <label><input type="checkbox" checked={onlyUnread()} onChange={e => setOnlyUnread(e.currentTarget.checked)} /> Только непрочитанные</label>
+              <button type="button" disabled={!unread(category())} onClick={() => store.markRead(state().feed?.entries.filter(item => item.category === category()) ?? [])}>
+                Отметить раздел прочитанным</button>
             </div>
-            <Show when={item.importance === "important"}><strong class="whats-new-important">Влияет на результаты расчёта</strong></Show>
-            <p>{item.summary}</p>
-            <Show when={item.action}><p>{item.action}</p></Show>
-            <Show when={item.limitations}><p><strong>Ограничения: </strong>{item.limitations}</p></Show>
-            <Show when={item.versions}><div class="whats-new-meta">{Object.entries(item.versions).map(([name, version]) => `${name}: ${version}`).join("; ")}</div></Show>
-            <div class="whats-new-entry-actions">
-              <Show when={safeUpdateUrl(item.detailsUrl, feedUrl)}><a href={safeUpdateUrl(item.detailsUrl, feedUrl)} target="_blank" rel="noopener noreferrer">Подробнее</a></Show>
-              <Show when={!read(item)} fallback={<span class="whats-new-meta">Прочитано</span>}>
-                <button type="button" onClick={() => store.markRead([item])}>Прочитано</button>
-              </Show>
+            <div class="whats-new-messages" role="tabpanel" aria-label={NEWS_CATEGORIES[category()]}>
+              <For each={entries()}>{item => <article class="whats-new-entry" classList={{ unread: !read(item), important: item.importance === "important" }}>
+                <div class="whats-new-entry-top">
+                  <div class="whats-new-entry-title"><h3>{item.title}<Show when={item.titleNote}>{" "}<span class="whats-new-entry-title-note">{item.titleNote}</span></Show></h3>
+                    <Show when={item.status}><span class="whats-new-entry-status">{item.status}</span></Show>
+                  </div>
+                  <span>{item.date}</span>
+                </div>
+                <Show when={item.importance === "important"}><strong class="whats-new-important">Влияет на результаты расчёта</strong></Show>
+                <p>{item.summary}</p>
+                <Show when={item.action}><p>{item.action}</p></Show>
+                <Show when={item.limitations}><p><strong>Ограничения: </strong>{item.limitations}</p></Show>
+                <Show when={item.versions}><div class="whats-new-meta">{Object.entries(item.versions).map(([name, version]) => `${name}: ${version}`).join("; ")}</div></Show>
+                <div class="whats-new-entry-actions">
+                  <Show when={safeUpdateUrl(item.detailsUrl, feedUrl)}><a href={safeUpdateUrl(item.detailsUrl, feedUrl)} target="_blank" rel="noopener noreferrer">Подробнее</a></Show>
+                  <Show when={!read(item)} fallback={<span class="whats-new-meta">Прочитано</span>}>
+                    <button type="button" onClick={() => store.markRead([item])}>Прочитано</button>
+                  </Show>
+                </div>
+              </article>}</For>
+              <Show when={!entries().length}><p>{state().loading && !state().feed ? "Загрузка журнала…" : "Уведомлений нет."}</p></Show>
             </div>
-          </article>}</For>
-          <Show when={!entries().length}><p>{state().loading && !state().feed ? "Загрузка журнала…" : "Уведомлений нет."}</p></Show>
-        </div>
+          </>
+        }>
+          <div class="whats-new-messages" role="tabpanel" aria-label="Рекомендации">
+            <For each={state().feed?.recommendations} fallback={
+              <p>{state().loading && !state().feed ? "Загрузка рекомендаций…" : "Рекомендаций пока нет."}</p>
+            }>{tip => <article class="whats-new-entry">
+              <h3>{tip.title}</h3>
+              <p>{tip.summary}</p>
+            </article>}</For>
+          </div>
+        </Show>
         <footer class="whats-new-footer" aria-live="polite">
           <Show when={state().error}><div>{state().error}</div></Show>
           <Show when={comparison() === -1 && state().installerError}><div>{state().installerError}</div></Show>

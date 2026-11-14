@@ -48,7 +48,7 @@ window.showDirectoryPicker=async()=>{window.pickerCalls++;return {getFileHandle:
 function Fixture(){
  const [recipes,setPlotRecipes]=createSignal([]),[sources,setPlotSources]=createSignal([]),[active,setActivePlotId]=createSignal(null);
  const [currentTask,setCurrentTask]=createSignal(task);
- const [time,setTime]=createSignal(1),[busy,setBusy]=createSignal(false),[shown,setShown]=createSignal(true);
+ const [time,setTime]=createSignal(2),[busy,setBusy]=createSignal(false),[shown,setShown]=createSignal(true);
  const controller=createMovieExportController({createEncoder:createMovieWebmEncoder});
  window.__graphs={setShown,singleTime(){setPlotRecipes([]);setTime(0);setCurrentTask({...task,name:'Единственный момент',general:{countTimeSteps:0,timeStep:.5},metadata:{MH:{...task.metadata.MH,steps:[{index:0}]}},reader:{history:async()=>({steps:[0],stride:9,values:Float64Array.from([0,0,0,3,4,0,0,0,0])})}});},visible(plot,index,value){const chart=Chart.getChart(document.querySelectorAll('.constructor-plot canvas')[plot]);chart.setDatasetVisibility(index,value);chart.update('none');},snapshot:()=>({time:time(),active:active(),recipes:recipes().map(r=>({id:r.id,count:r.curves.length})),plots:Array.from(document.querySelectorAll('.constructor-plot canvas')).map(c=>{const chart=Chart.getChart(c);return {id:chart.id,area:{...chart.chartArea},width:chart.width,height:chart.height,visible:chart.data.datasets.map((d,i)=>chart.isDatasetVisible(i)),series:chart.data.datasets.filter(d=>d._seriesKey!=="marker").map(d=>d.data),range:{xmin:chart.scales.x.min,xmax:chart.scales.x.max,ymin:chart.scales.y.min,ymax:chart.scales.y.max}}})}),
  async movie(){setBusy(true);try{const r=await controller.run({intervalMs:100});return {...r,bytes:Array.from(new Uint8Array(await r.blob.arrayBuffer()))};}finally{setBusy(false);}}};
@@ -197,6 +197,26 @@ try {
    const plotted = await page.evaluate(axis => window.__plotDetails(axis), axis);
    assert.equal(plotted.title, 'Потокосцепление, Вб');
    assert.match(plotted.labels[0], /Катушка №1/); assert.match(plotted.labels[1], /Катушка №2/);
+   const slider = page.getByRole('slider', {name:'Текущий момент времени'});
+   if (axis === 'y') {
+     assert.equal(await slider.count(), 0);
+     const canvas = graphs.locator('canvas');
+     await canvas.scrollIntoViewIfNeeded();
+     const box = await canvas.boundingBox(), plot = (await snap()).plots[0];
+     assert.equal(plot.visible.length, 2);
+     assert.ok(plot.range.ymax >= 10);
+     // The second legend row belongs to the coil with the larger excursion.
+     const legendX = box.x + (plot.area.right - 18) * box.width / plot.width;
+     const legendY = box.y + (plot.area.top + 6 + 7 + 1.5 * 18) * box.height / plot.height;
+     await page.mouse.click(legendX, legendY);
+     const hidden = (await snap()).plots[0];
+     assert.deepEqual(hidden.visible, [true, false]);
+     assert.ok(hidden.range.ymax >= 3 && hidden.range.ymax < 10 && hidden.range.ymin >= 0);
+     await page.mouse.click(legendX, legendY);
+     assert.deepEqual((await snap()).plots[0].range, plot.range);
+   } else {
+     assert.equal(await slider.isVisible(), true);
+   }
    await graphs.getByRole('button', { name: 'Удалить график', exact: true }).click();
  }
  passed('Different coils share a plot on either axis, with distinct PSI values and legends under the common flux-linkage axis title');

@@ -31,12 +31,12 @@ test("1D slices use every native EO centre, all XYZ values, original units and t
   assert.equal(series[0].points.length, 150); assert.equal(graphProfileThumbnail(series, ["X", "Z"]).length, 1); r.close();
 });
 
-test("area profiles follow the original row in either direction and physical mirror parity", async () => {
+test("area profiles follow the saved row in both directions when a mirror is enabled", async () => {
   const f = graph3DTask({ mirror: 0 }), r = reader(), base = { ...request(f), slices: [] };
   const initial = await r.read(base), surfaces = initial.graphs[0].surfaces.filter(s => s.component === 0);
   const profiles = surfaces.flatMap((surface, image) => [0, 1].map(direction => ({ id: image * 2 + direction + 1,
     graphId: "region:0", instanceKey: surface.instanceKey, direction, index: 1 })));
-  const output = await r.read({ ...base, profiles }); assert.equal(output.profiles.length, 4);
+  const output = await r.read({ ...base, profiles }); assert.equal(output.profiles.length, 2);
   for (const p of output.profiles) {
     assert.equal(p.distances.length, p.direction === 0 ? 5 : 4);
     near(p.length, p.direction === 0 ? 40 : 20);

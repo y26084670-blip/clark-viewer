@@ -184,7 +184,7 @@ export function LineChart(props) {
   });
   createEffect(() => {
     const series = props.series ?? [];
-    const marker = props.marker;
+    const markedPoints = props.markedPoints ?? [];
     const frameKey = props.captureFrameKey;
     const captureError = props.captureError;
     currentMovieCursor = props.movieCursor ?? null;
@@ -196,13 +196,19 @@ export function LineChart(props) {
     props.endpointCoordinates;
     if (!ready()) return;
     try {
-      const datasets = series.map((item, index) => ({ _seriesKey: item.key ?? `series:${item.label}:${index}`, label: item.label,
-        data: item.points, borderColor: item.color ?? colors[index % colors.length], backgroundColor: item.color ?? colors[index % colors.length],
-        showLine: item.showLine ?? true, pointRadius: item.pointRadius ?? (item.points.length === 1 ? 4 : 0),
-        pointHitRadius: 5, borderWidth: item.borderWidth ?? 1.6, spanGaps: false,
-        order: item.showLine === false ? 1 : 2 }));
-      if (marker?.points?.length) datasets.push({ _seriesKey: "marker", label: "Текущий момент", data: marker.points,
-        borderColor: "#161616", backgroundColor: "#f0ac24", pointRadius: 6, showLine: false });
+      const datasets = series.map((item, index) => {
+        const color = item.color ?? colors[index % colors.length];
+        const radius = item.pointRadius ?? (item.points.length === 1 ? 4 : 0);
+        const selected = markedPoints[index];
+        const highlight = (normal, marked) => selected >= 0
+          ? context => context.dataIndex === selected ? marked : normal
+          : normal;
+        return { _seriesKey: item.key ?? `series:${item.label}:${index}`, label: item.label,
+          data: item.points, borderColor: color, backgroundColor: color, showLine: item.showLine ?? true,
+          pointRadius: highlight(radius, 6), pointBackgroundColor: highlight(color, "#f0ac24"),
+          pointBorderColor: highlight(color, "#161616"), pointHitRadius: 5,
+          borderWidth: item.borderWidth ?? 1.6, spanGaps: false, order: item.showLine === false ? 1 : 2 };
+      });
       const range = untrack(limits);
       cancelSelection();
       legendHitBoxes = [];

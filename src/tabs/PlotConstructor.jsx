@@ -10,6 +10,8 @@ import { useAsyncResult } from "../services/results/resultRequests.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import "./PlotConstructor.css";
 
+const hasTimeAxis = recipe => recipe.curves[0]?.xChannel.kind === "time";
+
 export function PlotConstructor(props) {
   const [error, setError] = createSignal("");
   const [adding, setAdding] = createSignal(false);
@@ -196,6 +198,10 @@ export function PlotConstructor(props) {
     });
     const failure = () => data.error() || data.value()?.error || "";
     const singleTime = createMemo(() => isSingleTimePlot(props.task, recipe().curves));
+    const markedPoints = createMemo(() => {
+      if (hasTimeAxis(recipe()) && !(props.movieBusy && activeId() === p.id)) return [];
+      return series().map(item => item.points.findIndex(point => plotPointAtStep(point, props.task, props.time)));
+    });
     const valueTable = createMemo(() => !data.loading() && !failure() ? singleTimePlotTable(recipe().curves, series()) : null);
     const frameKey = createMemo(() => ({ frame: data.state().frame, time: props.time }));
     const axisLabel = axis => plotAxisLabel(recipe().curves, axis);
@@ -229,7 +235,7 @@ export function PlotConstructor(props) {
       <Show when={activeId() === p.id && !singleTime()}><ActiveMovie /></Show>
       <Show when={singleTime()} fallback={
       <LineChart series={series()} autoScaleToggle={true} legendMode="overlay"
-        marker={{ points: series().flatMap(item => item.points.filter(point => plotPointAtStep(point, props.task, props.time))) }}
+        markedPoints={markedPoints()}
         captureFrameKey={frameKey()} onCaptureReady={target => setRenderer(() => target)} captureError={failure()}
         tableUnavailableReason={data.loading() ? "Дождитесь загрузки всех кривых графика" : failure()}
         xLabel={axisLabel("x")} yLabel={axisLabel("y")}
@@ -278,7 +284,9 @@ export function PlotConstructor(props) {
     <For each={allSources().filter(s => s.warning)}>{s => <p role="status">{s.warning}</p>}</For>
     <p class="constructor-hint">Векторные величины выводятся компонентами X, Y, Z; их видимость переключается в легенде. При нуле интервалов времени каждое добавление создаёт строку таблицы значений с путём задания в комментарии. Щелчок по графику выбирает его для добавления кривых и записи GIF. X берётся из текущего задания; при X = «Время» используется временная сетка задания Y. Остальные величины разных заданий сопоставляются по совпадающим моментам времени, без интерполяции.</p>
     <div class="constructor-plots"><For each={recipes().map(recipe => recipe.id)} fallback={<p>Выберите величины для осей и добавьте график.</p>}>{id => <Plot id={id} />}</For></div>
-    <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
+    <Show when={recipes().some(recipe => recipe.curves.length && !hasTimeAxis(recipe))}>
+      <TimeSlider index={props.time} max={props.task?.general.countTimeSteps} step={props.task?.general.timeStep} onChange={props.setTime} />
+    </Show>
     <dialog ref={sourceDialog} class="constructor-source-dialog" aria-label="Добавление параметров ОМ"
       onCancel={event => { if (adding()) event.preventDefault(); }} onClose={() => sourceButton?.focus()}>
       <h3>Добавление параметров ОМ</h3>

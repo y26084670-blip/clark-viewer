@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import h5wasm from "h5wasm/node";
+import { plotChannels, readPlotChannel } from "../src/services/results/plotConstructor.js";
 import { Hdf5ResultFile } from "../src/services/results/hdf5ResultFile.js";
 import { HISTORY_QUANTITIES, measurementCoils, readFluxHistories, readForceMomentHistory,
   fluxHistorySeries, forceMomentHistorySeries, lossHistorySeries } from "../src/services/results/resultHistories.js";
@@ -24,6 +25,7 @@ async function fixture(name, Type, body, options = {}) {
       header.create_dataset({ name: key, data: new BigInt64Array([value]), shape: [] });
     }
     for (const key of ["inds1", "numbs"]) header.create_dataset({ name: key, data: new BigInt64Array() });
+    if (options.ids) header.create_dataset({name:"forceGroupIds", data:BigInt64Array.from(options.ids,BigInt)});
     const steps = options.steps ?? [0, 2, 12].map(step => ({ key: String(step).padStart(6, "0"),
       values: name === "FM" ? [step, -3, 4, 5, 12, step] : [step * 10 + 1, -(step * 10 + 2), 0, step * 10 + 4] }));
     for (const step of steps) {
@@ -206,4 +208,28 @@ test("Loss history stays instantaneous: static zero, signed values and watts", (
   assert.equal(HISTORY_QUANTITIES.loss.unit, "Вт");
   assert.throws(() => lossHistorySeries(varying, 0), /положительным/);
   assert.throws(() => lossHistorySeries({ ...history, values: [Infinity] }, 0), /бесконечные/);
+});
+
+test("FM reads sparse group identifiers, diagonals and each directed pair for both vector histories", async () => {
+  const ids=[4,81], rows = Array.from({length:24},(_,i) => (-1)**i*(i+1));
+  for (const Type of [Float32Array,Float64Array]) {
+    await fixture("FM",Type,async handle => {
+      const file=new Hdf5ResultFile("FM",handle), task=taskWithFile(file);
+      assert.deepEqual(file.header.forceGroupIds,ids);
+      for (const [row,pair] of [[4,4],[4,81],[81,4],[81,81]].entries()) {
+        for (const [offset,kind] of ["force","moment"].entries()) {
+          const channel=plotChannels(task).find(c=>c.key===[kind,...pair].join(":"));
+          assert.equal(channel.point,row);
+          assert.match(channel.label,new RegExp(pair.join(" ← ")));
+          const points=await readPlotChannel(task,channel,{component:"1"});
+          assert.deepEqual(points.map(p=>p.value),[rows[6*row+3*offset+1],2*rows[6*row+3*offset+1]]);
+        }
+      }
+    },{ids,steps:[{key:"000000",values:rows},{key:"000002",values:rows.map(v=>2*v)}]});
+  }
+  for (const malformed of [[4,4],[81,4],[0,9],[4]]) {
+    await fixture("FM",Float64Array,handle => {
+      assert.throws(()=>new Hdf5ResultFile("FM",handle),/номера силовых групп/);
+    },{ids:malformed,steps:[{key:"000000",values:rows}]});
+  }
 });

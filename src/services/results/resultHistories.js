@@ -2,7 +2,7 @@ import { checkReadRange } from "./resultLayout.js";
 import { lossIntegrationWeights } from "./resultLosses.js";
 
 // solver FieldV writes the total coil linkage in Wb, including turns and signs.
-// FieldS writes one total force (N) and moment (N·m) about general.polusForce*.
+// FM stores either one legacy total or every ordered pair about general.polusForce*.
 export const HISTORY_QUANTITIES = {
   flux: { label: "Потокосцепление", unit: "Вб", file: "PSI" },
   force: { label: "Сила", unit: "Н", file: "FM" },
@@ -89,9 +89,11 @@ export async function readFluxHistories({ task, selected = [] }) {
   }));
 }
 
-export async function readForceMomentHistory(task) {
-  const metadata = historyMetadata(task, "FM", 1);
-  const history = await task.reader.history({ name: "FM", point: 0 });
+export async function readForceMomentHistory(task, point = 0) {
+  const ids = task.metadata?.FM?.header?.forceGroupIds;
+  const metadata = historyMetadata(task, "FM", ids ? ids.length ** 2 : 1);
+  checkReadRange(point, 1, metadata.pointCount, 6);
+  const history = await task.reader.history({ name: "FM", point });
   validateReadHistory(history, metadata, 6, task, "FM");
   return history;
 }

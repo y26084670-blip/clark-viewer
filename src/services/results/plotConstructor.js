@@ -14,8 +14,18 @@ export function plotChannels(task, extra = []) {
   if (task.metadata?.PSI?.steps?.length) for (const record of measurementCoils(task)) {
     channels.push({ key: `flux:${record.id}`, label: `Потокосцепление · ${record.name}`, unit: "Вб", kind: "flux", coil: record.id });
   }
-  if (task.metadata?.FM?.steps?.length) for (const kind of ["force", "moment"]) channels.push({
-    key: kind, label: kind === "force" ? "Суммарная сила" : "Суммарный момент", unit: kind === "force" ? "Н" : "Н·м", kind, components: 3 });
+  const fm = task.metadata?.FM;
+  if (fm?.steps?.length && !fm.error) {
+    const ids = fm.header?.forceGroupIds;
+    for (const kind of ["force", "moment"]) {
+      const {label,unit} = HISTORY_QUANTITIES[kind];
+      if (!ids) channels.push({key:kind,label:kind === "force" ? "Суммарная сила" : "Суммарный момент",unit,kind,components:3});
+      else for (const [i,target] of ids.entries()) for (const [j,source] of ids.entries()) {
+        channels.push({key:`${kind}:${target}:${source}`,label:`${label} · ${target} ← ${source}`,
+          point:i*ids.length+j,unit,kind,components:3});
+      }
+    }
+  }
   if (task.metadata?.Q?.steps?.length) channels.push({ key: "loss", label: "Суммарные потери на токи проводимости", unit: "Вт", kind: "loss" });
   for (const [index, source] of extra.entries()) for (const c of source.manifest.channels) channels.push({
     key: `extra:${index}:${c.column}`, label: `${source.manifest.model || "ОМ"} · ${c.label}`, unit: c.unit, kind: "extra", source, column: c.column });
@@ -46,7 +56,7 @@ export async function readPlotChannel(task, channel, spec = {}) {
     const [history] = await readFluxHistories({ task, selected: [channel.coil] });
     points = fluxHistorySeries(history, task.general.timeStep).points;
   } else if (["force", "moment"].includes(channel.kind)) {
-    points = forceMomentHistorySeries(await readForceMomentHistory(task), task.general.timeStep, channel.kind, spec.component ?? "norm").points;
+    points = forceMomentHistorySeries(await readForceMomentHistory(task, channel.point), task.general.timeStep, channel.kind, spec.component ?? "norm").points;
   } else if (channel.kind === "loss") points = lossHistorySeries(await readLossHistory(task), task.general.timeStep).points;
   else throw new Error("Неизвестный источник величины");
   if (points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error("Результат содержит нечисловые значения");

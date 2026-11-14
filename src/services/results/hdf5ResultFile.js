@@ -38,6 +38,16 @@ export class Hdf5ResultFile {
       this.pointCount = points;
       this.byStep.set(step.index, step.key);
     }
+    if (name === "FM") {
+      const dataset = handle.get("HEADER/forceGroupIds");
+      if (dataset) {
+        const ids = Array.from(dataset.value, Number);
+        if (!ids.length || ids.some((id,i) => !Number.isSafeInteger(id) || id < 1 || (i && id <= ids[i-1]))
+            || (this.pointCount !== null && this.pointCount !== ids.length ** 2))
+          throw new Error("FM.h5: номера силовых групп не согласованы с числом строк.");
+        this.header.forceGroupIds = ids;
+      }
+    }
     this.ranges = readResultRanges(handle, { name, header: this.header, steps: this.steps });
   }
   get metadata() { return { header: this.header, steps: this.steps, pointCount: this.pointCount, ranges: this.ranges }; }

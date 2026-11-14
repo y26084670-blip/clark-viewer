@@ -56,11 +56,12 @@ for (const direction of [0, 1, 2]) test(`DV${direction + 1} defaults to the cent
   reader.close();
 });
 
-test("area graphs preserve all saved nodes, RGB component identities and physical mirror parity", async () => {
+test("area graphs preserve all saved nodes and RGB components on the actual area only", async () => {
   const f = graph3DTask({ mirror: 0 }), reader = createResultGraphReader(options);
   const { graphs, errors } = await reader.read({ ...request(f), slices: [], regions: [0] });
-  assert.deepEqual(errors, []); assert.equal(graphs.length, 1); assert.equal(graphs[0].surfaces.length, 6);
+  assert.deepEqual(errors, []); assert.equal(graphs.length, 1); assert.equal(graphs[0].surfaces.length, 3);
   for (const surface of graphs[0].surfaces) {
+    assert.equal(surface.instance.mirrorX, 0);
     assert.equal(surface.values.length, 20); assert.equal(surface.indices.length, 72);
     for (let n = 0; n < surface.values.length; n++) {
       const p = surface.positions.subarray(n * 3, n * 3 + 3);

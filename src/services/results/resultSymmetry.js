@@ -1,6 +1,6 @@
 import { elementLayout, QUANTITIES } from "./resultMappings.js";
 import { expandElementSymmetry, expandRegionSymmetry } from "../solver/symmetryExpansion.js";
-import { applyMatrix4ToPoint, multiplyMatrix4 } from "../solver/rotation3d.js";
+import { applyMatrix4ToPoint, identityMatrix4, multiplyMatrix4 } from "../solver/rotation3d.js";
 
 import { instanceVisible } from "../visualization/geometryRenderFilters.js";
 
@@ -40,11 +40,16 @@ function mirrorSign(setting, parity) {
 }
 
 function buildCopyPlan(task, record, quantity) {
-  const region = quantity.group === "regions";
+  // FieldS has already written each local TK grid in world coordinates.
+  if (quantity.group === "regions") {
+    const identity = identityMatrix4();
+    const saved = expandRegionSymmetry(record).map(instance => [{instance, matrix:identity, sign:1}]);
+    return ({ls, as, ps}) => as === 0 && ps === 0 ? saved[ls] ?? noCopies : noCopies;
+  }
   const full = quantity.file === "HV" || quantity.file === "AV";
-  const [, axial, periodic] = region ? [record.symLs, 1, 1] : elementLayout(record, full).copies;
+  const [, axial, periodic] = elementLayout(record, full).copies;
   const general = task?.general ?? {};
-  const targets = (region ? expandRegionSymmetry : expandElementSymmetry)(record, general);
+  const targets = expandElementSymmetry(record, general);
   const index = (ls, az, ps) => (ls * axial + az) * periodic + ps;
   const inverses = new Map(), copies = new Map();
   for (const image of targets) {
@@ -57,8 +62,8 @@ function buildCopyPlan(task, record, quantity) {
     if (!inverse) continue;
     let sign = 1;
     if (quantity.components === 3) {
-      if (!region && axial === 1 && record.symAs > 1) sign *= image.axialSign;
-      if (!region && periodic === 1 && record.symPs > 1) sign *= image.periodicSign;
+      if (axial === 1 && record.symAs > 1) sign *= image.axialSign;
+      if (periodic === 1 && record.symPs > 1) sign *= image.periodicSign;
       if (image.mirrorX) sign *= mirrorSign(general.mirrorSymmetryX, quantity.mirrorParity);
       if (image.mirrorY) sign *= mirrorSign(general.mirrorSymmetryY, quantity.mirrorParity);
     }

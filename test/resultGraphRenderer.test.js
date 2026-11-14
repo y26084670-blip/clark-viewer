@@ -28,7 +28,7 @@ test("surface graphs use lit RGB/palette meshes over white bases; size keeps the
   assert.ok(Math.abs(Math.min(...heights(after)) - gap) < 1e-5);
   assert.ok(Math.abs((Math.max(...heights(after)) - gap) - 2 * (Math.max(...heights(before)) - gap)) < 1e-5);
   let bases = 0; f.root.traverse(o => { if (o.name === "result-graph-base") { assert.equal(o.material.color.getHex(), 0xffffff); assert.equal(o.material.depthWrite, false); bases++; } });
-  assert.equal(bases, 6); disposeGraphScene(f.root);
+  assert.equal(bases, 5); disposeGraphScene(f.root);
 });
 
 test("symmetry filters preserve graph resources while hiding images; selection and preview do not read fields", async () => {

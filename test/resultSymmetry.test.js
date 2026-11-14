@@ -77,12 +77,15 @@ test("HV/AV already saved AS/PS images are not duplicated; only mirrors are adde
   assert.deepEqual(copies.map(copy=>copy.instance.mirrorX).sort(),[0,1]);
 });
 
-test("region B and A receive opposite mirror parity", () => {
-  const region={id:1,recordIndex:0,dp:[[2],[2]],dr:[[0],[0],[0]],symVi:[[0],[0],[0]],symR0:[[0],[0],[0]],symLs:1,symYl:0};
-  const task={general:{mirrorSymmetryX:0,mirrorSymmetryY:-1}};
-  const item={...base,source:{schemaId:"regions",recordIndex:0},instance:{ls:0,as:0,ps:0}};
-  const b=expandResultVector(task,region,"Bs",item).find(v=>v.instance.mirrorX===1);
-  const a=expandResultVector(task,region,"As",item).find(v=>v.instance.mirrorX===1);
-  assert.deepEqual(b.vector.map(v=>Math.round(v)),[-1,2,3]);
-  assert.deepEqual(a.vector.map(v=>Math.round(v)),[1,-2,-3]);
+test("area fields keep each saved local grid and its vector in both mirror planes", () => {
+  const region = { ...record, symLs: 2, symYl: 90 };
+  const task = { general: { mirrorSymmetryX: 0, mirrorSymmetryY: 1 } };
+  for (const key of ["Bs", "As"]) for (const ls of [0, 1]) {
+    const item = { ...base, origin: [1, -2, 3], source: {schemaId:"regions", recordIndex:0}, instance: {ls, as:0, ps:0} };
+    const copies = expandResultVector(task, region, key, item);
+    assert.equal(copies.length, 1);
+    assert.deepEqual([copies[0].instance.ls, copies[0].instance.mirrorX, copies[0].instance.mirrorY], [ls, 0, 0]);
+    assert.deepEqual(copies[0].origin, item.origin);
+    assert.deepEqual(copies[0].vector, item.vector);
+  }
 });

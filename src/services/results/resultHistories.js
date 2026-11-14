@@ -39,7 +39,8 @@ function historyMetadata(task, name, expectedPoints = null, operation = "history
     throw new Error(`${name}.h5: не определено число строк результатов`);
   }
   if (expectedPoints !== null && metadata.pointCount !== expectedPoints) {
-    const expected = name === "FM" ? "одна строка суммарных силы и момента"
+    const expected = name === "FM" && !metadata.header?.forceGroupIds ? "одна строка суммарных силы и момента"
+      : name === "FM" ? `${expectedPoints} строк парных сил и моментов`
       : `${expectedPoints} строк по наибольшему номеру измерительной катушки`;
     throw new Error(`${name}.h5: найдено ${metadata.pointCount} строк; ожидается ${expected}`);
   }
@@ -90,8 +91,10 @@ export async function readFluxHistories({ task, selected = [] }) {
 }
 
 export async function readForceMomentHistory(task, point = 0) {
-  const ids = task.metadata?.FM?.header?.forceGroupIds;
-  const metadata = historyMetadata(task, "FM", ids ? ids.length ** 2 : 1);
+  const header = task.metadata?.FM?.header;
+  const targets = header?.forceGroupIds;
+  const sources = header?.forceSourceGroupIds ?? targets;
+  const metadata = historyMetadata(task, "FM", targets ? targets.length * sources.length : 1);
   checkReadRange(point, 1, metadata.pointCount, 6);
   const history = await task.reader.history({ name: "FM", point });
   validateReadHistory(history, metadata, 6, task, "FM");

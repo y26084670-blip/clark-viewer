@@ -39,13 +39,19 @@ export class Hdf5ResultFile {
       this.byStep.set(step.index, step.key);
     }
     if (name === "FM") {
-      const dataset = handle.get("HEADER/forceGroupIds");
-      if (dataset) {
-        const ids = Array.from(dataset.value, Number);
+      const targets = handle.get("HEADER/forceGroupIds");
+      const sources = handle.get("HEADER/forceSourceGroupIds");
+      if (targets || sources) {
+        const ids = targets ? Array.from(targets.value, Number) : [];
+        // Older grouped files use the same positive identifiers on both axes.
+        const sourceIds = sources ? Array.from(sources.value, Number) : ids;
+        const offset = sourceIds[0] === 0 ? 1 : 0;
         if (!ids.length || ids.some((id,i) => !Number.isSafeInteger(id) || id < 1 || (i && id <= ids[i-1]))
-            || (this.pointCount !== null && this.pointCount !== ids.length ** 2))
+            || sourceIds.length !== ids.length + offset || !ids.every((id,i) => sourceIds[i+offset] === id)
+            || (this.pointCount !== null && this.pointCount !== ids.length * sourceIds.length))
           throw new Error("FM.h5: номера силовых групп не согласованы с числом строк.");
         this.header.forceGroupIds = ids;
+        this.header.forceSourceGroupIds = sourceIds;
       }
     }
     this.ranges = readResultRanges(handle, { name, header: this.header, steps: this.steps });

@@ -17,12 +17,14 @@ export function plotChannels(task, extra = []) {
   const fm = task.metadata?.FM;
   if (fm?.steps?.length && !fm.error) {
     const ids = fm.header?.forceGroupIds;
+    const sources = fm.header?.forceSourceGroupIds ?? ids;
     for (const kind of ["force", "moment"]) {
       const {label,unit} = HISTORY_QUANTITIES[kind];
       if (!ids) channels.push({key:kind,label:kind === "force" ? "Суммарная сила" : "Суммарный момент",unit,kind,components:3});
-      else for (const [i,target] of ids.entries()) for (const [j,source] of ids.entries()) {
-        channels.push({key:`${kind}:${target}:${source}`,label:`${label} · ${target} ← ${source}`,
-          point:i*ids.length+j,unit,kind,components:3});
+      else for (const [i,target] of ids.entries()) for (const [j,source] of sources.entries()) {
+        const pairLabel = `${target} ← ${source}`;
+        channels.push({key:`${kind}:${target}:${source}`,label:`${label} · ${pairLabel}`,pairLabel,
+          point:i*sources.length+j,unit,kind,components:3});
       }
     }
   }
@@ -108,10 +110,16 @@ export function plotCurveLabel(curve, axis) {
   return axis === "y" && curve.taskLabel ? `${curve.taskLabel} · ${label}` : label;
 }
 
+function commonQuantity(channel) {
+  if (channel?.kind === "flux") return HISTORY_QUANTITIES.flux;
+  if (channel?.pairLabel) return {...channel, label:HISTORY_QUANTITIES[channel.kind].label};
+  return channel;
+}
+
 export function plotAxisLabel(curves, axis) {
   const labels = [...new Set(curves.map(curve => {
     const channel = curve[`${axis}Channel`];
-    return plotChannelLabel(channel?.kind === "flux" ? HISTORY_QUANTITIES.flux : channel, curve[axis]);
+    return plotChannelLabel(commonQuantity(channel), curve[axis]);
   }))];
   if (labels.length === 1) return labels[0];
   const unit = curves[0]?.[`${axis}Channel`]?.unit;
@@ -119,9 +127,8 @@ export function plotAxisLabel(curves, axis) {
 }
 
 function plotQuantityIdentity(channel) {
-  // A coil selects a PSI row, not a different physical quantity. Keep its key
-  // and number on the channel for data reads, legends and tooltips.
-  if (channel.kind === "flux") return "flux";
+  // Coil and force-pair identifiers select rows within the same physical quantity.
+  if (channel.kind === "flux" || channel.pairLabel) return channel.kind;
   if (channel.kind === "extra") return JSON.stringify([channel.kind, channel.source?.manifest.model || "ОМ", channel.column]);
   return channel.key;
 }
@@ -206,13 +213,13 @@ export function singleTimePlotTable(curves, series) {
   for (const curve of curves) {
     const component = curve.y.component ?? "scalar";
     if (!columns.has(component)) {
-      const channel = curve.yChannel.kind === "flux" ? HISTORY_QUANTITIES.flux : curve.yChannel;
+      const channel = commonQuantity(curve.yChannel);
       const suffix = component === "scalar" ? "" : ` · ${"XYZ"[Number(component)]}`;
       columns.set(component, `${channel.label}${suffix}${channel.unit ? `, ${channel.unit}` : ""}`);
     }
     const id = curve.groupId ?? curve.id;
     if (!groups.has(id)) groups.set(id, { id, values: new Map(), point: curve.yChannel.kind === "field" ? curve.y.point ?? 1 : null,
-      comment: [curve.taskLabel, curve.yChannel.kind === "flux" ? `Катушка №${curve.yChannel.coil}` : ""].filter(Boolean).join(" · ") });
+      comment: [curve.taskLabel, curve.yChannel.kind === "flux" ? `Катушка №${curve.yChannel.coil}` : curve.yChannel.pairLabel].filter(Boolean).join(" · ") });
     groups.get(id).values.set(component, values.get(curve.id));
   }
   const keys = [...columns.keys()].sort();

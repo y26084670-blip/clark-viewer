@@ -202,3 +202,23 @@ test('OM quantity identity survives source reordering but distinguishes models a
  assert.throws(()=>validatePlotCurve({...curve,yChannel:{...c,column:'b'}},curve),/Ось Y/);
  assert.throws(()=>validatePlotCurve({...curve,yChannel:{...c,source:{manifest:{model:'two'}}}},curve),/Ось Y/);
 });
+
+test('FM pairs share force axes and retain pair identities in legends and single-time rows', async () => {
+ const t=comparisonTask(0,[0]);
+ t.metadata.FM.header.forceGroupIds=[3,7];
+ t.metadata.FM.header.forceSourceGroupIds=[0,3,7];
+ t.metadata.FM.pointCount=6;
+ t.reader.history=async ({point})=>({steps:[0],stride:6,values:[point+1,0,0,0,0,0]});
+ const channels=plotChannels(t), time=channels[0];
+ const curve=key=>({id:key,x:{},y:{component:"0"},xChannel:time,yChannel:channels.find(c=>c.key===key)});
+ const curves=[curve("force:3:0"),curve("force:7:3")];
+ assert.doesNotThrow(()=>validatePlotCurve(curves[1],curves[0]));
+ assert.throws(()=>validatePlotCurve(curve("moment:7:3"),curves[0]),/Ось Y/);
+ assert.equal(plotAxisLabel(curves,"y"),"Сила · X, Н");
+ const result=await readPlotCurves(t,curves);
+ assert.equal(result.error,"");
+ assert.match(result.series[0].label,/3 ← 0/);
+ const table=singleTimePlotTable(curves,result.series);
+ assert.deepEqual(table.headers,["Сила · X, Н"]);
+ assert.deepEqual(table.rows.map(r=>[r.comment,...r.values]),[["3 ← 0",1],["7 ← 3",5]]);
+});

@@ -26,6 +26,7 @@ async function fixture(name, Type, body, options = {}) {
     }
     for (const key of ["inds1", "numbs"]) header.create_dataset({ name: key, data: new BigInt64Array() });
     if (options.ids) header.create_dataset({name:"forceGroupIds", data:BigInt64Array.from(options.ids,BigInt)});
+    if (options.sources) header.create_dataset({name:"forceSourceGroupIds", data:BigInt64Array.from(options.sources,BigInt)});
     const steps = options.steps ?? [0, 2, 12].map(step => ({ key: String(step).padStart(6, "0"),
       values: name === "FM" ? [step, -3, 4, 5, 12, step] : [step * 10 + 1, -(step * 10 + 2), 0, step * 10 + 4] }));
     for (const step of steps) {
@@ -231,5 +232,25 @@ test("FM reads sparse group identifiers, diagonals and each directed pair for bo
     await fixture("FM",Float64Array,handle => {
       assert.throws(()=>new Hdf5ResultFile("FM",handle),/номера силовых групп/);
     },{ids:malformed,steps:[{key:"000000",values:rows}]});
+  }
+});
+
+test("rectangular FM uses source 0 on every actual target, preserving force and moment offsets", async () => {
+  const ids=[1,2,3], sources=[0,...ids], values=Array.from({length:72}, (_,i)=>i+1);
+  await fixture("FM",Float64Array,async handle => {
+    const task=taskWithFile(new Hdf5ResultFile("FM",handle)), channels=plotChannels(task);
+    for (const [k,kind] of ["force","moment"].entries()) {
+      const pairs=channels.filter(channel=>channel.kind===kind);
+      assert.deepEqual(pairs.map(c=>c.key), ids.flatMap(i=>sources.map(j=>[kind,i,j].join(":"))));
+      for (const [row,channel] of pairs.entries()) {
+        const [point]=await readPlotChannel(task,channel,{component:"0"});
+        assert.equal(point.value, values[6*row+3*k]);
+      }
+    }
+  }, {ids,sources,steps:[{key:"000000",values}]});
+  for (const bad of [{sources}, {ids,sources:[0,2,1,3]}, {ids,sources:[0,1,3]}, {ids,sources:[0,0,1,2,3]}]) {
+    await fixture("FM",Float64Array,handle=>{
+      assert.throws(()=>new Hdf5ResultFile("FM",handle),/номера силовых групп/);
+    }, {...bad,steps:[{key:"000000",values}]});
   }
 });

@@ -1,0 +1,49 @@
+name: Verify results comparison
+
+on:
+  pull_request:
+    paths:
+      - 'src/App.jsx'
+      - 'src/components/movie/ViewerToolsMenu.jsx'
+      - 'src/components/tasks/TaskResultsComparison*'
+      - 'src/services/taskResultsComparisonService.js'
+      - 'src/tabs/Tasks.jsx'
+      - 'src/workers/taskResultsComparison.worker.js'
+      - 'test/taskResultsComparison.test.js'
+      - 'test/browser/taskResultsComparison.fixture.jsx'
+      - 'test/viewerToolsMenu.test.js'
+      - 'scripts/check-task-results-comparison-browser.mjs'
+      - 'package*.json'
+      - '.github/workflows/verify-results-comparison.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  comparison:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Check comparison and tools menu
+        run: node --test test/taskResultsComparison.test.js test/viewerToolsMenu.test.js
+      - name: Prepare Viewer protocol scene
+        run: npm run pretest
+      - name: Install Chromium testing tools
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Check the integrated comparison panel
+        run: node scripts/check-task-results-comparison-browser.mjs
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: results-comparison-browser
+          path: /tmp/clark-task-results-comparison/
+          if-no-files-found: ignore

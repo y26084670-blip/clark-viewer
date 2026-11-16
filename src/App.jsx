@@ -8,6 +8,7 @@ import { mapResultObjects } from "./services/results/resultMappings.js";
 import { AboutDialog } from "./components/AboutDialog.jsx";
 import { WhatsNewDialog } from "./components/updates/WhatsNewDialog.jsx";
 import { ViewerToolsMenu } from "./components/movie/ViewerToolsMenu.jsx";
+import { TaskResultsComparisonDialog } from "./components/tasks/TaskResultsComparisonDialog.jsx";
 import { TaskProtocolDialog } from "./components/protocol/TaskProtocolDialog.jsx";
 import { createMovieExportController } from "./services/movie/movieExportController.js";
 import { createMovieWebmEncoder } from "./services/movie/movieWebmEncoder.js";
@@ -62,6 +63,18 @@ export default function App() {
   const sceneElements = createMemo(previous => active() === 1 ? elements() : previous, []);
   const sceneRegions = createMemo(previous => active() === 1 ? regions() : previous, []);
   const [toolsSelection, setToolsSelection] = createSignal(null);
+  const [comparisonContext, setComparisonContext] = createSignal(null);
+  const [comparisonRequest, setComparisonRequest] = createSignal(null);
+  function openComparison(opener) {
+    const context = comparisonContext();
+    if (!context?.eligible || busy() || movieBusy() || comparisonRequest()) return;
+    setComparisonRequest({...context,projects:[...context.projects],opener});
+  }
+  function closeComparison() {
+    const opener = comparisonRequest()?.opener;
+    setComparisonRequest(null);
+    queueMicrotask(() => { if (opener?.isConnected) opener.focus(); });
+  }
   const [faceCurrentSelection, setFaceCurrentSelection] = createSignal(null);
   const [plotRecipes, setPlotRecipes] = createSignal([]);
   const [protocolEntries, setProtocolEntries] = createSignal({});
@@ -205,11 +218,15 @@ export default function App() {
         eligible={!movieDisabledReason()}
         taskActionsEligible={Boolean(task()) && !busy() && !movieBusy()}
         selectedTask={toolsSelection()} selectionActionsEligible={!busy() && !movieBusy()}
+        comparisonEligible={Boolean(comparisonContext()?.eligible) && !busy() && !movieBusy() && !comparisonRequest()}
+        onCompareResults={openComparison}
         onRun={options => movieController.run(options)} onBusyChange={setMovieBusy} />
     </nav>
     <main class="tabs-body" ref={workspace} inert={movieBusy()} aria-busy={movieBusy()}>
       <div class="task-tab" style={{ display: active() === 0 ? "flex" : "none" }}>
-        <Tasks active={active() === 0} onToolsSelection={setToolsSelection} onRootChange={setPlotRoot} onShowTasks={() => setActive(0)} onLoad={(...args) => { if (!movieBusy()) return load(...args); }} loadedHandle={task()?.handle} busy={busy() || movieBusy()} error={error()}
+        <Tasks active={active() === 0} onToolsSelection={setToolsSelection} onComparisonContextChange={setComparisonContext}
+          onRootChange={setPlotRoot} onShowTasks={() => setActive(0)} onLoad={(...args) => { if (!movieBusy()) return load(...args); }}
+          loadedHandle={task()?.handle} busy={busy() || movieBusy() || Boolean(comparisonRequest())} error={error()}
           onTaskListRefresh={refreshLoadedPlanarMode} onEditProtocol={editProtocol} docsRevision={docsRevision()} />
       </div>
       <Show when={retainedTask()} keyed>{loaded =>
@@ -233,6 +250,7 @@ export default function App() {
         </Show>
       </Show>
     </main>
+    <Portal><TaskResultsComparisonDialog request={comparisonRequest()} onClose={closeComparison} /></Portal>
     <Portal><TaskProtocolDialog open={Boolean(protocolRequest())} task={protocolRequest()?.task}
       initialFilename={protocolRequest()?.filename ?? ""} entries={protocolDialogEntries()} session={protocolSession()}
       onRemoveBlock={id => { if (protocolUsesSelection()) setProtocolEntries(previous => Object.fromEntries(Object.entries(previous).filter(([, block]) => block.id !== id))); }}

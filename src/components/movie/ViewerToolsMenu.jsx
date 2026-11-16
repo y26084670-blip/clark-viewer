@@ -11,7 +11,7 @@ export function ViewerToolsMenu(props) {
   const testProtocolTask = () => selectionTab() ? props.selectedTask : props.task;
   const testProtocolEligible = () => selectionTab() ? props.selectionActionsEligible : props.taskActionsEligible;
   const canEditProtocol = createMemo(() => !selectionTab() && Boolean(props.taskActionsEligible));
-  let taskProtocolMenuItem, faceCurrentsMenuItem;
+  let taskProtocolMenuItem, faceCurrentsMenuItem, comparisonMenuItem;
   const [currentsTask, setCurrentsTask] = createSignal(null);
   createEffect(() => { if (currentsTask() && currentsTask() !== props.task) setCurrentsTask(null); });
   const [menuOpen, setMenuOpen] = createSignal(false);
@@ -70,6 +70,11 @@ export function ViewerToolsMenu(props) {
   function closeFaceCurrents() {
     setCurrentsTask(null);
     queueMicrotask(() => trigger?.focus());
+  }
+  function openComparison() {
+    if (!props.comparisonEligible) return;
+    closeMenu();
+    props.onCompareResults?.(trigger);
   }
 
   async function refreshProtocols(handle = testProtocolTask()?.handle) {
@@ -263,7 +268,7 @@ export function ViewerToolsMenu(props) {
       event.preventDefault(); closeMenu(true);
     }
   }
-  const menuItems = () => [menuItem, taskProtocolMenuItem, protocolsMenuItem, faceCurrentsMenuItem].filter(item => item && !item.disabled);
+  const menuItems = () => [menuItem, taskProtocolMenuItem, protocolsMenuItem, faceCurrentsMenuItem, comparisonMenuItem].filter(item => item && !item.disabled);
   function onMenuKeyDown(event) {
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.code)) {
       event.preventDefault();
@@ -357,6 +362,8 @@ export function ViewerToolsMenu(props) {
             onClick={openProtocols}>Протоколы тестов</button>
           <button ref={faceCurrentsMenuItem} type="button" role="menuitem" disabled={Boolean(faceCurrentsDisabledReason())}
             title={faceCurrentsDisabledReason()} onClick={openFaceCurrents}>Полные токи через грани</button>
+          <button ref={comparisonMenuItem} type="button" role="menuitem" disabled={!props.comparisonEligible}
+            onClick={openComparison}>Сравнить результаты</button>
         </div>
       </Show>
       <Show when={currentsTask() && currentsTask() === props.task}>

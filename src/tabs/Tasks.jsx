@@ -43,6 +43,10 @@ export function Tasks(props) {
   const [selectionError, setSelectionError] = createSignal("");
   const browserBusy = () => accessBusy() || projectListBusy() || taskListBusy() || galleryBusy() || selectionReceiving() || protocolBusy() || textProtocolsBusy();
   createEffect(() => props.onToolsSelection?.(props.busy || browserBusy() || accessOpen() ? null : candidate()));
+  createEffect(() => props.onComparisonContextChange?.({
+    projects:projects(), preferred:candidate() ? `${project()}/${candidate().name}` : "",
+    eligible:Boolean(projects().length) && !props.busy && !browserBusy() && !accessOpen(),
+  }));
   let taskListElement, selectionErrorDialog, selectionErrorReturnFocus;
   const [lastTask, setLastTask] = createSignal(null), [lastTaskNotice, setLastTaskNotice] = createSignal("");
   const lastTaskHistory = createLastOpenedTaskHistory({ app: "viewer", onChange: setLastTask, onNotice: setLastTaskNotice });

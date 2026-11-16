@@ -64,7 +64,7 @@ try {
   await access.getByRole("button", { name: "Выбрать диск с проектами", exact: true }).click();
   await access.getByRole("button", { name: "Продолжить", exact: true }).click();
   await page.locator("#listProject").selectOption("Project2");
-  await page.locator("#listTask .task-status-label").filter({ hasText: /^A$/ }).click();
+  await page.getByRole("listbox",{name:"Список заданий",exact:true}).locator(".task-status-label").filter({ hasText: /^A$/ }).click();
   const tools = page.getByRole("button", { name: "Инструменты", exact: true });
   await tools.click();
   const menu = page.getByRole("menu", { name: "Инструменты", exact: true });
@@ -72,6 +72,7 @@ try {
   await menu.getByRole("menuitem", { name: "Сравнить результаты", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Сравнить результаты", exact: true });
   await dialog.waitFor();
+  await page.waitForFunction(() => document.querySelector('select[aria-label="Задание 1"]')?.value === "Project2/A");
   assert.equal(await dialog.getByRole("combobox", { name: "Задание 1", exact: true }).inputValue(),"Project2/A");
   await dialog.getByRole("combobox", { name: "Задание 2", exact: true }).selectOption("Project10/B");
   const report = dialog.getByRole("textbox", { name: "Результаты сравнения", exact: true });

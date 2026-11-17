@@ -4,7 +4,7 @@ const BASELINE_KEY = "clark.updates.baseline.v1";
 const CHANGE_EVENT = "clark-updates-changed";
 const VERSION_KEY = "clark.updates.installed.v1";
 const GUID = /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
-export const NEWS_CATEGORIES = Object.freeze({ interface: "Интерфейс", computation: "Алгоритмы" });
+export const NEWS_CATEGORIES = Object.freeze({ interface: "Интерфейс", computation: "Модель" });
 
 export function validVersion(value) {
   return typeof value === "string" && value.length <= 64 && /^\d+\.\d+\.\d+$/.test(value);

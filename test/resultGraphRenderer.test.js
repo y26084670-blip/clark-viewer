@@ -5,6 +5,7 @@ import { updateGraphScene, disposeGraphScene } from "../src/services/visualizati
 import { createResultGraphReader } from "../src/services/results/resultGraphRequests.js";
 import { calculateResultGraphs } from "../src/services/visualization/resultGraphField.js";
 import { graph3DTask } from "../scripts/test-support/graph3DFixture.js";
+import { createGraphSurfaceMaterial, GRAPH_LIGHTING } from "../src/services/visualization/resultGraphLighting.js";
 const fixture = async () => {
   const f = graph3DTask({ mirror: 0 });
   const reader = createResultGraphReader({ processorFactory: () => ({ process: async input => calculateResultGraphs(input), close() {} }) });
@@ -12,6 +13,27 @@ const fixture = async () => {
   assert.deepEqual(errors, []); reader.close(); return { ...f, graphs, root: new THREE.Group() };
 };
 const surfaces = root => { const result = []; root.traverse(o => { if (o.name === "result-graph-surface") result.push(o); }); return result; };
+
+test("graph shading preserves numeric colors, is confined to graph materials and retains the ordinary shader as a fallback", () => {
+  const material = createGraphSurfaceMaterial(THREE, { color: 0xff0000, side: THREE.DoubleSide });
+  const shader = { uniforms: {}, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
+  material.onBeforeCompile(shader);
+  assert.equal(material.color.getHex(), 0xff0000);
+  assert.equal(material.side, THREE.DoubleSide);
+  assert.equal(shader.uniforms.graphAmbientWeight.value, GRAPH_LIGHTING.ambient);
+  assert.equal(shader.uniforms.graphDirectionalWeight.value, GRAPH_LIGHTING.directional);
+  assert.ok(GRAPH_LIGHTING.ambient > 0 && GRAPH_LIGHTING.ambient < 1);
+  assert.ok(GRAPH_LIGHTING.directional > 1);
+  assert.match(shader.fragmentShader, /reflectedLight\.indirectDiffuse \*= graphAmbientWeight/);
+  const ordinary = { uniforms: {}, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
+  new THREE.MeshStandardMaterial().onBeforeCompile(ordinary);
+  assert.equal(ordinary.fragmentShader, THREE.ShaderLib.standard.fragmentShader);
+  const fallback = { uniforms: {}, fragmentShader: "unfamiliar shader" };
+  material.onBeforeCompile(fallback);
+  assert.equal(fallback.fragmentShader, "unfamiliar shader");
+  assert.deepEqual(fallback.uniforms, {});
+  material.dispose();
+});
 
 test("surface graphs use lit RGB/palette meshes over white bases; size keeps the minimum gap fixed and changes the height range without mutating field samples", async () => {
   const f = await fixture(); updateGraphScene(THREE, f.root, f.scene, f.graphs, { scale: 1 });
@@ -52,4 +74,36 @@ test("replacing and removing surface plots disposes geometry and material resour
   let expected = 0, disposed = 0;
   f.root.traverse(o => { for (const resource of [o.geometry, o.material].filter(Boolean)) { expected++; resource.addEventListener("dispose", () => disposed++); } });
   updateGraphScene(THREE, f.root, f.scene, [], {}); assert.equal(f.root.children.length, 0); assert.equal(disposed, expected);
+});
+
+
+test("area component switches preserve surfaces, bases, lighting and sampling across all XYZ combinations", async () => {
+  const f = await fixture();
+  updateGraphScene(THREE, f.root, f.scene, f.graphs);
+  const original = surfaces(f.root), reads = f.reads.length;
+  for (let mask = 0; mask < 8; mask++) {
+    const areaComponents = [0, 1, 2].map(c => Boolean(mask & (1 << c)));
+    updateGraphScene(THREE, f.root, f.scene, f.graphs, { areaComponents });
+    assert.deepEqual(surfaces(f.root), original);
+    for (const mesh of original) {
+      assert.equal(mesh.visible, mesh.userData.graphKind === "region" ? areaComponents[mesh.userData.component] : true);
+      assert.ok(mesh.material.isMeshStandardMaterial);
+    }
+    const pickable = []; f.root.traverseVisible(o => { if (o.name === "result-graph-surface") pickable.push(o); });
+    assert.ok(pickable.every(o => o.userData.graphKind !== "region" || areaComponents[o.userData.component]));
+    const bases = []; f.root.traverseVisible(o => { if (o.name === "result-graph-base") bases.push(o); });
+    assert.equal(bases.length, 5);
+    assert.equal(f.reads.length, reads);
+  }
+  updateGraphScene(THREE, f.root, f.scene, f.graphs);
+  assert.ok(original.every(m => m.visible));
+  disposeGraphScene(f.root);
+});
+
+test("XYZ switches leave scalar area surfaces visible", async () => {
+  const f = await fixture(), graph = f.graphs.find(g => g.kind === "region");
+  const scalar = { ...graph, components: 1, surfaces: graph.surfaces.filter(s => s.component === 0) };
+  updateGraphScene(THREE, f.root, f.scene, [scalar], { areaComponents: [false, false, false] });
+  assert.ok(surfaces(f.root).every(m => m.visible && m.material.vertexColors));
+  disposeGraphScene(f.root);
 });

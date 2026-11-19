@@ -1,0 +1,50 @@
+name: Verify surface graph lighting
+
+on:
+  pull_request:
+    paths:
+      - 'src/services/visualization/resultGraph*'
+      - 'src/components/geometry/ThreeGeometryViewport.jsx'
+      - 'src/components/geometry/ResultsGeometryViewport.jsx'
+      - 'src/tabs/SourcesFields3D.jsx'
+      - 'src/services/results/graphSettingsStore.js'
+      - 'test/sourcesFields3DGraphs.test.js'
+      - 'test/graphSettingsStore.test.js'
+      - 'scripts/check-3d-graphs.mjs'
+      - 'scripts/test-support/graph3D*'
+      - 'scripts/test-support/sourcesFields3DSetup.js'
+      - 'test/resultGraphRenderer.test.js'
+      - 'package*.json'
+      - '.github/workflows/verify-graph-lighting.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lighting:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Check graph geometry and rendering resources
+        run: node --test test/resultGraphRenderer.test.js test/resultGraphRequests.test.js test/graphProfiles.test.js test/resultGraphContours.test.js
+      - name: Install Chromium testing tools
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Check surface graph interaction and WebGL lighting
+        run: node scripts/check-3d-graphs.mjs
+      - name: Save graph verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-lighting-browser-evidence
+          path: /tmp/clark-3d-graphs
+          if-no-files-found: ignore
+          retention-days: 7

@@ -2435,6 +2435,7 @@ export function ThreeGeometryViewport(props) {
     if (!THREE || !helperRoot) return;
     graphRoot ??= new THREE.Group(); graphRoot.name = "result-graphs";
     updateGraphScene(THREE, graphRoot, props.scene, props.graphResults ?? [], {
+      areaComponents: props.graphAreaComponents,
       active: props.activeGraph, preview: props.graphPreview, selected: props.graphSelection,
       scale: props.resultVectorScale ?? 1, palette: props.resultPalette, filters: activeResultFilters,
       contour: props.graphContour, contours: props.graphContours, contourPreview: graphContourPreview(), resolution: [viewportWidth, viewportHeight],
@@ -2875,7 +2876,7 @@ export function ThreeGeometryViewport(props) {
   });
 
   createEffect(() => {
-    props.graphResults; props.activeGraph; props.graphPreview; props.graphSelection; props.resultVectorScale; props.resultPalette;
+    props.graphAreaComponents; props.graphResults; props.activeGraph; props.graphPreview; props.graphSelection; props.resultVectorScale; props.resultPalette;
     props.graphContour; props.graphContours; graphContourPreview();
     if (!ready()) return;
     graphsDirty = true; requestRender();
@@ -2889,7 +2890,7 @@ export function ThreeGeometryViewport(props) {
   });
 
   createEffect(() => {
-    props.graphResults; props.taskKey; props.graphInteractionBlocked; props.filters; props.resultVectorScale;
+    props.graphAreaComponents; props.graphResults; props.taskKey; props.graphInteractionBlocked; props.filters; props.resultVectorScale;
     if (ready()) untrack(() => graphContourInteraction?.close());
   });
 

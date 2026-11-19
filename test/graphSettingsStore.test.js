@@ -20,7 +20,7 @@ const settings = { only: true, areas: true, showSlices: true, active: 4,
   slices: [{ id: 4, recordIndex: 0, direction: 2, discrete: 2, component: 1 }],
   profiles: [{ id: 8, graphId: 4, instanceKey: "elements:0:0:0:1:0:0", direction: 0, index: 2,
     view: { autoScale: false, showLegend: false, hidden: ["Y"], limits: { xMin: 2, xMax: 17, yMin: -9, yMax: 28 }, legendPosition: { x: .3, y: .8 }, windowSize: { width: 1180, height: 720 } } }],
-  activeProfile: 8, expandedProfile: 8, view: { resultVectorScale: 3.25, resultPalette: "Turbo", resultElementsQuantity: "J", showPeriodicSymmetry: true }, selections: { elements: [1], regions: [1] } };
+  activeProfile: 8, expandedProfile: 8, view: { resultVectorScale: 3.25, resultPalette: "Turbo", resultElementsQuantity: "J", showPeriodicSymmetry: true, areaGraphX: false, areaGraphY: true, areaGraphZ: false }, selections: { elements: [1], regions: [1] } };
 
 test("settings, collection, selected image and chart view survive a fresh task object and directory reopen", async () => {
   const f = graph3DTask(), d = disk(); f.task.handle = d.handle;
@@ -28,6 +28,7 @@ test("settings, collection, selected image and chart view survive a fresh task o
   store.save(settings); await store.flush(); await store.dispose(); assert.equal(d.writes(), 1);
   const task = { ...graph3DTask().task, handle: d.handle }, restored = createGraphSettingsStore(task);
   const saved = await restored.ready;
+  assert.deepEqual([saved.view.areaGraphX, saved.view.areaGraphY, saved.view.areaGraphZ], [false, true, false]);
   assert.equal(saved.view.resultVectorScale, 3.25); assert.deepEqual(saved.slices, settings.slices);
   assert.deepEqual(saved.profiles[0].view, settings.profiles[0].view); assert.equal(saved.expandedProfile, 8);
   assert.deepEqual(saved.selections, settings.selections); await restored.dispose();

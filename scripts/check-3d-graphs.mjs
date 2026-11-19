@@ -30,7 +30,7 @@ const inspect = { name: "surface-graph-inspection", enforce: "pre", configureSer
       ids.forEach((n,k)=>p.addScaledVector(new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position,n),weights[k]));
       p.project(camera);const box=renderer.domElement.getBoundingClientRect();return {x:box.left+(p.x+1)*box.width/2,y:box.top+(1-p.y)*box.height/2};
     }, snapshot: () => {
-      const meshes=[];graphRoot?.traverse(o=>{if(o.name==="result-graph-surface")meshes.push({id:o.userData.graphId,component:o.userData.component,visible:o.parent.visible,color:o.material.color.getHexString(),lit:o.material.isMeshStandardMaterial,palette:o.material.vertexColors,factor:o.userData.factor,positions:Array.from(o.geometry.attributes.position.array.slice(0,9)),basePositions:Array.from(o.userData.surface.positions.slice(0,9))});});
+      const meshes=[];graphRoot?.traverse(o=>{if(o.name==="result-graph-surface")meshes.push({id:o.userData.graphId,component:o.userData.component,visible:o.visible && o.parent.visible,color:o.material.color.getHexString(),lit:o.material.isMeshStandardMaterial,lighting:o.material.customProgramCacheKey(),palette:o.material.vertexColors,factor:o.userData.factor,positions:Array.from(o.geometry.attributes.position.array.slice(0,9)),basePositions:Array.from(o.userData.surface.positions.slice(0,9))});});
       const contours=[];graphRoot?.traverse(o=>{if(o.name==="graph-contour")contours.push({selection:o.userData.selection,preview:o.userData.preview,positions:Array.from(o.children[0].geometry.attributes.instanceStart.array)});});
       return {meshes,contours,filters:activeResultFilters,geometryCount:geometryRoot?.children.length,preview:graphRoot?.getObjectByName("graph-slice-preview")?.children.length??0,previewSpec:props.graphPreview,previewPoint:graphRoot?.getObjectByName("graph-slice-preview")?.children[0]?.geometry.attributes.position.array.slice(0,3),selectionTypes:graphRoot?.getObjectByName("graph-selected-element")?.children.map(o=>o.type)??[],selected:graphRoot?.getObjectByName("graph-selected-element")?.children.length??0,
         camera:[camera?.position.toArray(),camera?.quaternion.toArray(),controls?.target.toArray()],direction:camera?.position.clone().sub(controls.target).normalize().toArray(),layers:[...resultLayerStates.values()].reduce((n,s)=>n+(s.vectorRoot?.children.length??0)+(s.scalarRoot?.children.length??0),0)};
@@ -42,9 +42,42 @@ try {
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
   server = await createServer({ configFile: false, root, cacheDir: path.join(root, "node_modules/.vite-graph3d-check"), plugins: [inspect, solid()], optimizeDeps: { entries: [path.join(dir, "index.html")] }, server: { host: "127.0.0.1", port: 0, hmr: false } }); await server.listen();
   browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE || undefined, args: ["--no-sandbox", "--enable-unsafe-swiftshader", "--disable-dev-shm-usage"] });
-  page = await browser.newPage({ viewport: { width: 1920, height: 1080 } }); page.on("pageerror", e => errors.push(e.message)); page.on("console", message => { if (message.type() === "error") console.error(message.text()); if(message.text().includes("computations created outside")) errors.push(message.text()); });
+  page = await browser.newPage({ viewport: { width: 1920, height: 1080 } }); page.on("pageerror", e => errors.push(e.message)); page.on("console", message => { if (message.type() === "error") console.error(message.text()); if(message.text().includes("computations created outside") || message.text().includes("Shader Error")) errors.push(message.text()); });
   await page.goto("http://127.0.0.1:" + server.httpServer.address().port + "/" + path.basename(dir) + "/index.html");
   await page.waitForFunction(() => window.graphScene?.ready() && graphUI.ready());
+  const lightingPixels = await page.evaluate(async () => {
+    const THREE = await import('/node_modules/three/build/three.module.js');
+    const { createGraphSurfaceMaterial } = await import('/src/services/visualization/resultGraphLighting.js');
+    const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });
+    renderer.setSize(64, 64, false);
+    const scene = new THREE.Scene(); scene.background = new THREE.Color(0x000000);
+    scene.add(new THREE.AmbientLight(0xffffff, 1.25));
+    const light = new THREE.DirectionalLight(0xffffff, .55); light.position.set(1, -1, 2); scene.add(light);
+    const camera = new THREE.OrthographicCamera(-1.2, 1.2, 1.2, -1.2, .1, 10);
+    camera.position.set(0, 0, 4); camera.lookAt(0, 0, 0);
+    const geometry = new THREE.PlaneGeometry(2, 2);
+    const sample = lit => {
+      const parameters = { color: 0xff0000, roughness: .72, metalness: 0, side: THREE.DoubleSide };
+      const material = lit ? createGraphSurfaceMaterial(THREE, parameters) : new THREE.MeshStandardMaterial(parameters);
+      const mesh = new THREE.Mesh(geometry, material); scene.add(mesh);
+      const values = [];
+      for (const angle of [Math.PI / 3, -Math.PI / 3]) {
+        mesh.rotation.y = angle; renderer.render(scene, camera);
+        const pixel = new Uint8Array(4); renderer.getContext().readPixels(32, 32, 1, 1, renderer.getContext().RGBA, renderer.getContext().UNSIGNED_BYTE, pixel);
+        values.push(Array.from(pixel));
+      }
+      scene.remove(mesh); material.dispose(); return values;
+    };
+    const ordinary = sample(false), graph = sample(true), glError = renderer.getContext().getError();
+    geometry.dispose(); renderer.dispose(); renderer.forceContextLoss();
+    return { ordinary, graph, glError };
+  });
+  assert.equal(lightingPixels.glError, 0);
+  const contrast = values => Math.abs(values[0][0] - values[1][0]);
+  assert.ok(contrast(lightingPixels.graph) > 1.5 * contrast(lightingPixels.ordinary), JSON.stringify(lightingPixels));
+  assert.ok(lightingPixels.graph.every(p => p[0] > 30 && p[0] < 255 && p[0] > p[1] && p[0] > p[2]), JSON.stringify(lightingPixels));
+  await writeFile(path.join(out, 'surface-lighting-pixels.json'), JSON.stringify(lightingPixels, null, 2));
+  pass("Real WebGL graph shader increases slope contrast while retaining red hue and a visible shaded side");
   const scene = () => page.evaluate(() => graphScene.snapshot()), graphs = page.locator(".source-graphs-panel");
   const closeMenus = () => page.locator(".task-info-bar").click();
   const open = async () => {
@@ -181,7 +214,17 @@ try {
   await open(); await graphs.getByRole("checkbox", { name: "Графики над площадками", exact: true }).check();
   await page.waitForFunction(() => graphScene.snapshot().meshes.length === 3); await waitGraphs();
   const rgb = (await scene()).meshes; assert.deepEqual(rgb.map(m => m.color), ["ff0000", "00ff00", "0000ff"]); assert.ok(rgb.every(m => m.lit && !m.palette));
+  assert.ok(rgb.every(m => m.lighting === "result-graph-shape-lighting-v1"));
+  await page.screenshot({ path: path.join(out, "graph-surface-lighting.png"), fullPage: true });
   pass("Area graphs build three lit RGB surfaces in the real worker");
+  for (let mask = 0; mask < 8; mask++) {
+    for (const [c, axis] of ["X", "Y", "Z"].entries())
+      await graphs.getByRole("checkbox", { name: `Компонента ${axis} над площадками`, exact: true }).setChecked(Boolean(mask & (1 << c)));
+    await page.waitForFunction(mask => graphScene.snapshot().meshes.every(m => m.visible === Boolean(mask & (1 << m.component))), mask);
+    assert.equal((await scene()).meshes.length, 3);
+  }
+  pass("All eight XYZ combinations update visible area surfaces without replacing the graph data");
+
   const surfacePoint = (id,component,u,v,ps=0) => page.evaluate(args=>graphScene.point(...args),[id,component,u,v,ps]);
   const clickSurface = async (id,component,u,v,button="left",ps=0) => {await waitGraphs(); const p=await surfacePoint(id,component,u,v,ps);await page.mouse.click(p.x,p.y,{button});};
   await closeMenus();

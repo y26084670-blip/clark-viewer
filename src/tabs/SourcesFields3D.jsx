@@ -224,6 +224,10 @@ export function SourcesFields3D(props) {
   const [elementsMode] = createGeometryViewSetting("elementsMode", "all");
   const [regionsMode] = createGeometryViewSetting("regionsMode", "all");
   const graphView = Object.fromEntries(Object.entries(GRAPH_VIEW_DEFAULTS).map(([key, initial]) => [key, createGeometryViewSetting(key, initial)]));
+  const areaGraphComponents = createMemo(() => [graphView.areaGraphX[0](), graphView.areaGraphY[0](), graphView.areaGraphZ[0]()]);
+  const setAreaGraphComponent = (component, shown) => {
+    if (!graphBlocked() && [0, 1, 2].includes(component)) graphView[["areaGraphX", "areaGraphY", "areaGraphZ"][component]][1](shown === true);
+  };
   const resultSymmetry = createMemo(() => ({
     local: graphView.showLocalSymmetry[0](), axial: graphView.showAxialSymmetry[0](),
     periodic: graphView.showPeriodicSymmetry[0](), mirror: graphView.showMirrorSymmetry[0](),
@@ -479,6 +483,16 @@ export function SourcesFields3D(props) {
                       if (event.currentTarget.checked && regionsQuantity() === "none") setRegionsQuantity(props.task.metadata.HS ? "Bs" : "As");
                       setAreaGraphs(event.currentTarget.checked);
                     }} /> Графики над площадками</label>
+                  <Show when={areaGraphs() && QUANTITIES[regionsQuantity()]?.components === 3}>
+                    <div class="source-slice-actions" role="group" aria-label="Компоненты графиков над площадками">
+                      <For each={["X", "Y", "Z"]}>{(axis, index) =>
+                        <label class="source-toolbar-option" title={`Показать компоненту ${axis} над всеми видимыми площадками`}>
+                          <input type="checkbox" aria-label={`Компонента ${axis} над площадками`} checked={areaGraphComponents()[index()]} disabled={graphBlocked()}
+                            onChange={event => setAreaGraphComponent(index(), event.currentTarget.checked)} /> {axis}
+                        </label>
+                      }</For>
+                    </div>
+                  </Show>
                   <div class="source-slice-actions">
                     <label class="source-toolbar-option" title="Показать или скрыть все добавленные срезы. Скрытие сохраняет строки таблицы и выбранные дискреты."><input type="checkbox" checked={sliceGraphs()} disabled={graphBlocked()}
                       onChange={event => setSliceGraphs(event.currentTarget.checked)} /> Срезы в элементах</label>
@@ -615,6 +629,7 @@ export function SourcesFields3D(props) {
           resultLayersPending={hasRequestedResults() && result().loading}
           resultError={[result().error, ...(value()?.errors ?? []).map(error => error.message)].filter(Boolean).join(" · ")}
           resultStreamlines={graphsOnly() ? [] : streamlines()} selectedStreamline={selectedStreamline()}
+          graphAreaComponents={areaGraphComponents()}
           graphResults={graphResults()} activeGraph={activeSlice()} graphPreview={previewSlice()} graphSelection={selectedSlice()}
           graphContour={graphContour()} graphContours={graphProfiles()} onGraphContourChange={selectGraphContour} graphInteractionBlocked={graphBlocked() || graphBusy()}
           streamlineWidth={streamlineWidth()} streamlineColorMap={true}

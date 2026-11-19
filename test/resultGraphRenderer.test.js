@@ -5,6 +5,7 @@ import { updateGraphScene, disposeGraphScene } from "../src/services/visualizati
 import { createResultGraphReader } from "../src/services/results/resultGraphRequests.js";
 import { calculateResultGraphs } from "../src/services/visualization/resultGraphField.js";
 import { graph3DTask } from "../scripts/test-support/graph3DFixture.js";
+import { createGraphSurfaceMaterial, GRAPH_LIGHTING } from "../src/services/visualization/resultGraphLighting.js";
 const fixture = async () => {
   const f = graph3DTask({ mirror: 0 });
   const reader = createResultGraphReader({ processorFactory: () => ({ process: async input => calculateResultGraphs(input), close() {} }) });
@@ -12,6 +13,27 @@ const fixture = async () => {
   assert.deepEqual(errors, []); reader.close(); return { ...f, graphs, root: new THREE.Group() };
 };
 const surfaces = root => { const result = []; root.traverse(o => { if (o.name === "result-graph-surface") result.push(o); }); return result; };
+
+test("graph shading preserves numeric colors, is confined to graph materials and retains the ordinary shader as a fallback", () => {
+  const material = createGraphSurfaceMaterial(THREE, { color: 0xff0000, side: THREE.DoubleSide });
+  const shader = { uniforms: {}, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
+  material.onBeforeCompile(shader);
+  assert.equal(material.color.getHex(), 0xff0000);
+  assert.equal(material.side, THREE.DoubleSide);
+  assert.equal(shader.uniforms.graphAmbientWeight.value, GRAPH_LIGHTING.ambient);
+  assert.equal(shader.uniforms.graphDirectionalWeight.value, GRAPH_LIGHTING.directional);
+  assert.ok(GRAPH_LIGHTING.ambient > 0 && GRAPH_LIGHTING.ambient < 1);
+  assert.ok(GRAPH_LIGHTING.directional > 1);
+  assert.match(shader.fragmentShader, /reflectedLight\.indirectDiffuse \*= graphAmbientWeight/);
+  const ordinary = { uniforms: {}, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
+  new THREE.MeshStandardMaterial().onBeforeCompile(ordinary);
+  assert.equal(ordinary.fragmentShader, THREE.ShaderLib.standard.fragmentShader);
+  const fallback = { uniforms: {}, fragmentShader: "unfamiliar shader" };
+  material.onBeforeCompile(fallback);
+  assert.equal(fallback.fragmentShader, "unfamiliar shader");
+  assert.deepEqual(fallback.uniforms, {});
+  material.dispose();
+});
 
 test("surface graphs use lit RGB/palette meshes over white bases; size keeps the minimum gap fixed and changes the height range without mutating field samples", async () => {
   const f = await fixture(); updateGraphScene(THREE, f.root, f.scene, f.graphs, { scale: 1 });

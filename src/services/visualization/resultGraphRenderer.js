@@ -3,6 +3,7 @@ import { graphSlicePatch, graphSurfaceIndices } from "./resultGraphField.js";
 import { resultScalarColor } from "./resultScalarColors.js";
 import { applyMatrix4ToPoint } from "../solver/rotation3d.js";
 import { updateGraphContours } from "./resultGraphContours.js";
+import { createGraphSurfaceMaterial } from "./resultGraphLighting.js";
 
 const RGB = [0xff0000, 0x00ff00, 0x0000ff];
 const visible = (source, instance, filters) => primitiveVisible({ source }, filters?.objectModes, filters?.selections) && instanceVisible(instance, filters?.symmetry);
@@ -52,7 +53,7 @@ function buildGraph(THREE, graph, options) {
     meshGeometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
     const rgb = graph.kind === "region" && graph.components === 3;
     if (!rgb) meshGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    const mesh = new THREE.Mesh(meshGeometry, new THREE.MeshStandardMaterial({ color: rgb ? RGB[surface.component] : 0xffffff,
+    const mesh = new THREE.Mesh(meshGeometry, createGraphSurfaceMaterial(THREE, { color: rgb ? RGB[surface.component] : 0xffffff,
       vertexColors: !rgb, roughness: .72, metalness: 0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
     mesh.name = "result-graph-surface"; mesh.userData = { graphId: graph.id, graphKind: graph.kind, graph, component: surface.component, surface, factor, gap };
     image.add(mesh);

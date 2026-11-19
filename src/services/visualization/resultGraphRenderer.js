@@ -40,15 +40,16 @@ function buildGraph(THREE, graph, options) {
     const span = spanOf(surface), diagonal = options.sceneDiagonal;
     const nominalHeight = diagonal > 0 ? Math.min(span * .35, diagonal * .06) : span * .35;
     const reference = Number.isFinite(graph.referenceMaximum) && graph.referenceMaximum > 0 ? graph.referenceMaximum : 1;
+    const { minimum, maximum } = graph.displayRange ?? surface;
     const factor = nominalHeight * options.scale / reference;
     // Keep the support gap small even for very large/elongated patches.
     const gap = diagonal > 0 ? Math.min(span * .01, diagonal * .0001) : span * .01;
     const color = new THREE.Color();
     for (let n = 0; n < surface.values.length; n++) {
       const value = Number.isFinite(surface.values[n]) ? surface.values[n] : 0;
-      const height = gap + (value / reference - surface.minimum / reference) * nominalHeight * options.scale;
+      const height = gap + (value / reference - minimum / reference) * nominalHeight * options.scale;
       for (let k = 0; k < 3; k++) positions[n * 3 + k] = surface.positions[n * 3 + k] + surface.normals[n * 3 + k] * height;
-      color.setRGB(...resultScalarColor(value, surface.minimum, surface.maximum, options.palette), THREE.SRGBColorSpace);
+      color.setRGB(...resultScalarColor(value, minimum, maximum, options.palette), THREE.SRGBColorSpace);
       colors.set(color.toArray(), n * 3);
     }
     const meshGeometry = geometry(THREE, positions, surface.indices);

@@ -1,6 +1,7 @@
-import { mapResultObjects, QUANTITIES, sourceRecords } from "./resultMappings.js";
+import { elementLayout, mapResultObjects, QUANTITIES, sourceRecords } from "./resultMappings.js";
 import { isFmm } from "./fmmCharacteristics.js";
 import { resultCycleRange } from "./resultRanges.js";
+import { resultSymmetryCopies } from "./resultSymmetry.js";
 
 const unavailable = (reason, state = "unavailable") => ({ available: false, reason, state });
 const products = Object.freeze({ MHdot: ["M", "H"], JEdot: ["J", "E"] });
@@ -8,7 +9,7 @@ const products = Object.freeze({ MHdot: ["M", "H"], JEdot: ["J", "E"] });
 /** Optional HEADER/RANGES v1 is already decoded by Hdf5ResultFile. Never read
  * full time frames here, reinterpret units, or use a partial index as complete.
  */
-export function globalResultRange(task, quantityKey, selected) {
+export function globalResultRange(task, quantityKey, selected, { component = "norm", exact = false } = {}) {
   try {
     const quantity = QUANTITIES[quantityKey];
     if (!quantity || !selected?.length) return unavailable("Нет объектов для показа", "empty");
@@ -39,7 +40,7 @@ export function globalResultRange(task, quantityKey, selected) {
     }
     const operands = products[quantityKey];
     let range;
-    if (operands) {
+    if (operands && !exact) {
       // Explicit owner policy: products of global MODULUS bounds, not the
       // stored exact signed dot-product channel. Actual scalar values stay intact.
       const [a, b] = operands.map(key => resultCycleRange(ranges, key, ids));
@@ -49,14 +50,79 @@ export function globalResultRange(task, quantityKey, selected) {
       range = { ...a, minimum: factor * a.minimum * b.minimum,
         maximum: factor * a.maximum * b.maximum, unit: quantity.unit,
         approximate: true, definition: `${operands[0]}min·${operands[1]}min … ${operands[0]}max·${operands[1]}max` };
-    } else range = resultCycleRange(ranges, quantityKey, ids);
+    } else range = resultCycleRange(ranges, quantityKey, ids, { component });
     if (!range.available) return range;
     if (!Number.isFinite(range.minimum) || !Number.isFinite(range.maximum) || range.minimum > range.maximum
-      || (quantity.components === 3 && range.minimum < 0)) return unavailable("Некорректные глобальные пределы", "invalid");
+      || (quantity.components === 3 && component === "norm" && range.minimum < 0)) return unavailable("Некорректные глобальные пределы", "invalid");
     return Object.freeze({ ...range, objectIds: Object.freeze(ids), file: quantity.file });
   } catch (error) {
     return unavailable(`Глобальные пределы: ${error.message ?? error}`, "invalid");
   }
+}
+
+// Graph heights and palette colours need signed component bounds, rather than
+// modulus bounds or products of separate extrema. Include generated symmetry
+// images conservatively without reading any saved field frame.
+function graphRecordRange(task, graph) {
+  const quantity = QUANTITIES[graph.quantityKey];
+  const record = task?.[graph.source?.schemaId]?.[graph.source?.recordIndex];
+  if (!quantity || !record) return unavailable("Объект графика отсутствует", "invalid");
+  const ranges = Array.from({ length: quantity.components }, (_, component) =>
+    globalResultRange(task, graph.quantityKey, [record.id], { component, exact: true }));
+  const failed = ranges.find(range => !range.available);
+  if (failed) return failed;
+  let minimum = Math.min(...ranges.map(r => r.minimum)), maximum = Math.max(...ranges.map(r => r.maximum));
+  if (quantity.components === 3 && quantity.group === "elements") {
+    const [local, axial, periodic] = elementLayout(record, ["HV", "AV"].includes(quantity.file)).copies;
+    const general = task.general ?? {};
+    const mirrors = [general.mirrorSymmetryX, general.mirrorSymmetryY].some(v => v === 0 || v === 1);
+    if (mirrors || record.symAs > axial || record.symPs > periodic) {
+      for (let ls = 0; ls < local; ls++) for (let az = 0; az < axial; az++) for (let ps = 0; ps < periodic; ps++) {
+        for (const copy of resultSymmetryCopies(task, record, graph.quantityKey, { ls, as: az, ps })) {
+          const m = copy.matrix, sign = copy.sign;
+          if ([1, 2, 4, 6, 8, 9].some(i => Math.abs(m[i]) > 1e-12)) {
+            // Component correlations and moving symmetry axes are not in the
+            // index; the stored cycle modulus safely bounds every rotation.
+            const norm = globalResultRange(task, graph.quantityKey, [record.id]);
+            if (!norm.available) return norm;
+            minimum = Math.min(minimum, -norm.maximum); maximum = Math.max(maximum, norm.maximum);
+          } else for (let c = 0; c < 3; c++) {
+            const coefficient = sign * m[c * 5];
+            minimum = Math.min(minimum, coefficient * ranges[c].minimum, coefficient * ranges[c].maximum);
+            maximum = Math.max(maximum, coefficient * ranges[c].minimum, coefficient * ranges[c].maximum);
+          }
+        }
+      }
+    }
+  }
+  return { ...ranges[0], minimum, maximum };
+}
+
+export function globalGraphRanges(task, graphs = []) {
+  const graphRanges = {}, records = new Set(), active = [];
+  for (const graph of graphs) {
+    const key = JSON.stringify([graph.quantityKey, graph.source?.schemaId, graph.source?.recordIndex]);
+    if (records.has(key)) continue;
+    records.add(key);
+    let range;
+    try { range = graphRecordRange(task, graph); }
+    catch (error) { range = unavailable(`Глобальные пределы графика: ${error.message ?? error}`, "invalid"); }
+    active.push(range);
+    if (!range.available) continue;
+    const previous = graphRanges[graph.quantityKey];
+    const minimum = Math.min(previous?.minimum ?? Infinity, range.minimum);
+    const maximum = Math.max(previous?.maximum ?? -Infinity, range.maximum);
+    graphRanges[graph.quantityKey] = Object.freeze({ ...range, minimum, maximum,
+      referenceMaximum: Math.max(Math.abs(minimum), Math.abs(maximum)) || 1 });
+  }
+  return { graphRanges, active };
+}
+
+/** Display-only overrides: raw values, local extrema, reader references and
+ * profiles retain their original identity. Toggling requires no HDF5 reads.
+ */
+export function applyGraphGlobalRange(graph, range) {
+  return range?.available ? { ...graph, displayRange: range, referenceMaximum: range.referenceMaximum } : graph;
 }
 
 /** One checkbox enables a coherent mode for every active layer. An unavailable
@@ -64,7 +130,7 @@ export function globalResultRange(task, quantityKey, selected) {
  * Streamlines may enter unselected elements, so their range covers all eligible
  * physical elements, not just the list used to display source arrows.
  */
-export function resultGlobalScale(task, layers = [], seeds = []) {
+export function resultGlobalScale(task, layers = [], seeds = [], graphs = []) {
   const layerRanges = {}, lineRanges = {}, active = [];
   for (const layer of layers) {
     if (layer.quantityKey === "none" || !layer.selected?.length) continue;
@@ -76,11 +142,13 @@ export function resultGlobalScale(task, layers = [], seeds = []) {
     const range = globalResultRange(task, key, (task?.elements ?? []).filter(record => record.targ !== 3).map(record => record.id));
     lineRanges[key] = range; active.push(range);
   }
+  const { graphRanges, active: graphActive } = globalGraphRanges(task, graphs);
+  active.push(...graphActive);
   const failed = active.find(range => !range.available);
   const runs = new Set(active.filter(range => range.available).map(range => range.runId));
   const reason = failed?.reason ?? (runs.size > 1 ? "Файлы относятся к разным расчётам" : active.length ? "" : "Нет отображаемых величин");
   return { available: active.length > 0 && !failed && runs.size === 1,
-    reason, layerRanges, lineRanges };
+    reason, layerRanges, lineRanges, graphRanges };
 }
 
 /** Attach display-only overrides: never mutate fields, extrema, provenance,

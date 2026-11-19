@@ -6,7 +6,7 @@ import { RESULT_LAYER_GROUPS } from "../../src/services/results/resultLayerDefin
 import { createResultLayerReader } from "../../src/services/results/resultLayerRequests.js";
 import { STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS } from "../../src/services/visualization/resultStreamlineField.js";
 
-import { applyResultGlobalRange, resultGlobalScale } from "../../src/services/results/resultGlobalScale.js";
+import { applyGraphGlobalRange, applyResultGlobalRange, resultGlobalScale } from "../../src/services/results/resultGlobalScale.js";
 import { GRAPH_SLICE_DIRECTIONS, graphSliceCount, middleGraphDiscrete } from "../../src/services/visualization/resultGraphField.js";
 import { createResultGraphReader, graphQuantityKey, graphRequestKey } from "../../src/services/results/resultGraphRequests.js";
 
@@ -57,7 +57,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
   const run = new Function("props", "sameLayerFrameRequest", "createGeometryViewSetting", "createMemo", "onCleanup", "createSignal", "createEffect",
     "STREAMLINE_DEFAULT_TOLERANCE", "STREAMLINE_LIMITS", "STREAMLINE_METHODS", "streamlineSessions", "cameraSessions",
     "QUANTITIES", "assignedHtsElements", "resultDisplaySelection", "RESULT_LAYER_GROUPS", "createResultLayerReader", "useResultFrame",
-    "createMovieTabAdapter", "completedMovieFrame", "onMount", "applyResultGlobalRange", "resultGlobalScale",
+    "createMovieTabAdapter", "completedMovieFrame", "onMount", "applyResultGlobalRange", "resultGlobalScale", "applyGraphGlobalRange",
     "GRAPH_SLICE_DIRECTIONS", "createResultGraphReader", "graphQuantityKey", "graphRequestKey", "graphSessions", "untrack", "graphSliceCount", "middleGraphDiscrete", "RESULT_SIZE_SCALE", "createGraphSettingsStore", "GRAPH_VIEW_DEFAULTS", "graphContourIdentity", "migrateGraphVisibility",
     `${setup} return { cameraState, rememberCamera, quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
       colorMap, effectiveColorMap, normalizeVectors, changeNormalizeVectors, changeColorMap, conductivityAvailable, unavailableConductivity, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
@@ -75,7 +75,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     STREAMLINE_DEFAULT_TOLERANCE, STREAMLINE_LIMITS, STREAMLINE_METHODS, streamlineSessions, cameraSessions, QUANTITIES, assignedHtsElements, resultDisplaySelection,
     RESULT_LAYER_GROUPS, options.readerFactory ?? createResultLayerReader,
     (source, reader) => { if (!graphSource) { graphSource = source; graphLoad = reader; return () => graphState; } requestSource = source; load = reader; options.observeRequest?.(source); return () => state; },
-    options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame, () => {}, applyResultGlobalRange, resultGlobalScale,
+    options.createMovieTabAdapter ?? (() => ({ onCaptureReady() {} })), options.completedMovieFrame, () => {}, applyResultGlobalRange, resultGlobalScale, applyGraphGlobalRange,
     GRAPH_SLICE_DIRECTIONS, options.graphReaderFactory ?? createResultGraphReader, graphQuantityKey, graphRequestKey, graphSessions, options.untrack ?? (read => read()), graphSliceCount, middleGraphDiscrete, RESULT_SIZE_SCALE, createGraphSettingsStore, GRAPH_VIEW_DEFAULTS, graphContourIdentity, migrateGraphVisibility);
   // Existing field-display cases explicitly keep result visualization enabled.
   if (options.graphsOnly !== true) api.setGraphsOnly(false);

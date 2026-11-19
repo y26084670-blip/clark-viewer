@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import h5wasm from 'h5wasm/node';
 import { globalRangesTask } from '../scripts/test-support/globalRangesFixture.js';
-import { globalResultRange, resultGlobalScale, applyResultGlobalRange, workingPointGlobalMRange } from '../src/services/results/resultGlobalScale.js';
+import { globalResultRange, resultGlobalScale, applyResultGlobalRange, workingPointGlobalMRange, globalGraphRanges, applyGraphGlobalRange } from '../src/services/results/resultGlobalScale.js';
 import { resultDisplaySelection } from '../src/services/results/resultRequests.js';
 import { Hdf5ResultFile } from '../src/services/results/hdf5ResultFile.js';
 import { sourcesFields3DSetup } from '../scripts/test-support/sourcesFields3DSetup.js';
@@ -145,4 +145,74 @@ test('global ranges retain REAL32 time rounding but reject a mismatch beyond 1e-
     task.metadata.MH.ranges.times=task.metadata.MH.ranges.stepIds.map(i=>i*dt+(i?factor*1e-6*Math.max(1,i*dt):0));
     assert.equal(globalResultRange(task,'M',[1]).available,factor<1);
   }
+});
+
+
+const graphDescriptor = (quantityKey, schemaId = "elements", recordIndex = 0) => ({
+  id: `${schemaId}:${recordIndex}`, quantityKey, source: { schemaId, recordIndex },
+});
+
+test("surface global ranges combine signed XYZ over selected objects; scalar products use their exact signed channel", () => {
+  const task = globalRangesTask();
+  const graphs = [graphDescriptor("J"), graphDescriptor("J", "elements", 3), graphDescriptor("Bs", "regions"), graphDescriptor("JEdot")];
+  const result = resultGlobalScale(task, [], [], graphs);
+  assert.equal(result.available, true);
+  assert.deepEqual([result.graphRanges.J.minimum, result.graphRanges.J.maximum, result.graphRanges.J.referenceMaximum], [-9, 90, 90]);
+  assert.deepEqual([result.graphRanges.Bs.minimum, result.graphRanges.Bs.maximum], [-3, 30]);
+  assert.deepEqual([result.graphRanges.JEdot.minimum, result.graphRanges.JEdot.maximum], [-999, -111]);
+  assert.equal(globalResultRange(task, "J", [1]).minimum, 5, "ordinary vector maps keep modulus ranges");
+  assert.ok(globalResultRange(task, "JEdot", [1]).minimum > 0, "ordinary maps retain the existing product policy");
+  assert.equal(globalResultRange(task, "J", [1], { component: 0 }).minimum, -3);
+});
+
+test("surface overrides preserve original data and references and do not scan any field frames", () => {
+  const task = globalRangesTask(); task.reader.read = () => { throw new Error("unexpected field read"); };
+  const descriptor = graphDescriptor("J"), values = new Float64Array([-2, 3]);
+  const original = { ...descriptor, referenceMaximum: 1e-12, surfaces: [{ values, minimum: -2, maximum: 3 }] };
+  const range = globalGraphRanges(task, [descriptor]).graphRanges.J;
+  const display = applyGraphGlobalRange(original, range);
+  assert.equal(display.referenceMaximum, 30);
+  assert.equal(display.surfaces, original.surfaces); assert.equal(display.surfaces[0].values, values);
+  assert.equal(original.referenceMaximum, 1e-12); assert.equal(original.displayRange, undefined);
+  assert.equal(applyGraphGlobalRange(original, null), original);
+});
+
+test("missing, partial, corrupt component indexes and mixed runs disable the common surface mode", () => {
+  for (const change of [
+    task => delete task.metadata.JE.ranges,
+    task => task.metadata.JE.ranges.state = "partial",
+    task => task.metadata.JE.ranges.invalidCount[0] = 1,
+    task => task.metadata.JE.ranges.maximum[0] = Infinity,
+  ]) {
+    const task = globalRangesTask(); change(task);
+    assert.equal(resultGlobalScale(task, [], [], [graphDescriptor("J")]).available, false);
+  }
+  const task = globalRangesTask(); task.metadata.HS.ranges.runId = "other";
+  assert.equal(resultGlobalScale(task, [], [], [graphDescriptor("J"), graphDescriptor("Bs", "regions")]).available, false);
+});
+
+test("graph-only mode bases availability on the shown graphs and toggles their display without a new request", () => {
+  const task = globalRangesTask(), ui = sourcesFields3DSetup({ task, elements: [1], regions: [1], time: 0 },
+    { resultElementsQuantity: "J", resultRegionsQuantity: "Bs" }, { graphsOnly: true });
+  ui.setGraphsOnly(true); ui.setAreaGraphs(true);
+  const descriptor = { ...graphDescriptor("Bs", "regions"), kind: "region", referenceMaximum: .001, surfaces: [] };
+  ui.setGraphResultState({ frame: { value: { graphs: [descriptor] } }, loading: false, error: "" });
+  delete task.metadata.JE.ranges;
+  ui.setGlobalMinMax(true);
+  assert.equal(ui.effectiveGlobalMinMax(), true, "hidden vector layers must not disable valid surface ranges");
+  assert.equal(ui.graphResults()[0].displayRange.minimum, -3);
+  const request = ui.graphRequest();
+  ui.setGlobalMinMax(false);
+  assert.equal(ui.graphResults()[0], descriptor);
+  assert.deepEqual(ui.graphRequest(), request);
+  ui.close();
+});
+
+
+test("global surface bounds include reflected component signs without reading frames", () => {
+  const task = globalRangesTask();
+  task.general.mirrorSymmetryX = 0; task.general.mirrorSymmetryY = -1;
+  const result = resultGlobalScale(task, [], [], [graphDescriptor("J")]);
+  assert.equal(result.available, true);
+  assert.deepEqual([result.graphRanges.J.minimum, result.graphRanges.J.maximum], [-30, 30]);
 });

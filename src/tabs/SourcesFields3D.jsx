@@ -12,7 +12,7 @@ import { resultDisplaySelection, useResultFrame } from "../services/results/resu
 import { sameLayerFrameRequest } from "../services/results/resultFrameController.js";
 import { RESULT_LAYER_GROUPS, RESULT_LAYER_QUANTITY_LABELS } from "../services/results/resultLayerDefinitions.js";
 import { createResultLayerReader } from "../services/results/resultLayerRequests.js";
-import { applyResultGlobalRange, resultGlobalScale } from "../services/results/resultGlobalScale.js";
+import { applyGraphGlobalRange, applyResultGlobalRange, resultGlobalScale } from "../services/results/resultGlobalScale.js";
 import { completedMovieFrame, createMovieTabAdapter } from "../services/movie/movieTabAdapter.js";
 import { movie3DFilenamePrefix } from "../services/movie/movieFilename.js";
 import { STREAMLINE_METHODS, STREAMLINE_DEFAULT_TOLERANCE } from "../services/visualization/resultStreamlineField.js";
@@ -322,12 +322,15 @@ export function SourcesFields3D(props) {
   });
   const frameEnabled = () => props.active !== false && graphReady();
   const graphResult = useResultFrame(graphRequest, request => graphReader.read(request), { enabled: frameEnabled, sameRequest: Object.is });
-  const graphResults = () => (graphResult().frame?.value.graphs ?? []).filter(g => g.kind === "region" ? areaGraphs() : sliceGraphs() && graphSlices().some(s => s.id === g.id));
+  const rawGraphResults = () => (graphResult().frame?.value.graphs ?? []).filter(g => g.kind === "region" ? areaGraphs() : sliceGraphs() && graphSlices().some(s => s.id === g.id));
   const profileResults = () => graphResult().frame?.value.profiles ?? [];
   const graphBusy = () => graphResult().loading;
   const graphError = () => [graphResult().error, ...(graphResult().frame?.value.errors ?? []).map(e => e.message)].filter(Boolean).join(" · ");
-  const globalRanges = createMemo(() => resultGlobalScale(props.task, requestedLayers(), streamlineSeeds()));
+  const globalRanges = createMemo(() => resultGlobalScale(props.task,
+    graphsOnly() ? [] : requestedLayers(), graphsOnly() ? [] : streamlineSeeds(), rawGraphResults()));
   const effectiveGlobalMinMax = createMemo(() => globalMinMax() && globalRanges().available);
+  const graphResults = createMemo(() => rawGraphResults().map(graph =>
+    applyGraphGlobalRange(graph, effectiveGlobalMinMax() ? globalRanges().graphRanges[graph.quantityKey] : null)));
   const hasRequestedResults = createMemo(() => !graphsOnly() && requestedLayers().some(layer => layer.quantityKey !== "none" && layer.selected.length > 0));
   const layerReader = createResultLayerReader();
   onCleanup(() => layerReader.close());

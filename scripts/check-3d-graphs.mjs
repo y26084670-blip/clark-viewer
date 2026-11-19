@@ -120,7 +120,7 @@ try {
   const sourceMenu = page.locator(".source-toolbar-menu-panel");
   const geometryCount = (await scene()).geometryCount;
   await page.evaluate(n=>{window.toolbarGeometryCount=n;graphFixture.setElements([1]);},geometryCount);
-  for(const [label,key,separators] of [["Элементы","elements",[/Относительная электропроводность/]], ["Области","regions",[/Векторный потенциал/]]]) {
+  for(const [label,key,separators] of [["Элементы","elements",[/J-невязка по запросу/]], ["Области","regions",[/Векторный потенциал/]]]) {
     await page.getByRole("button",{name:label,exact:true}).click();
     const preceding = await sourceMenu.locator("hr").evaluateAll(els=>els.map(el=>el.previousElementSibling.textContent));
     assert.equal(preceding.length,separators.length); preceding.forEach((text,i)=>assert.match(text,separators[i]));

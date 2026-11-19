@@ -533,7 +533,7 @@ try {
   const persistedBox=await persistedDialog.locator("canvas").boundingBox(), persistedLegend=await page.evaluate(()=>profileChart.legend()[2]);
   await page.mouse.click(persistedBox.x+(persistedLegend.left+persistedLegend.right)/2,persistedBox.y+(persistedLegend.top+persistedLegend.bottom)/2);
   await persistedDialog.getByRole("button",{name:"Авто",exact:true}).click();
-  await page.waitForFunction(()=>graphFixture.saved()?.settings.expandedProfile===1 && graphFixture.saved()?.settings.profiles.find(p=>p.id===1)?.view?.hidden.includes("Z"));
+  await page.waitForFunction(()=>graphFixture.saved()?.settings.expandedProfile===1 && graphFixture.saved()?.settings.profiles.find(p=>p.id===1)?.view?.hidden?.includes("Z"));
   const savedSettings=await page.evaluate(()=>graphFixture.saved().settings);
   assert.deepEqual([savedSettings.only,savedSettings.areas,savedSettings.showSlices],[true,true,true]);
   await page.reload(); await page.waitForFunction(()=>window.graphUI?.ready() && window.graphScene?.ready() && !graphUI.busy());

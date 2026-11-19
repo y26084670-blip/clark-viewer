@@ -50,7 +50,7 @@ const inspect = { name: "surface-graph-inspection", enforce: "pre", configureSer
         }
       });return {samples,matches,widths};
     }, snapshot: () => {
-      const meshes=[];graphRoot?.traverse(o=>{if(o.name==="result-graph-surface")meshes.push({id:o.userData.graphId,component:o.userData.component,visible:o.visible && o.parent.visible,color:o.material.color.getHexString(),lit:o.material.isMeshStandardMaterial,lighting:o.material.customProgramCacheKey(),palette:o.material.vertexColors,factor:o.userData.factor,gap:o.userData.gap,maximumHeight:(()=>{const p=o.geometry.attributes.position,s=o.userData.surface.positions;let h=0;for(let n=0;n<p.count;n++)h=Math.max(h,Math.hypot(p.getX(n)-s[n*3],p.getY(n)-s[n*3+1],p.getZ(n)-s[n*3+2]));return h;})(),maximumClip:(()=>{let extent=0;o.updateWorldMatrix(true,false);for(let n=0;n<o.geometry.attributes.position.count;n++){const p=new THREE.Vector3().fromBufferAttribute(o.geometry.attributes.position,n).applyMatrix4(o.matrixWorld).project(camera);extent=Math.max(extent,Math.abs(p.x),Math.abs(p.y),Math.abs(p.z));}return extent;})(),positions:Array.from(o.geometry.attributes.position.array.slice(0,9)),basePositions:Array.from(o.userData.surface.positions.slice(0,9))});});
+      const meshes=[];graphRoot?.traverse(o=>{if(o.name==="result-graph-surface")meshes.push({id:o.userData.graphId,component:o.userData.component,visible:o.visible && o.parent.visible,color:o.material.color.getHexString(),lit:o.material.isMeshStandardMaterial,lighting:o.material.customProgramCacheKey(),palette:o.material.vertexColors,factor:o.userData.factor,range:o.userData.graph.displayRange?[o.userData.graph.displayRange.minimum,o.userData.graph.displayRange.maximum]:null,gap:o.userData.gap,maximumHeight:(()=>{const p=o.geometry.attributes.position,s=o.userData.surface.positions;let h=0;for(let n=0;n<p.count;n++)h=Math.max(h,Math.hypot(p.getX(n)-s[n*3],p.getY(n)-s[n*3+1],p.getZ(n)-s[n*3+2]));return h;})(),maximumClip:(()=>{let extent=0;o.updateWorldMatrix(true,false);for(let n=0;n<o.geometry.attributes.position.count;n++){const p=new THREE.Vector3().fromBufferAttribute(o.geometry.attributes.position,n).applyMatrix4(o.matrixWorld).project(camera);extent=Math.max(extent,Math.abs(p.x),Math.abs(p.y),Math.abs(p.z));}return extent;})(),positions:Array.from(o.geometry.attributes.position.array.slice(0,9)),basePositions:Array.from(o.userData.surface.positions.slice(0,9))});});
       const contours=[];graphRoot?.traverse(o=>{if(o.name==="graph-contour")contours.push({selection:o.userData.selection,preview:o.userData.preview,positions:Array.from(o.children[0].geometry.attributes.instanceStart.array)});});
       return {meshes,contours,filters:activeResultFilters,geometryCount:geometryRoot?.children.length,preview:graphRoot?.getObjectByName("graph-slice-preview")?.children.length??0,previewSpec:props.graphPreview,previewPoint:graphRoot?.getObjectByName("graph-slice-preview")?.children[0]?.geometry.attributes.position.array.slice(0,3),selectionTypes:graphRoot?.getObjectByName("graph-selected-element")?.children.map(o=>o.type)??[],selected:graphRoot?.getObjectByName("graph-selected-element")?.children.length??0,
         camera:[camera?.position.toArray(),camera?.quaternion.toArray(),controls?.target.toArray()],projection:[camera?.left,camera?.right,camera?.top,camera?.bottom,camera?.zoom],geometryDiagonal:props.scene?.bounds?Math.hypot(...[0,1,2].map(k=>props.scene.bounds.max[k]-props.scene.bounds.min[k])):0,direction:camera?.position.clone().sub(controls.target).normalize().toArray(),layers:[...resultLayerStates.values()].reduce((n,s)=>n+(s.vectorRoot?.children.length??0)+(s.scalarRoot?.children.length??0),0)};
@@ -258,6 +258,44 @@ try {
     assert.equal((await scene()).meshes.length, 3);
   }
   pass("All eight XYZ combinations update visible area surfaces without replacing the graph data");
+  // Publish a valid synthetic HEADER/RANGES index; production code must use it
+  // without fetching any extra field frames on checkbox changes.
+  await page.evaluate(async()=>{
+    const {resultRangeChannels}=await import("/src/services/results/resultRanges.js");
+    const channels=resultRangeChannels("HS"),metadata=graphFixture.task.metadata.HS;
+    const ranges={available:true,state:"complete",runId:"surface-global-test",revision:1,
+      objectIds:graphFixture.task.regions.map(r=>r.id),channelIds:channels.map(c=>c.id),channelUnits:channels.map(c=>c.unit),
+      stepIds:[0,1,2],times:[0,.25,.5],minimum:[],maximum:[],validCount:[],invalidCount:[]};
+    for(let i=0;i<ranges.objectIds.length;i++)for(const channel of channels){
+      ranges.minimum.push(channel.id.endsWith(".norm")?0:-1000);
+      ranges.maximum.push(channel.id.endsWith(".norm")?2000:1000);
+      ranges.validCount.push(metadata.header.numbs[i]*3);ranges.invalidCount.push(0);
+    }
+    metadata.ranges=ranges;graphFixture.setTime(1);
+  });
+  await waitGraphs();
+  await page.waitForFunction(()=>graphScene.snapshot().meshes.every(m=>m.range?.[0]===-1000&&m.range?.[1]===1000));
+  const cycleFactor=(await scene()).meshes[0].factor, cycleCamera=(await scene()).camera;
+  await page.evaluate(()=>graphFixture.setTime(0));await waitGraphs();
+  await page.waitForFunction(factor=>graphScene.snapshot().meshes[0].factor===factor,cycleFactor);
+  assert.deepEqual((await scene()).camera,cycleCamera);
+  await page.getByRole("button",{name:"Представление",exact:true}).click();
+  const commonMinMax=page.getByRole("checkbox",{name:"Общий минимакс",exact:true});
+  assert.equal(await commonMinMax.isEnabled(),true);assert.equal(await commonMinMax.isChecked(),true);
+  const readsBeforeMinMax=await page.evaluate(()=>graphFixture.reads.length);
+  await commonMinMax.uncheck();
+  await page.waitForFunction(()=>graphScene.snapshot().meshes.every(m=>m.range===null));
+  assert.notEqual((await scene()).meshes[0].factor,cycleFactor);
+  await commonMinMax.check();
+  await page.waitForFunction(factor=>graphScene.snapshot().meshes[0].factor===factor,cycleFactor);
+  assert.equal(await page.evaluate(()=>graphFixture.reads.length),readsBeforeMinMax);
+  assert.deepEqual((await scene()).camera,cycleCamera);
+  await page.evaluate(()=>{delete graphFixture.task.metadata.HS.ranges;graphFixture.setTime(1);});await waitGraphs();
+  await page.waitForFunction(()=>document.querySelector('input[aria-label="Общий минимакс"]').disabled);
+  await page.evaluate(()=>graphFixture.setTime(0));await waitGraphs();
+  await closeMenus();await open();
+  pass("Common minmax fixes the surface range over time; toggling rereads no fields and missing indexes restore local mode");
+
 
   const surfacePoint = (id,component,u,v,ps=0) => page.evaluate(args=>graphScene.point(...args),[id,component,u,v,ps]);
   const clickSurface = async (id,component,u,v,button="left",ps=0) => {await waitGraphs(); const p=await surfacePoint(id,component,u,v,ps);await page.mouse.click(p.x,p.y,{button});};

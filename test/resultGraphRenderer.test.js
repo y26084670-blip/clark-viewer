@@ -142,3 +142,25 @@ test("large patch sizes do not produce a large fixed gap and geometry changes in
   assert.notEqual(surfaces(f.root)[0], first);
   disposeGraphScene(f.root);
 });
+
+
+test("global surface limits fix the zero level and palette across time; toggling restores local limits", async () => {
+  const f = await fixture(), graph = f.graphs.find(g => g.kind === "slice"), source = graph.surfaces[0];
+  const referenceMaximum = 1000, displayRange = { available: true, minimum: -100, maximum: 1000, referenceMaximum };
+  const global = { ...graph, referenceMaximum, displayRange };
+  updateGraphScene(THREE, f.root, f.scene, [global]);
+  const first = surfaces(f.root)[0], firstPositions = first.geometry.attributes.position.array.slice();
+  const firstColors = first.geometry.attributes.color.array.slice();
+  const changed = { ...global, timeIndex: 1, surfaces: global.surfaces.map(s => ({ ...s, minimum: s.minimum - 50, maximum: s.maximum + 300 })) };
+  updateGraphScene(THREE, f.root, f.scene, [changed]);
+  assert.deepEqual(surfaces(f.root)[0].geometry.attributes.position.array, firstPositions, "the same values have the same heights despite changed frame extrema");
+  assert.deepEqual(surfaces(f.root)[0].geometry.attributes.color.array, firstColors, "the same values have the same palette colours");
+  assert.equal(source.minimum, graph.surfaces[0].minimum);
+  updateGraphScene(THREE, f.root, f.scene, [graph]);
+  assert.notDeepEqual(surfaces(f.root)[0].geometry.attributes.position.array, firstPositions);
+  assert.notDeepEqual(surfaces(f.root)[0].geometry.attributes.color.array, firstColors);
+  const area = f.graphs.find(g => g.kind === "region");
+  updateGraphScene(THREE, f.root, f.scene, [{ ...area, displayRange, referenceMaximum }]);
+  assert.deepEqual(surfaces(f.root).slice(0, 3).map(m => m.material.color.getHex()), [0xff0000, 0x00ff00, 0x0000ff]);
+  disposeGraphScene(f.root);
+});

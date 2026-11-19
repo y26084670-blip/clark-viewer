@@ -29,11 +29,31 @@ const inspect = { name: "surface-graph-inspection", enforce: "pre", configureSer
       const ids=du>=dv?[a,b,c]:[a,c,d],weights=du>=dv?[1-du,du-dv,dv]:[1-dv,du,dv-du],p=new THREE.Vector3();
       ids.forEach((n,k)=>p.addScaledVector(new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position,n),weights[k]));
       p.project(camera);const box=renderer.domElement.getBoundingClientRect();return {x:box.left+(p.x+1)*box.width/2,y:box.top+(1-p.y)*box.height/2};
+    }, contourStrokeStats: () => {
+      renderNow();
+      const gl=renderer.getContext(),size=renderer.getDrawingBufferSize(new THREE.Vector2()),pixel=new Uint8Array(4);
+      let samples=0,matches=0;const widths=[];
+      graphRoot?.traverseVisible(o=>{
+        if(o.name!=="graph-contour-line")return;
+        widths.push(o.material.linewidth);
+        if(o.renderOrder!==41)return;
+        const a=o.geometry.attributes.instanceStart,b=o.geometry.attributes.instanceEnd;
+        for(let n=0;n<a.count;n++){
+          const p=new THREE.Vector3().fromBufferAttribute(a,n).add(new THREE.Vector3().fromBufferAttribute(b,n)).multiplyScalar(.5).applyMatrix4(o.matrixWorld).project(camera);
+          if(Math.abs(p.x)>1||Math.abs(p.y)>1||Math.abs(p.z)>1)continue;
+          const x=Math.round((p.x+1)*size.x/2),y=Math.round((p.y+1)*size.y/2);
+          for(let dx=-2;dx<=2;dx++)for(let dy=-2;dy<=2;dy++){
+            if(x+dx<0||x+dx>=size.x||y+dy<0||y+dy>=size.y)continue;
+            gl.readPixels(x+dx,y+dy,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);samples++;
+            if(pixel[0]>170&&pixel[1]>120&&pixel[2]<130)matches++;
+          }
+        }
+      });return {samples,matches,widths};
     }, snapshot: () => {
-      const meshes=[];graphRoot?.traverse(o=>{if(o.name==="result-graph-surface")meshes.push({id:o.userData.graphId,component:o.userData.component,visible:o.visible && o.parent.visible,color:o.material.color.getHexString(),lit:o.material.isMeshStandardMaterial,lighting:o.material.customProgramCacheKey(),palette:o.material.vertexColors,factor:o.userData.factor,positions:Array.from(o.geometry.attributes.position.array.slice(0,9)),basePositions:Array.from(o.userData.surface.positions.slice(0,9))});});
+      const meshes=[];graphRoot?.traverse(o=>{if(o.name==="result-graph-surface")meshes.push({id:o.userData.graphId,component:o.userData.component,visible:o.visible && o.parent.visible,color:o.material.color.getHexString(),lit:o.material.isMeshStandardMaterial,lighting:o.material.customProgramCacheKey(),palette:o.material.vertexColors,factor:o.userData.factor,gap:o.userData.gap,maximumHeight:(()=>{const p=o.geometry.attributes.position,s=o.userData.surface.positions;let h=0;for(let n=0;n<p.count;n++)h=Math.max(h,Math.hypot(p.getX(n)-s[n*3],p.getY(n)-s[n*3+1],p.getZ(n)-s[n*3+2]));return h;})(),maximumClip:(()=>{let extent=0;o.updateWorldMatrix(true,false);for(let n=0;n<o.geometry.attributes.position.count;n++){const p=new THREE.Vector3().fromBufferAttribute(o.geometry.attributes.position,n).applyMatrix4(o.matrixWorld).project(camera);extent=Math.max(extent,Math.abs(p.x),Math.abs(p.y),Math.abs(p.z));}return extent;})(),positions:Array.from(o.geometry.attributes.position.array.slice(0,9)),basePositions:Array.from(o.userData.surface.positions.slice(0,9))});});
       const contours=[];graphRoot?.traverse(o=>{if(o.name==="graph-contour")contours.push({selection:o.userData.selection,preview:o.userData.preview,positions:Array.from(o.children[0].geometry.attributes.instanceStart.array)});});
       return {meshes,contours,filters:activeResultFilters,geometryCount:geometryRoot?.children.length,preview:graphRoot?.getObjectByName("graph-slice-preview")?.children.length??0,previewSpec:props.graphPreview,previewPoint:graphRoot?.getObjectByName("graph-slice-preview")?.children[0]?.geometry.attributes.position.array.slice(0,3),selectionTypes:graphRoot?.getObjectByName("graph-selected-element")?.children.map(o=>o.type)??[],selected:graphRoot?.getObjectByName("graph-selected-element")?.children.length??0,
-        camera:[camera?.position.toArray(),camera?.quaternion.toArray(),controls?.target.toArray()],direction:camera?.position.clone().sub(controls.target).normalize().toArray(),layers:[...resultLayerStates.values()].reduce((n,s)=>n+(s.vectorRoot?.children.length??0)+(s.scalarRoot?.children.length??0),0)};
+        camera:[camera?.position.toArray(),camera?.quaternion.toArray(),controls?.target.toArray()],projection:[camera?.left,camera?.right,camera?.top,camera?.bottom,camera?.zoom],geometryDiagonal:props.scene?.bounds?Math.hypot(...[0,1,2].map(k=>props.scene.bounds.max[k]-props.scene.bounds.min[k])):0,direction:camera?.position.clone().sub(controls.target).normalize().toArray(),layers:[...resultLayerStates.values()].reduce((n,s)=>n+(s.vectorRoot?.children.length??0)+(s.scalarRoot?.children.length??0),0)};
     }};\n  return (\n    <div`);
 } };
 let browser, server, page; const errors = [], checks = [];
@@ -217,6 +237,20 @@ try {
   assert.ok(rgb.every(m => m.lighting === "result-graph-shape-lighting-v1"));
   await page.screenshot({ path: path.join(out, "graph-surface-lighting.png"), fullPage: true });
   pass("Area graphs build three lit RGB surfaces in the real worker");
+  const initialGraphs=await scene();
+  assert.ok(initialGraphs.meshes.every(m=>m.maximumClip<=1.0001),"first asynchronous graphs must fit the viewport");
+  assert.ok(initialGraphs.meshes.every(m=>m.maximumHeight<=initialGraphs.geometryDiagonal*.121));
+  const graphCamera=initialGraphs.camera, graphProjection=initialGraphs.projection;
+  for(const exponent of [-2,0,1,0]){
+    await size.evaluate((input,value)=>{input.value=String(value);input.dispatchEvent(new Event("input",{bubbles:true}));},exponent);
+    await page.waitForFunction(({factor,exponent})=>Math.abs(graphScene.snapshot().meshes[0].factor/factor-10**exponent)<1e-6,{factor:initialGraphs.meshes[0].factor,exponent});
+    const scaled=await scene();
+    assert.deepEqual(scaled.camera,graphCamera,"Size must not refit the camera");
+    assert.deepEqual(scaled.projection,graphProjection,"Size must not change projection scale");
+    if(exponent===-2)assert.ok(scaled.meshes.every(m=>m.maximumHeight<=scaled.geometryDiagonal*.00131),"minimum surfaces must be nearly flat");
+  }
+  pass("Initial surfaces fit after asynchronous loading; Size 0.01x makes heights small without moving or rescaling the camera");
+
   for (let mask = 0; mask < 8; mask++) {
     for (const [c, axis] of ["X", "Y", "Z"].entries())
       await graphs.getByRole("checkbox", { name: `Компонента ${axis} над площадками`, exact: true }).setChecked(Boolean(mask & (1 << c)));
@@ -249,6 +283,10 @@ try {
   await page.mouse.move(1100,500); assert.deepEqual((await scene()).camera,cameraBefore);
   assert.deepEqual(await page.evaluate(()=>graphUI.contour()),fixedContour);
   assert.equal(await page.evaluate(()=>graphFixture.reads.length),contourReads);
+  const stroke=await page.evaluate(()=>graphScene.contourStrokeStats());
+  assert.ok(stroke.samples>0 && stroke.matches>0,JSON.stringify(stroke));
+  assert.ok(stroke.widths.some(w=>w>=8) && stroke.widths.some(w=>w>=4&&w<8),JSON.stringify(stroke));
+  pass("Thicker section contours produce visible bright pixels on the lit graph surface");
   await page.screenshot({path:path.join(out,"contour-selected.png"),fullPage:true});
   pass("Right-click hover previews both area directions, Escape cancels, clicks pin/move a single contour without camera sticking or HDF5 reads");
   await page.setViewportSize({width:960,height:640}); await page.waitForTimeout(100);
@@ -533,7 +571,7 @@ try {
   const persistedBox=await persistedDialog.locator("canvas").boundingBox(), persistedLegend=await page.evaluate(()=>profileChart.legend()[2]);
   await page.mouse.click(persistedBox.x+(persistedLegend.left+persistedLegend.right)/2,persistedBox.y+(persistedLegend.top+persistedLegend.bottom)/2);
   await persistedDialog.getByRole("button",{name:"Авто",exact:true}).click();
-  await page.waitForFunction(()=>graphFixture.saved()?.settings.expandedProfile===1 && graphFixture.saved()?.settings.profiles.find(p=>p.id===1)?.view?.hidden.includes("Z"));
+  await page.waitForFunction(()=>graphFixture.saved()?.settings.expandedProfile===1 && graphFixture.saved()?.settings.profiles.find(p=>p.id===1)?.view?.hidden?.includes("Z"));
   const savedSettings=await page.evaluate(()=>graphFixture.saved().settings);
   assert.deepEqual([savedSettings.only,savedSettings.areas,savedSettings.showSlices],[true,true,true]);
   await page.reload(); await page.waitForFunction(()=>window.graphUI?.ready() && window.graphScene?.ready() && !graphUI.busy());

@@ -72,6 +72,12 @@ test("selected and preview contours follow scale/time, stay on their own image, 
   const targets = graphSurfaceTargets(root); assert.equal(targets.length, 2);
   assert.ok(targets.every(m => m.geometry.attributes.uv.count === s.values.length));
   assert.ok(targets[0].getObjectByName("graph-contour")); assert.equal(targets[1].getObjectByName("graph-contour"), undefined);
+  const lines = targets[0].getObjectByName("graph-contour").children;
+  assert.deepEqual(lines.map(line => line.material.linewidth), [9, 5]);
+  assert.ok(lines.every(line => line.material.worldUnits === false && !line.material.toneMapped
+    && line.material.depthTest && !line.material.depthWrite));
+  assert.equal(lines[0].material.color.getHex(), 0x111820);
+  assert.equal(lines[1].material.color.getHex(), 0xffdd38);
   const points = () => root.getObjectByName("graph-contour-line").geometry.attributes.instanceStart;
   const z = points().getZ(0); render(graph, { scale: 2 }); close(points().getZ(0), (z - .01) * 2 + .01);
   const changed = { ...graph, surfaces: [{ ...s, minimum: s.minimum * 3, maximum: s.maximum * 3, values: Float64Array.from(s.values, v => v * 3) }, copy] };

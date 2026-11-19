@@ -99,11 +99,17 @@ export function createResultGraphReader({ processorFactory = createResultGraphPr
         }
         const results = graphs.length ? await (processor ??= processorFactory()).process({ domains: [...input.values()], graphs }) : [];
         if (closed) throw abort();
+        // Collect the whole batch before assigning denominators. A small first
+        // area must not determine the height of stronger areas of this quantity.
+        // References may grow as larger fields arrive; a near-zero first frame
+        // must never amplify a later frame. They do not shrink on weaker frames.
         for (const graph of results) {
           if (graph.error) { errors.push({ id: graph.id, message: graph.error }); continue; }
-          if (!references.has(graph.quantityKey) && graph.absoluteMaximum > 0) references.set(graph.quantityKey, graph.absoluteMaximum);
-          graph.referenceMaximum = references.get(graph.quantityKey) ?? 1;
+          if (Number.isFinite(graph.absoluteMaximum) && graph.absoluteMaximum > 0) {
+            references.set(graph.quantityKey, Math.max(references.get(graph.quantityKey) ?? 0, graph.absoluteMaximum));
+          }
         }
+        for (const graph of results) if (!graph.error) graph.referenceMaximum = references.get(graph.quantityKey) ?? 1;
         // Retain only the current quantities; direction/component edits reuse full grids.
         const used = new Set(wanted.map(g => `${g.source.schemaId}:${g.source.recordIndex}:${g.quantityKey}`));
         for (const key of domains.keys()) if (!used.has(key)) domains.delete(key);

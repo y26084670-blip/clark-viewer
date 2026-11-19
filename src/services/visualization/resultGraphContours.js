@@ -95,7 +95,8 @@ export function updateGraphContours(THREE, root, selected, preview, resolution =
     const positions = graphContourSegments(mesh.userData.surface, mesh.geometry.attributes.position.array, current);
     if (!positions.length) continue;
     const contour = new THREE.Group(); contour.name = "graph-contour"; contour.userData = { key, selection: current, preview };
-    for (const [color, width, order] of [[0x111820, current.id === activeId ? 6 : 5, 40], [preview ? 0xffffff : 0xffdd38, 2.5, 41]]) {
+    // Screen-space widths and unlit colours keep sections legible on lit RGB/LUT surfaces.
+    for (const [color, width, order] of [[0x111820, current.id === activeId ? 9 : 8, 40], [preview ? 0xffffff : 0xffdd38, current.id === activeId ? 5 : 4, 41]]) {
       const line = createContourSegments(positions, { color, linewidth: width, depthTest: true,
         polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
       line.material.resolution.set(...resolution);

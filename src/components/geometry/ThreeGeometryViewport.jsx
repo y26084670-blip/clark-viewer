@@ -77,7 +77,7 @@ import { loadStreamlineRenderer, resizeStreamlineMaterials, streamlinePointerHan
 import { captureMovieCanvas } from "../../services/movie/movieCanvas.js";
 import { captureRenderedMovieFrame, createRenderedFrameGate, restoreMovieCamera, snapshotMovieCamera } from "../../services/movie/renderedFrameGate.js";
 import { updateGraphScene, disposeGraphScene } from "../../services/visualization/resultGraphRenderer.js";
-import { createContourSegments, loadGraphContourRenderer, resizeGraphContours, sameContourSurface } from "../../services/visualization/resultGraphContours.js";
+import { createContourSegments, loadGraphContourRenderer, resizeGraphContours, sameContourSurface, graphSurfaceTargets } from "../../services/visualization/resultGraphContours.js";
 import { faceCurrentContourPositions } from "../../services/visualization/elementFaceCurrentsTable.js";
 import { installGraphContourInteraction } from "../../services/visualization/resultGraphContourInteraction.js";
 import "../../services/visualization/resultGraphContours.css";
@@ -1579,6 +1579,7 @@ export function ThreeGeometryViewport(props) {
   let captureFrameKey;
   const captureGate = createRenderedFrameGate();
   let hasFramedGeometry = false;
+  let frameGraphsOnArrival = !props.cameraState;
   let activeProjection = DEFAULT_PROJECTION;
   let OrbitControlsClass;
   let flightController;
@@ -1650,7 +1651,9 @@ export function ThreeGeometryViewport(props) {
           camera.up.fromArray(up);
           rebuildOrbitControls();
         }
-        if (restoreGeometryCamera(camera, controls, pendingCameraState)) hasFramedGeometry = true;
+        if (restoreGeometryCamera(camera, controls, pendingCameraState)) {
+          hasFramedGeometry = true; frameGraphsOnArrival = false;
+        }
         pendingCameraState = null;
       }
       if (!movieSnapshot && !flightController?.active && (!hasFramedGeometry || props.autoFit === true)) hasFramedGeometry = fitVisibleObjects();
@@ -2441,6 +2444,13 @@ export function ThreeGeometryViewport(props) {
       contour: props.graphContour, contours: props.graphContours, contourPreview: graphContourPreview(), resolution: [viewportWidth, viewportHeight],
     });
     if (graphRoot.parent !== helperRoot) helperRoot.add(graphRoot);
+    // The ordinary scene can be framed before asynchronous graph data arrives.
+    // Fit once with the first visible surfaces; later Size/time/XYZ edits keep
+    // the camera. An explicitly adjusted or restored camera always wins.
+    if (frameGraphsOnArrival && !pendingCameraState && !movieSnapshot && graphSurfaceTargets(graphRoot).length) {
+      frameGraphsOnArrival = false;
+      hasFramedGeometry = false;
+    }
   };
 
   const replaceFaceCurrentContours = () => {
@@ -2601,6 +2611,7 @@ export function ThreeGeometryViewport(props) {
     const command = normalizeGeometryCameraCommand(request?.command);
     if (movieSnapshot || !ready() || !command) return;
     flightController?.stop();
+    frameGraphsOnArrival = false;
     if (command === GEOMETRY_CAMERA_COMMANDS.FIT_ALL) {
       fitAll();
       return;
@@ -2660,6 +2671,7 @@ export function ThreeGeometryViewport(props) {
 
       OrbitControlsClass = controlsModule.OrbitControls;
       handleControlsStart = () => {
+        frameGraphsOnArrival = false;
         controlsInteracting = true;
         clearHoverTooltip();
       };
@@ -2674,7 +2686,7 @@ export function ThreeGeometryViewport(props) {
         canInteract: () => ready() && !suspended && !disposed && !contextLost && !movieSnapshot && !error()
           && (!flightController || flightController.state === "idle") && !axisRotationController?.active,
         onChange: changed => {
-          if (changed) { hasFramedGeometry = true; rebuildOrbitControls(); clearHoverTooltip(); }
+          if (changed) { frameGraphsOnArrival = false; hasFramedGeometry = true; rebuildOrbitControls(); clearHoverTooltip(); }
           requestRender();
         },
       });
@@ -2687,6 +2699,7 @@ export function ThreeGeometryViewport(props) {
           && props.allowFlight === true && !props.flightBlocked && !props.flightDisabledReason
           && currentBounds && !currentBounds.isEmpty(),
         onActivate: () => {
+          frameGraphsOnArrival = false;
           axisRotationController?.stop();
           // Materialize the ready frame once; flight itself changes only the camera.
           renderNow();
@@ -2737,7 +2750,7 @@ export function ThreeGeometryViewport(props) {
           // instead of letting its old spherical frame clamp each rotation.
           else if (!disposed && flightController.state === "idle") rebuildOrbitControls();
         },
-        onRotate: () => { hasFramedGeometry = true; clearHoverTooltip(); requestRender(); },
+        onRotate: () => { frameGraphsOnArrival = false; hasFramedGeometry = true; clearHoverTooltip(); requestRender(); },
         onPointerMove: queuePointerPick, onPointerLeave: clearHoverTooltip,
       });
       const lineHandlers = streamlinePointerHandlers(pickAtPointer, () => movieSnapshot
@@ -2929,6 +2942,7 @@ export function ThreeGeometryViewport(props) {
     flightController?.stop();
     cameraTaskKey = key;
     pendingCameraState = props.cameraState;
+    frameGraphsOnArrival = !pendingCameraState;
     hasFramedGeometry = false;
     if (ready()) {
       switchProjection(pendingCameraState?.projection ?? props.projection, { fit: false });

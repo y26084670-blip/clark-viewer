@@ -75,3 +75,35 @@ test("replacing and removing surface plots disposes geometry and material resour
   f.root.traverse(o => { for (const resource of [o.geometry, o.material].filter(Boolean)) { expected++; resource.addEventListener("dispose", () => disposed++); } });
   updateGraphScene(THREE, f.root, f.scene, [], {}); assert.equal(f.root.children.length, 0); assert.equal(disposed, expected);
 });
+
+
+test("area component switches preserve surfaces, bases, lighting and sampling across all XYZ combinations", async () => {
+  const f = await fixture();
+  updateGraphScene(THREE, f.root, f.scene, f.graphs);
+  const original = surfaces(f.root), reads = f.reads.length;
+  for (let mask = 0; mask < 8; mask++) {
+    const areaComponents = [0, 1, 2].map(c => Boolean(mask & (1 << c)));
+    updateGraphScene(THREE, f.root, f.scene, f.graphs, { areaComponents });
+    assert.deepEqual(surfaces(f.root), original);
+    for (const mesh of original) {
+      assert.equal(mesh.visible, mesh.userData.graphKind === "region" ? areaComponents[mesh.userData.component] : true);
+      assert.ok(mesh.material.isMeshStandardMaterial);
+    }
+    const pickable = []; f.root.traverseVisible(o => { if (o.name === "result-graph-surface") pickable.push(o); });
+    assert.ok(pickable.every(o => o.userData.graphKind !== "region" || areaComponents[o.userData.component]));
+    const bases = []; f.root.traverseVisible(o => { if (o.name === "result-graph-base") bases.push(o); });
+    assert.equal(bases.length, 5);
+    assert.equal(f.reads.length, reads);
+  }
+  updateGraphScene(THREE, f.root, f.scene, f.graphs);
+  assert.ok(original.every(m => m.visible));
+  disposeGraphScene(f.root);
+});
+
+test("XYZ switches leave scalar area surfaces visible", async () => {
+  const f = await fixture(), graph = f.graphs.find(g => g.kind === "region");
+  const scalar = { ...graph, components: 1, surfaces: graph.surfaces.filter(s => s.component === 0) };
+  updateGraphScene(THREE, f.root, f.scene, [scalar], { areaComponents: [false, false, false] });
+  assert.ok(surfaces(f.root).every(m => m.visible && m.material.vertexColors));
+  disposeGraphScene(f.root);
+});

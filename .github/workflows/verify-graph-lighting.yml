@@ -5,6 +5,11 @@ on:
     paths:
       - 'src/services/visualization/resultGraph*'
       - 'src/components/geometry/ThreeGeometryViewport.jsx'
+      - 'src/components/geometry/ResultsGeometryViewport.jsx'
+      - 'src/tabs/SourcesFields3D.jsx'
+      - 'src/services/results/graphSettingsStore.js'
+      - 'test/sourcesFields3DGraphs.test.js'
+      - 'test/graphSettingsStore.test.js'
       - 'scripts/check-3d-graphs.mjs'
       - 'scripts/test-support/graph3D*'
       - 'scripts/test-support/sourcesFields3DSetup.js'

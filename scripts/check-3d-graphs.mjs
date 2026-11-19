@@ -30,7 +30,7 @@ const inspect = { name: "surface-graph-inspection", enforce: "pre", configureSer
       ids.forEach((n,k)=>p.addScaledVector(new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position,n),weights[k]));
       p.project(camera);const box=renderer.domElement.getBoundingClientRect();return {x:box.left+(p.x+1)*box.width/2,y:box.top+(1-p.y)*box.height/2};
     }, snapshot: () => {
-      const meshes=[];graphRoot?.traverse(o=>{if(o.name==="result-graph-surface")meshes.push({id:o.userData.graphId,component:o.userData.component,visible:o.parent.visible,color:o.material.color.getHexString(),lit:o.material.isMeshStandardMaterial,lighting:o.material.customProgramCacheKey(),palette:o.material.vertexColors,factor:o.userData.factor,positions:Array.from(o.geometry.attributes.position.array.slice(0,9)),basePositions:Array.from(o.userData.surface.positions.slice(0,9))});});
+      const meshes=[];graphRoot?.traverse(o=>{if(o.name==="result-graph-surface")meshes.push({id:o.userData.graphId,component:o.userData.component,visible:o.visible && o.parent.visible,color:o.material.color.getHexString(),lit:o.material.isMeshStandardMaterial,lighting:o.material.customProgramCacheKey(),palette:o.material.vertexColors,factor:o.userData.factor,positions:Array.from(o.geometry.attributes.position.array.slice(0,9)),basePositions:Array.from(o.userData.surface.positions.slice(0,9))});});
       const contours=[];graphRoot?.traverse(o=>{if(o.name==="graph-contour")contours.push({selection:o.userData.selection,preview:o.userData.preview,positions:Array.from(o.children[0].geometry.attributes.instanceStart.array)});});
       return {meshes,contours,filters:activeResultFilters,geometryCount:geometryRoot?.children.length,preview:graphRoot?.getObjectByName("graph-slice-preview")?.children.length??0,previewSpec:props.graphPreview,previewPoint:graphRoot?.getObjectByName("graph-slice-preview")?.children[0]?.geometry.attributes.position.array.slice(0,3),selectionTypes:graphRoot?.getObjectByName("graph-selected-element")?.children.map(o=>o.type)??[],selected:graphRoot?.getObjectByName("graph-selected-element")?.children.length??0,
         camera:[camera?.position.toArray(),camera?.quaternion.toArray(),controls?.target.toArray()],direction:camera?.position.clone().sub(controls.target).normalize().toArray(),layers:[...resultLayerStates.values()].reduce((n,s)=>n+(s.vectorRoot?.children.length??0)+(s.scalarRoot?.children.length??0),0)};
@@ -42,7 +42,7 @@ try {
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
   server = await createServer({ configFile: false, root, cacheDir: path.join(root, "node_modules/.vite-graph3d-check"), plugins: [inspect, solid()], optimizeDeps: { entries: [path.join(dir, "index.html")] }, server: { host: "127.0.0.1", port: 0, hmr: false } }); await server.listen();
   browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE || undefined, args: ["--no-sandbox", "--enable-unsafe-swiftshader", "--disable-dev-shm-usage"] });
-  page = await browser.newPage({ viewport: { width: 1920, height: 1080 } }); page.on("pageerror", e => errors.push(e.message)); page.on("console", message => { if (message.type() === "error") console.error(message.text()); if(message.text().includes("computations created outside")) errors.push(message.text()); });
+  page = await browser.newPage({ viewport: { width: 1920, height: 1080 } }); page.on("pageerror", e => errors.push(e.message)); page.on("console", message => { if (message.type() === "error") console.error(message.text()); if(message.text().includes("computations created outside") || message.text().includes("Shader Error")) errors.push(message.text()); });
   await page.goto("http://127.0.0.1:" + server.httpServer.address().port + "/" + path.basename(dir) + "/index.html");
   await page.waitForFunction(() => window.graphScene?.ready() && graphUI.ready());
   const lightingPixels = await page.evaluate(async () => {
@@ -217,6 +217,14 @@ try {
   assert.ok(rgb.every(m => m.lighting === "result-graph-shape-lighting-v1"));
   await page.screenshot({ path: path.join(out, "graph-surface-lighting.png"), fullPage: true });
   pass("Area graphs build three lit RGB surfaces in the real worker");
+  for (let mask = 0; mask < 8; mask++) {
+    for (const [c, axis] of ["X", "Y", "Z"].entries())
+      await graphs.getByRole("checkbox", { name: `Компонента ${axis} над площадками`, exact: true }).setChecked(Boolean(mask & (1 << c)));
+    await page.waitForFunction(mask => graphScene.snapshot().meshes.every(m => m.visible === Boolean(mask & (1 << m.component))), mask);
+    assert.equal((await scene()).meshes.length, 3);
+  }
+  pass("All eight XYZ combinations update visible area surfaces without replacing the graph data");
+
   const surfacePoint = (id,component,u,v,ps=0) => page.evaluate(args=>graphScene.point(...args),[id,component,u,v,ps]);
   const clickSurface = async (id,component,u,v,button="left",ps=0) => {await waitGraphs(); const p=await surfacePoint(id,component,u,v,ps);await page.mouse.click(p.x,p.y,{button});};
   await closeMenus();

@@ -62,7 +62,7 @@ export function sourcesFields3DSetup(props, settings = {}, options = {}) {
     `${setup} return { cameraState, rememberCamera, quantities, requestedLayers, hasRequestedResults, hasVectors, hasScalars,
       colorMap, effectiveColorMap, normalizeVectors, changeNormalizeVectors, changeColorMap, conductivityAvailable, unavailableConductivity, scale, streamlineSeeds, selectedStreamline, setSelectedStreamline,
       addStreamline, deleteStreamline, streamlineMethod, changeStreamlineMethod, streamlines,
-      graphsOnly, setGraphsOnly, areaGraphs, setAreaGraphs, sliceGraphs, setSliceGraphs, graphSlices, activeSlice, setActiveSlice,
+      areaGraphComponents, setAreaGraphComponent, graphsOnly, setGraphsOnly, areaGraphs, setAreaGraphs, sliceGraphs, setSliceGraphs, graphSlices, activeSlice, setActiveSlice,
       addSlice, setAddElement, changeSlice, deleteSlice, graphResults, graphBusy, graphError, graphRequest, sliceScalar, sliceCount, sliceLabel, sliceChoice,
       graphContour, selectGraphContour, graphProfiles, activeProfile, selectProfile, removeProfiles, expandedProfile, changeProfileView, graphReady, graphSaveNotice,
       controls: ${controlBindings},

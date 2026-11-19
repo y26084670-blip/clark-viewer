@@ -689,6 +689,7 @@ export function ResultsGeometryViewport(props) {
             resultLayers={props.resultLayers}
             resultLayersPending={props.resultLayersPending}
             resultStreamlines={props.resultStreamlines}
+            graphAreaComponents={props.graphAreaComponents}
             graphResults={props.graphResults} activeGraph={props.activeGraph}
             graphPreview={props.graphPreview} graphSelection={props.graphSelection}
             graphContour={props.graphContour} graphContours={props.graphContours} onGraphContourChange={props.onGraphContourChange} graphInteractionBlocked={props.graphInteractionBlocked}

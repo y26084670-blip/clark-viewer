@@ -5,6 +5,7 @@ import { RESULT_SCALAR_PALETTES } from "../visualization/resultScalarColors.js";
 export const GRAPH_SETTINGS_FILE = "clark.viewer-graphs.json";
 export const GRAPH_VIEW_DEFAULTS = Object.freeze({ resultVectorScale: 1, resultPalette: "Rainbow",
   resultElementsQuantity: "M", resultRegionsQuantity: "none", resultVirtualQuantity: "none",
+  areaGraphX: true, areaGraphY: true, areaGraphZ: true,
   elementsMode: "all", regionsMode: "all", showLocalSymmetry: true, showAxialSymmetry: true,
   showPeriodicSymmetry: true, showMirrorSymmetry: true });
 const integer = n => Number.isSafeInteger(n) && n >= 0;

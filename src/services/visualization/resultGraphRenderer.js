@@ -83,7 +83,12 @@ export function updateGraphScene(THREE, root, scene, graphs, options = {}) {
       group = buildGraph(THREE, graph, settings); root.add(group);
     }
     retained.add(group);
-    for (const image of group.children) image.visible = visible(image.userData.source, image.userData.instance, settings.filters);
+    for (const image of group.children) {
+      image.visible = visible(image.userData.source, image.userData.instance, settings.filters);
+      for (const mesh of image.children) if (mesh.name === "result-graph-surface") {
+        mesh.visible = graph.kind !== "region" || graph.components !== 3 || settings.areaComponents?.[mesh.userData.component] !== false;
+      }
+    }
   }
   for (const child of [...root.children]) if (!retained.has(child)) { root.remove(child); dispose(child); }
   updateGraphContours(THREE, root, settings.contours ?? settings.contour, settings.contourPreview, settings.resolution, settings.contour?.id);

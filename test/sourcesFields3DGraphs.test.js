@@ -103,3 +103,21 @@ test("collection retains sections across graphs, components, time and tab remoun
   props.movieBusy = false; next.deleteSlice(); assert.deepEqual(next.graphProfiles(), [area]);
   props.task = graph3DTask().task; next.flushEffects(); assert.equal(next.graphProfiles().length, 0); next.close();
 });
+
+
+test("area XYZ choices default to all, remain independent and survive tab remount without changing requests", () => {
+  const { ui, props } = setup(), settings = {};
+  assert.deepEqual(ui.areaGraphComponents(), [true, true, true]); ui.close();
+  const first = sourcesFields3DSetup(props, settings); first.setAreaGraphs(true);
+  const request = first.graphRequest();
+  first.setAreaGraphComponent(0, false); first.setAreaGraphComponent(2, false);
+  assert.deepEqual(first.areaGraphComponents(), [false, true, false]);
+  assert.deepEqual(first.graphRequest(), request);
+  props.movieBusy = true; first.setAreaGraphComponent(1, false);
+  assert.deepEqual(first.areaGraphComponents(), [false, true, false]); props.movieBusy = false;
+  first.close();
+  const next = sourcesFields3DSetup(props, settings);
+  assert.deepEqual(next.areaGraphComponents(), [false, true, false]);
+  next.setAreaGraphs(false); next.setAreaGraphs(true);
+  assert.deepEqual(next.areaGraphComponents(), [false, true, false]); next.close();
+});

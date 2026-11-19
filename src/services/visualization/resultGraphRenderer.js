@@ -32,17 +32,21 @@ function spanOf(surface) {
 }
 function buildGraph(THREE, graph, options) {
   const group = new THREE.Group(), bases = new Set();
-  group.userData = { graph, style: JSON.stringify([options.scale, options.palette, options.active === graph.id]) };
+  group.userData = { graph, style: JSON.stringify([options.scale, options.palette, options.active === graph.id, options.sceneDiagonal]) };
   group.name = `surface-graph:${graph.id}`;
   for (const surface of graph.surfaces) {
     const image = new THREE.Group(); image.userData = { source: graph.source, instance: surface.instance };
     const positions = new Float32Array(surface.positions.length), colors = new Float32Array(positions.length);
-    const factor = spanOf(surface) * .35 * options.scale / graph.referenceMaximum;
-    const gap = spanOf(surface) * .01;
+    const span = spanOf(surface), diagonal = options.sceneDiagonal;
+    const nominalHeight = diagonal > 0 ? Math.min(span * .35, diagonal * .06) : span * .35;
+    const reference = Number.isFinite(graph.referenceMaximum) && graph.referenceMaximum > 0 ? graph.referenceMaximum : 1;
+    const factor = nominalHeight * options.scale / reference;
+    // Keep the support gap small even for very large/elongated patches.
+    const gap = diagonal > 0 ? Math.min(span * .01, diagonal * .0001) : span * .01;
     const color = new THREE.Color();
     for (let n = 0; n < surface.values.length; n++) {
       const value = Number.isFinite(surface.values[n]) ? surface.values[n] : 0;
-      const height = gap + (value - surface.minimum) * factor;
+      const height = gap + (value / reference - surface.minimum / reference) * nominalHeight * options.scale;
       for (let k = 0; k < 3; k++) positions[n * 3 + k] = surface.positions[n * 3 + k] + surface.normals[n * 3 + k] * height;
       color.setRGB(...resultScalarColor(value, surface.minimum, surface.maximum, options.palette), THREE.SRGBColorSpace);
       colors.set(color.toArray(), n * 3);
@@ -73,10 +77,13 @@ function buildGraph(THREE, graph, options) {
 
 /** White support planes, lit RGB area surfaces and palette-coloured slice surfaces. */
 export function updateGraphScene(THREE, root, scene, graphs, options = {}) {
-  const settings = { scale: 1, palette: "Rainbow", ...options };
+  const bounds = scene?.bounds;
+  const diagonal = bounds ? Math.hypot(...[0, 1, 2].map(k => bounds.max[k] - bounds.min[k])) : 0;
+  const settings = { scale: 1, palette: "Rainbow", ...options,
+    sceneDiagonal: Number.isFinite(diagonal) && diagonal > 0 ? diagonal : 0 };
   const retained = new Set();
   for (const graph of graphs) {
-    const name = `surface-graph:${graph.id}`, style = JSON.stringify([settings.scale, settings.palette, settings.active === graph.id]);
+    const name = `surface-graph:${graph.id}`, style = JSON.stringify([settings.scale, settings.palette, settings.active === graph.id, settings.sceneDiagonal]);
     let group = root.getObjectByName(name);
     if (!group || group.userData.graph !== graph || group.userData.style !== style) {
       if (group) { root.remove(group); dispose(group); }

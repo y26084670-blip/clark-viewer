@@ -107,3 +107,38 @@ test("XYZ switches leave scalar area surfaces visible", async () => {
   assert.ok(surfaces(f.root).every(m => m.visible && m.material.vertexColors));
   disposeGraphScene(f.root);
 });
+
+
+test("nominal and minimum surface heights stay bounded by geometry after a near-zero first frame", async () => {
+  const f = graph3DTask({ mirror: 0, field: (p, time) => p.map(v => v * (time === 0 ? 1e-10 : 1)) });
+  const reader = createResultGraphReader({ processorFactory: () => ({ process: async input => calculateResultGraphs(input), close() {} }) });
+  const root = new THREE.Group(), bounds = f.scene.bounds;
+  const diagonal = Math.hypot(...[0, 1, 2].map(k => bounds.max[k] - bounds.min[k]));
+  for (const time of [0, 1, 0]) {
+    const result = await reader.read({ task: f.task, time, slices: [], regions: [0], quantities: { regions: "Bs" } });
+    assert.deepEqual(result.errors, []);
+    for (const scale of [1, .01]) {
+      updateGraphScene(THREE, root, f.scene, result.graphs, { scale });
+      for (const mesh of surfaces(root)) {
+        const positions = mesh.geometry.attributes.position, source = mesh.userData.surface.positions;
+        for (let n = 0; n < positions.count; n++) {
+          const height = Math.hypot(positions.getX(n) - source[n * 3], positions.getY(n) - source[n * 3 + 1], positions.getZ(n) - source[n * 3 + 2]);
+          assert.ok(Number.isFinite(height));
+          assert.ok(height <= diagonal * (.0001 + .12 * scale) + 1e-5, `${height} at scale ${scale}`);
+        }
+      }
+    }
+  }
+  reader.close(); disposeGraphScene(root);
+});
+
+test("large patch sizes do not produce a large fixed gap and geometry changes invalidate the height limit", async () => {
+  const f = await fixture(), small = { ...f.scene, bounds: { min: [0, 0, 0], max: [1, 1, 1] } };
+  updateGraphScene(THREE, f.root, small, f.graphs, { scale: .01 });
+  const first = surfaces(f.root)[0], diagonal = Math.sqrt(3);
+  assert.ok(first.userData.gap <= diagonal * .0001);
+  assert.ok(first.userData.factor * first.userData.graph.referenceMaximum <= diagonal * .06 * .01 + 1e-12);
+  updateGraphScene(THREE, f.root, f.scene, f.graphs, { scale: .01 });
+  assert.notEqual(surfaces(f.root)[0], first);
+  disposeGraphScene(f.root);
+});

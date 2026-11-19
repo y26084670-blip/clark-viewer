@@ -99,7 +99,7 @@ test("component/direction/added-slice edits reuse complete saved grids, while ti
   await reader.read({ ...r, slices: [{ ...r.slices[0], direction: 2, component: 2 }] });
   await reader.read({ ...r, slices: [...r.slices, { ...r.slices[0], id: 2, direction: 1 }] });
   assert.equal(f.reads.length, 1);
-  const later = await reader.read({ ...r, time: 1 }); assert.equal(f.reads.length, 2); assert.equal(later.graphs[0].referenceMaximum, reference);
+  const later = await reader.read({ ...r, time: 1 }); assert.equal(f.reads.length, 2); assert.ok(later.graphs[0].referenceMaximum >= reference);
   await reader.read({ ...r, time: 1, quantities: { ...r.quantities, elements: "E" } }); assert.equal(f.reads.length, 3);
   const another = graph3DTask(); await reader.read(request(another)); assert.equal(another.reads.length, 1);
   reader.close();
@@ -182,4 +182,37 @@ test("slice drawing preserves all intervals beyond 64 on either varying axis", (
   assert.deepEqual(patch.dimensions, [83, 68]);
   assert.equal(patch.sampled, false);
   assert.deepEqual(Array.from(patch.positions.slice(-3)), [.5, 1, 1]);
+});
+
+
+test("one quantity uses the maximum of the whole graph batch, independently of descriptor order", async () => {
+  for (const reverse of [false, true]) {
+    const f = graph3DTask({ mirror: 0, field: p => p.map(v => v * (p[1] > 70 ? 1e8 : 1)) });
+    const reader = createResultGraphReader(options), r = request(f);
+    const slices = [{ ...r.slices[0], id: 1, recordIndex: 0 }, { ...r.slices[0], id: 2, recordIndex: 1 }];
+    if (reverse) slices.reverse();
+    const result = await reader.read({ ...r, slices });
+    assert.deepEqual(result.errors, []);
+    const maximum = Math.max(...result.graphs.map(g => g.absoluteMaximum));
+    assert.ok(maximum > 1e8);
+    assert.ok(result.graphs.every(g => g.referenceMaximum === maximum));
+    const weak = await reader.read({ ...r, slices: [{ ...r.slices[0], recordIndex: 0 }] });
+    assert.equal(weak.graphs[0].referenceMaximum, maximum);
+    assert.equal(f.reads.length, 2, "normalizing/reordering does not read extra field grids");
+    reader.close();
+  }
+});
+
+test("a tiny or zero first frame cannot retain an unsafe denominator for later fields", async () => {
+  for (const initial of [0, 1e-10]) {
+    const f = graph3DTask({ field: (p, time) => p.map(v => v * (time === 0 ? initial : 1)) });
+    const reader = createResultGraphReader(options), r = request(f);
+    await reader.read(r);
+    const strong = await reader.read({ ...r, time: 1 });
+    const reference = strong.graphs[0].referenceMaximum;
+    assert.ok(reference >= strong.graphs[0].absoluteMaximum && reference > 1);
+    const back = await reader.read(r);
+    assert.equal(back.graphs[0].referenceMaximum, reference, "weaker frames keep a common established scale");
+    reader.close();
+  }
 });

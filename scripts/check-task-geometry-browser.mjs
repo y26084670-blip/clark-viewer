@@ -166,6 +166,19 @@ window.geometryFixture.ready=true;
   pass(baseline ? "reproduced the lazy 3D tab loading message" : "the initial lazy 3D tab opens without a text placeholder");
 
   if (!baseline) {
+    const canvas = page.locator(".source-geometry-viewport .three-geometry-viewport canvas");
+    const box = await canvas.boundingBox();
+    await canvas.hover({ position: { x: 34, y: box.height - 34 } });
+    const cubeHelp = page.locator(".geometry-cube-tooltip");
+    await cubeHelp.waitFor();
+    const help = await cubeHelp.innerText();
+    assert.match(help, /Alt\+X\/Y\/Z.*мыши.*через текущий центр вида/u);
+    assert.match(help, /Shift\+X\/Y\/Z.*мыши.*через начало координат/u);
+    assert.match(help, /Ctrl\+A.*начальный вид/u);
+    const tip = await cubeHelp.boundingBox();
+    assert.ok(tip.y >= box.y && tip.y + tip.height <= box.y + box.height);
+    await canvas.hover({ position: { x: box.width / 2, y: box.height / 2 } });
+    pass("view cube tooltip describes Alt and Shift rotation pivots and fits inside the viewport");
     await page.waitForFunction(() => geometryFixture.settingsHeld());
     const reads = () => page.evaluate(() => geometryFixture.reads);
     const nextPaint = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));

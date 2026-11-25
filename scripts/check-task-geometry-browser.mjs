@@ -7,6 +7,56 @@ import { resolve } from "node:path";
 import { createServer } from "vite";
 import h5wasm from "h5wasm/node";
 
+async function checkPreviewCamera(page) {
+  const preview = page.locator(".task-geometry-preview");
+  const canvas = preview.locator("canvas"), tooltip = preview.getByRole("tooltip");
+  const box = await canvas.boundingBox();
+  const center = { x: Math.floor(box.width / 2), y: Math.floor(box.height / 2) };
+  const x = box.x + center.x, y = box.y + center.y;
+  const snapshot = async () => {
+    await canvas.hover({ position: { x: box.width - 5, y: 5 } });
+    await tooltip.waitFor({ state: "hidden" });
+    return canvas.screenshot();
+  };
+
+  await canvas.hover({ position: center });
+  await tooltip.filter({ hasText: /элемент/i }).waitFor();
+  const cube = { x: 68, y: box.height - 83 };
+  await canvas.hover({ position: cube });
+  await tooltip.waitFor({ state: "hidden" });
+  const initial = await snapshot();
+  await canvas.click({ position: cube });
+  const snapped = await snapshot();
+  assert.ok(!snapped.equals(initial), "clicking a preview cube face selects its axis view");
+
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 40, y + 18, { steps: 5 });
+  await page.mouse.up();
+  const rotated = await snapshot();
+  assert.ok(!rotated.equals(snapped), "mouse drag rotates the preview");
+  await canvas.click({ position: center });
+  // The preview already fits its geometry. Check that it also leaves A unhandled.
+  await page.evaluate(() => document.addEventListener("keydown", event => {
+    geometryFixture.previewHandledFit = event.defaultPrevented;
+  }, { once: true }));
+  for (const key of ["a", "Control+a", "x", "Control+x", "y", "Control+y", "z", "Control+z"]) {
+    await page.keyboard.press(key);
+    assert.ok((await snapshot()).equals(rotated), key + " moved the preview camera");
+  }
+  assert.equal(await page.evaluate(() => geometryFixture.previewHandledFit), false);
+  for (const modifier of ["Alt", "Shift"]) {
+    for (const axis of ["x", "y", "z"]) {
+      await page.mouse.move(x, y);
+      await page.keyboard.down(modifier);
+      await page.keyboard.press(axis);
+      await page.mouse.move(x + 40, y, { steps: 4 });
+      await page.keyboard.up(modifier);
+      assert.ok((await snapshot()).equals(rotated), modifier + "+" + axis + " rotated the preview");
+    }
+  }
+}
+
 const root = fileURLToPath(new URL("../", import.meta.url));
 const output = process.env.CHECK_OUTPUT || "/tmp/clark-task-geometry-check";
 const baseline = process.env.EXPECT_TRANSIENT === "1";
@@ -154,6 +204,10 @@ window.geometryFixture.ready=true;
   await previewReady("B");
   assert.equal(await page.locator(".task-geometry-preview .geometry-planar-mode").count(), 0);
   pass("rapid selection ignores the previous task's late geometry");
+  if (!baseline) {
+    await checkPreviewCamera(page);
+    pass("task preview keeps mouse navigation, cube clicks and geometry hover; camera keys and cube help are off");
+  }
 
   assert.ok(moduleHeld, "the actual lazy 3D tab must still be loading");
   await page.getByRole("button", { name: "Загрузить для просмотра", exact: true }).click();
@@ -179,6 +233,23 @@ window.geometryFixture.ready=true;
     assert.ok(tip.y >= box.y && tip.y + tip.height <= box.y + box.height);
     await canvas.hover({ position: { x: box.width / 2, y: box.height / 2 } });
     pass("view cube tooltip describes Alt and Shift rotation pivots and fits inside the viewport");
+    const cubeImage = () => page.screenshot({ clip: {
+      x: Math.ceil(box.x) + 8, y: Math.floor(box.y + box.height) - 128, width: 120, height: 120,
+    } });
+    await page.keyboard.press("x");
+    const positiveX = await cubeImage();
+    await page.keyboard.press("Control+x");
+    assert.ok(!(await cubeImage()).equals(positiveX), "Ctrl+X reverses the main camera");
+    for (const modifier of ["Alt", "Shift"]) {
+      const before = await cubeImage();
+      const x = box.x + box.width / 2, y = box.y + box.height / 2;
+      await page.mouse.move(x, y);
+      await page.keyboard.down(modifier); await page.keyboard.press("y");
+      await page.mouse.move(x + 40, y, { steps: 4 }); await page.keyboard.up(modifier);
+      assert.ok(!(await cubeImage()).equals(before), modifier + "+Y rotates the main camera");
+    }
+    await page.keyboard.press("Control+a");
+    pass("the main 3D tab retains keyboard views and axis rotations after leaving the preview");
     await page.waitForFunction(() => geometryFixture.settingsHeld());
     const reads = () => page.evaluate(() => geometryFixture.reads);
     const nextPaint = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));

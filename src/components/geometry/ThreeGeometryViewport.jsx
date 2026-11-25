@@ -83,6 +83,14 @@ import { installGraphContourInteraction } from "../../services/visualization/res
 import "../../services/visualization/resultGraphContours.css";
 
 
+const VIEW_CUBE_HELP = [
+  "A — показать все, Ctrl+A — начальный вид",
+  "X, Y, Z — вид со стороны положительного направления оси",
+  "Ctrl+X, Ctrl+Y, Ctrl+Z — вид со стороны отрицательного направления оси",
+  "Alt+X/Y/Z и движение мыши — вращение вокруг оси через текущий центр вида.",
+  "Shift+X/Y/Z и движение мыши — вращение вокруг оси через начало координат (0, 0, 0).",
+].join("\n");
+
 const INSTANCE_CATEGORIES = Object.freeze(["base", "copy", "mirror"]);
 const DEFAULT_PROJECTION = "orthographic";
 const PERSPECTIVE_FOV = 45;
@@ -1897,7 +1905,7 @@ export function ThreeGeometryViewport(props) {
     if (typeof axisRotationController !== "undefined" && axisRotationController?.active) return;
     const lines = String(text).split("\n");
     const longestLineLength = Math.max(1, ...lines.map((line) => line.length));
-    const widthEstimate = Math.min(cube ? 600 : 390, Math.max(180, longestLineLength * 6));
+    const widthEstimate = Math.min(Math.max(1, viewportWidth - 16), cube ? 600 : 390, Math.max(180, longestLineLength * 6));
     const charactersPerLine = Math.max(1, Math.floor(widthEstimate / 6));
     const lineCount = lines.reduce(
       (count, line) => count + Math.max(
@@ -1910,7 +1918,7 @@ export function ThreeGeometryViewport(props) {
     const left = x + 14 + widthEstimate <= viewportWidth
       ? x + 14
       : Math.max(8, x - widthEstimate - 14);
-    const top = y + 14 + heightEstimate <= viewportHeight
+    const top = cube ? Math.max(8, y - heightEstimate - 6) : y + 14 + heightEstimate <= viewportHeight
       ? y + 14
       : Math.max(8, y - heightEstimate - 14);
     setHoverTooltip({ left, text, top, cube });
@@ -1990,9 +1998,7 @@ export function ThreeGeometryViewport(props) {
       y >= bounds.height - VIEW_CUBE_MARGIN - cubeSize
     ) {
       showTooltip(
-        "A — показать все, Ctrl+A — начальный вид\nX, Y, Z — вид со стороны положительного направления оси\nCtrl+X, Ctrl+Y, Ctrl+Z — вид со стороны отрицательного направления оси",
-        VIEW_CUBE_MARGIN,
-        Math.max(0, bounds.height - VIEW_CUBE_MARGIN - cubeSize - 76),
+        VIEW_CUBE_HELP, VIEW_CUBE_MARGIN, bounds.height - VIEW_CUBE_MARGIN - cubeSize,
         { cube: true },
       );
       return;

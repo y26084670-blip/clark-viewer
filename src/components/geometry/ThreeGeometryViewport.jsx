@@ -1997,7 +1997,8 @@ export function ThreeGeometryViewport(props) {
       x <= VIEW_CUBE_MARGIN + cubeSize &&
       y >= bounds.height - VIEW_CUBE_MARGIN - cubeSize
     ) {
-      showTooltip(
+      if (props.taskPreview) setHoverTooltip(null);
+      else showTooltip(
         VIEW_CUBE_HELP, VIEW_CUBE_MARGIN, bounds.height - VIEW_CUBE_MARGIN - cubeSize,
         { cube: true },
       );
@@ -2746,19 +2747,24 @@ export function ThreeGeometryViewport(props) {
       });
       props.onFlightReady?.(flightController);
 
-      axisRotationController = createGeometryAxisRotationController({
-        element: renderer.domElement, getCamera: () => camera, getControls: () => controls,
-        canStart: () => !suspended && !disposed && !contextLost && !movieSnapshot && !error() && flightController.state === "idle",
-        onStateChange: active => {
-          controlsInteracting = active || flightController.active;
-          if (active) clearHoverTooltip();
-          // OrbitControls caches camera.up. Rebase once after the direct gesture,
-          // instead of letting its old spherical frame clamp each rotation.
-          else if (!disposed && flightController.state === "idle") rebuildOrbitControls();
-        },
-        onRotate: () => { frameGraphsOnArrival = false; hasFramedGeometry = true; clearHoverTooltip(); requestRender(); },
-        onPointerMove: queuePointerPick, onPointerLeave: clearHoverTooltip,
-      });
+      if (props.taskPreview) {
+        renderer.domElement.addEventListener("pointermove", queuePointerPick);
+        renderer.domElement.addEventListener("pointerleave", clearHoverTooltip);
+      } else {
+        axisRotationController = createGeometryAxisRotationController({
+          element: renderer.domElement, getCamera: () => camera, getControls: () => controls,
+          canStart: () => !suspended && !disposed && !contextLost && !movieSnapshot && !error() && flightController.state === "idle",
+          onStateChange: active => {
+            controlsInteracting = active || flightController.active;
+            if (active) clearHoverTooltip();
+            // OrbitControls caches camera.up. Rebase once after the direct gesture,
+            // instead of letting its old spherical frame clamp each rotation.
+            else if (!disposed && flightController.state === "idle") rebuildOrbitControls();
+          },
+          onRotate: () => { frameGraphsOnArrival = false; hasFramedGeometry = true; clearHoverTooltip(); requestRender(); },
+          onPointerMove: queuePointerPick, onPointerLeave: clearHoverTooltip,
+        });
+      }
       const lineHandlers = streamlinePointerHandlers(pickAtPointer, () => movieSnapshot
         || flightController.state !== "idle" || !props.resultPickingOnly);
       handlePointerDown = lineHandlers.pointerdown;
@@ -3011,6 +3017,8 @@ export function ThreeGeometryViewport(props) {
     disposeObject(helperRoot);
     disposeObject(viewCubeRoot);
     if (renderer?.domElement) {
+      renderer.domElement.removeEventListener("pointermove", queuePointerPick);
+      renderer.domElement.removeEventListener("pointerleave", clearHoverTooltip);
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       renderer.domElement.removeEventListener("click", handleClick);
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);

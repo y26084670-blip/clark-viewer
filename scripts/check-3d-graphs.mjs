@@ -544,12 +544,17 @@ try {
   await page.keyboard.press("Control+a"); await page.waitForFunction(() => graphScene.snapshot().direction.every(x => x > .5));
   const canvas = page.locator(".geometry-viewer-canvas-region canvas").first(), box = await canvas.boundingBox();
   await page.mouse.move(box.x + 50, box.y + box.height - 50); await page.waitForSelector(".geometry-viewport-tooltip");
-  const tooltip = page.locator(".geometry-viewport-tooltip"); const hint = await tooltip.innerText(); assert.equal(hint.split("\n").length, 3); assert.ok(hint.includes("Ctrl+X"));
+  const hint = await page.locator(".geometry-viewport-tooltip").innerText();
+  assert.match(hint, /A — показать все, Ctrl\+A — начальный вид/u);
+  assert.match(hint, /X, Y, Z — вид со стороны положительного направления оси/u);
+  assert.match(hint, /Ctrl\+X, Ctrl\+Y, Ctrl\+Z — вид со стороны отрицательного направления оси/u);
+  assert.match(hint, /Alt\+X\/Y\/Z и движение мыши.*через текущий центр вида/u);
+  assert.match(hint, /Shift\+X\/Y\/Z и движение мыши.*через начало координат \(0, 0, 0\)/u);
   await page.mouse.move(box.x + box.width * .65, box.y + box.height * .55); await page.mouse.down(); await page.mouse.move(box.x + box.width * .7, box.y + box.height * .6, { steps: 5 }); await page.mouse.up();
   const stopped = (await scene()).camera; await page.mouse.move(box.x + box.width * .75, box.y + box.height * .65, { steps: 5 }); assert.deepEqual((await scene()).camera, stopped);
   await page.keyboard.press("Control+a");
   await page.screenshot({ path: path.join(out, "surfaces.png"), fullPage: true });
-  pass("X/Y/Z and Ctrl+X/Y/Z face the requested sides, the cube has three help lines, and camera drag ends on mouse release");
+  pass("Axis keys select the requested sides, cube help identifies both rotation centers, and mouse release ends the camera drag");
 
   await page.keyboard.press("z"); await page.waitForFunction(()=>graphScene.snapshot().direction[2]>.999);
   await clickSurface("region:0",1,.4,.55,"right"); await contourMenu.getByRole("menuitemradio").nth(1).click();

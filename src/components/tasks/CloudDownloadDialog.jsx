@@ -1,7 +1,6 @@
 import { For, Show, createEffect, createSignal, createUniqueId, onMount, onCleanup } from "solid-js";
 import { availableName, checkExampleName, copyCloudTask, loadCloudCatalogs, readZoneReport, zoneWorkspace } from "../../services/cloudExamples.js";
-import { isProjectCatalog, listProjectCatalogs, saveTaskQueueCatalog } from "../../services/projectDiskAccessService.js";
-import { changeTaskList, createTaskQueueEntry, restoreTaskQueueRoot } from "../../services/taskListFile.js";
+import { isProjectCatalog, listProjectCatalogs } from "../../services/projectDiskAccessService.js";
 import "./CloudDownloadDialog.css";
 
 export function useCloudCatalogs(app, root) {
@@ -53,7 +52,6 @@ export function CloudDownloadDialog(props) {
   const [projects, setProjects] = createSignal([]);
   const [project, setProject] = createSignal(props.project);
   const [name, setName] = createSignal(props.task.name);
-  const [add, setAdd] = createSignal(true);
   const [busy, setBusy] = createSignal(false);
   const [message, setMessage] = createSignal("");
   const [file, setFile] = createSignal("");
@@ -104,13 +102,6 @@ export function CloudDownloadDialog(props) {
         setCopied(result);
       }
       result.catalogs = await listProjectCatalogs(result.disk);
-      if (add()) {
-        const queue = await restoreTaskQueueRoot(result.disk, result.catalogs) ?? result.root;
-        const entry = await createTaskQueueEntry(queue, result.disk, { rootHandle: result.root, handle: result.handle });
-        await changeTaskList(queue, entries => [...entries.filter(row => row.path.toLowerCase() !== entry.path.toLowerCase()), entry]);
-        await saveTaskQueueCatalog(result.disk, queue.name).catch(() => {});
-        result.queue = queue;
-      }
       await props.onDone(result);
       props.onClose();
     } catch (error) {
@@ -120,18 +111,16 @@ export function CloudDownloadDialog(props) {
   }
   return <dialog class="cloud-download-dialog" ref={dialog} aria-labelledby={id}
     onCancel={event => { event.preventDefault(); if (!busy()) props.onClose(); }}>
-    <h2 id={id}>Загрузить задание</h2>
+    <h2 id={id}>Локальная загрузка выделенного облачного проекта</h2>
     <div class="cloud-download-disk"><button type="button" disabled={busy() || copied()} onClick={pick}>Выбрать диск</button>
       <span>{disk()?.name || "Диск не выбран"}</span></div>
-    <label>Каталог с проектами<input list={id + "-catalogs"} value={catalog()} disabled={!disk() || busy() || copied()}
+    <label>Локальный каталог с проектами<input list={id + "-catalogs"} value={catalog()} disabled={!disk() || busy() || copied()}
       onInput={event => void chooseCatalog(event.currentTarget.value)} /></label>
     <datalist id={id + "-catalogs"}><For each={catalogs()}>{item => <option value={item.name} />}</For></datalist>
     <label>Проект<input list={id + "-projects"} value={project()} disabled={!disk() || busy() || copied()}
       onInput={event => setProject(event.currentTarget.value)} /></label>
     <datalist id={id + "-projects"}><For each={projects()}>{value => <option value={value} />}</For></datalist>
     <label>Имя задания<input value={name()} disabled={busy() || copied()} onInput={event => setName(event.currentTarget.value)} /></label>
-    <label class="cloud-download-check"><input type="checkbox" checked={add()} disabled={busy()}
-      onChange={event => setAdd(event.currentTarget.checked)} />Добавить в список</label>
     <Show when={file() || message()}><p role="status">{message() || file()}</p></Show>
     <footer><button type="button" disabled={!disk() || busy()} onClick={apply}>Применить</button>
       <button type="button" disabled={busy()} onClick={props.onClose}>Закрыть</button></footer>

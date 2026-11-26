@@ -6,23 +6,22 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 concurrency:
   group: github-pages
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     if: github.ref == 'refs/heads/main'
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      PAGES_ARTIFACT: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
+    outputs:
+      artifact_name: ${{ env.PAGES_ARTIFACT }}
+      artifact_id: ${{ steps.upload.outputs.artifact_id }}
 
     steps:
       - name: Check out the repository
@@ -43,14 +42,50 @@ jobs:
       - name: Build the GitHub Pages bundle
         run: npm run build:pages
 
+      - name: Upload the Pages artifact
+        id: upload
+        uses: actions/upload-pages-artifact@v5
+        with:
+          name: ${{ env.PAGES_ARTIFACT }}
+          path: ./dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
 
-      - name: Upload the Pages artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: ./dist
+      - name: Wait for the uploaded Pages artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_NAME: ${{ needs.build.outputs.artifact_name }}
+          ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
+        run: |
+          : "${ARTIFACT_NAME:?Missing build artifact name}" "${ARTIFACT_ID:?Missing build artifact ID}"
+          endpoint="repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=$ARTIFACT_NAME"
+          for attempt in {1..20}; do
+            if visible_id=$(gh api "$endpoint" --jq '.artifacts[] | select(.expired == false) | .id') && [[ "$visible_id" == "$ARTIFACT_ID" ]]; then
+              echo "Found $ARTIFACT_NAME ($ARTIFACT_ID) on attempt $attempt."
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::Pages artifact $ARTIFACT_NAME ($ARTIFACT_ID) did not become available."
+          exit 1
 
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          artifact_name: ${{ needs.build.outputs.artifact_name }}

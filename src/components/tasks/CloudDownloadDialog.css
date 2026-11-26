@@ -2,8 +2,8 @@
 .cloud-download-dialog::backdrop { background: #0006; }
 .cloud-download-dialog h2 { margin: 0 0 .8rem; font-size: 1.15rem; }
 .cloud-download-dialog label { display: grid; gap: .2rem; margin: .5rem 0; }
-.cloud-download-dialog input:not([type=checkbox]) { box-sizing: border-box; width: 100%; padding: .25rem; }
-.cloud-download-dialog .cloud-download-check, .cloud-download-disk, .cloud-download-dialog footer { display: flex; align-items: center; gap: .5rem; }
+.cloud-download-dialog input { box-sizing: border-box; width: 100%; padding: .25rem; }
+.cloud-download-disk, .cloud-download-dialog footer { display: flex; align-items: center; gap: .5rem; }
 .cloud-download-dialog footer { justify-content: flex-end; margin-top: .75rem; }
 .cloud-download-dialog p { overflow-wrap: anywhere; }
 .task-status-row.is-zone-blocked .task-status-label, .task-launch-row.is-zone-blocked .task-status-name { color: #b91c1c; font-weight: 650; }

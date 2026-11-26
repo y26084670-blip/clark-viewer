@@ -116,7 +116,7 @@ export function TaskDocsGallery(props) {
             setOpenError("");
             controller.select(event.currentTarget.value);
           }}>
-          <Show when={!readme()}><option value="">README.txt (создать)</option></Show>
+          <Show when={!props.taskHandle?.cloud && !readme()}><option value="">README.txt (создать)</option></Show>
           <For each={view().documents}>{entry => <option value={entry.name}>{entry.name}</option>}</For>
         </select>
         <button type="button" title={expandLabel()} aria-label={expandLabel()}
@@ -130,7 +130,7 @@ export function TaskDocsGallery(props) {
             opener = event.currentTarget; setExpanded({ task: props.taskHandle, name: view().selected.name });
           }}>⤢</button>
       </div>
-      <div class="task-readme-actions" aria-label="Действия с документом DOCS">
+      <Show when={!props.taskHandle?.cloud}><div class="task-readme-actions" aria-label="Действия с документом DOCS">
         <button type="button" aria-label="Создать README.txt" title="Создать README.txt" disabled={actionsDisabled() || !createTarget()}
           onClick={event => setReadmeRequest({ task: props.taskHandle, mode: "create", opener: event.currentTarget })}>Создать</button>
         <button type="button" disabled={actionsDisabled() || !readmeSelected()}
@@ -138,7 +138,7 @@ export function TaskDocsGallery(props) {
         <button type="button" disabled={disabled() || view().loading || Boolean(readmeRequest()) || !selected()}
           onClick={event => setReadmeRequest({ task: props.taskHandle, mode: "delete", name: selected().name, opener: event.currentTarget })}
           title={selected() ? `Удалить ${selected().name}` : "Удалить выбранный документ"}>Удалить</button>
-      </div>
+      </div></Show>
       <div class="task-docs-status" role={view().error || openError() ? "alert" : "status"}>
         {status() || format()}
       </div>

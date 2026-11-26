@@ -8,7 +8,7 @@ const WEBM_SPEEDS = [0.1, 0.3, 0.5, 1, 2];
 
 export function TaskGifGallery(props) {
   const [speed, setSpeed] = createSignal(1);
-  return <TaskImageGallery {...props} label="GIF / WebM" emptyMessage="GIF/WebM-файлов нет" allowDelete
+  return <TaskImageGallery {...props} label="GIF / WebM" emptyMessage="GIF/WebM-файлов нет" allowDelete={!props.taskHandle?.cloud}
     createController={createTaskGifGalleryController} subscribe={subscribeTaskGifs}
     onPreviewChange={() => setSpeed(1)}
     renderPreviewHeader={preview => <Show when={/\.webm$/i.test(preview()?.entry.name)}>

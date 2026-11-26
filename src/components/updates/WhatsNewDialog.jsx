@@ -108,9 +108,6 @@ export function WhatsNewDialog(props) {
           <div class="whats-new-version-actions">
             <button type="button" onClick={checkUpdates} disabled={state().loading || versionBusy()}>
               {versionBusy() ? "Ожидание Clark…" : "Проверить обновления"}</button>
-            <Show when={recommended() && comparison() === -1 && state().installerUrl}>
-              <a href={state().installerUrl} target="_blank" rel="noopener noreferrer">Скачать установщик</a>
-            </Show>
           </div>
           <Show when={versionNotice()}><div role="status">{versionNotice()}</div></Show>
         </section>
@@ -162,7 +159,6 @@ export function WhatsNewDialog(props) {
         </Show>
         <footer class="whats-new-footer" aria-live="polite">
           <Show when={state().error}><div>{state().error}</div></Show>
-          <Show when={comparison() === -1 && state().installerError}><div>{state().installerError}</div></Show>
           <Show when={state().checkedAt}><div>Журнал проверен: {formatDate(state().checkedAt)}{state().source === "cache" ? " · сохранённая копия" : ""}</div></Show>
           <Show when={!state().persistent}><div>Отметки прочтения сохраняются только в текущей вкладке.</div></Show>
         </footer>

@@ -12,7 +12,7 @@ export async function listTaskProtocolDownloads(taskHandle, { signal } = {}) {
   for (const name of names) {
     signal?.throwIfAborted();
     const handle = await directory.getFileHandle(protocolFilename(name), { create: false });
-    const file = await handle.getFile();
+    const file = handle.cloud ? handle : await handle.getFile();
     signal?.throwIfAborted();
     entries.push({ name, handle, size: file.size, lastModified: file.lastModified });
   }

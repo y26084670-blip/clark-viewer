@@ -1,4 +1,5 @@
 import { CloudDownloadDialog, useCloudCatalogs } from "../components/tasks/CloudDownloadDialog.jsx";
+import { catalogDisplayName } from "../services/cloudExamples.js";
 import { readTaskDirectoryLists } from "../services/taskDirectoryRefresh.js";
 import { batch, createEffect, createSignal, For, Show, onCleanup, onMount } from "solid-js";
 import { createLastOpenedTaskHistory, sortTaskDirectories } from "../services/taskLastOpenedService.js";
@@ -45,10 +46,10 @@ export function Tasks(props) {
   const [selectionNotice, setSelectionNotice] = createSignal("");
   const [selectionError, setSelectionError] = createSignal("");
   const browserBusy = () => accessBusy() || projectListBusy() || taskListBusy() || galleryBusy() || selectionReceiving() || protocolBusy() || textProtocolsBusy();
-  createEffect(() => props.onToolsSelection?.(props.busy || browserBusy() || accessOpen() || root()?.cloud ? null : candidate()));
+  createEffect(() => props.onToolsSelection?.(props.busy || browserBusy() || accessOpen() ? null : candidate()));
   createEffect(() => props.onComparisonContextChange?.({
     projects:projects(), preferred:candidate() ? `${project()}/${candidate().name}` : "",
-    eligible:!root()?.cloud && Boolean(projects().length) && !props.busy && !browserBusy() && !accessOpen(),
+    eligible:Boolean(projects().length) && !props.busy && !browserBusy() && !accessOpen(),
   }));
   let taskListElement, selectionErrorDialog, selectionErrorReturnFocus;
   const [lastTask, setLastTask] = createSignal(null), [lastTaskNotice, setLastTaskNotice] = createSignal("");
@@ -90,11 +91,12 @@ export function Tasks(props) {
     setSelectionNotice(""); setSelectionError("");
     try {
       const selected = await readTaskSelection(handle, request, {
+        cloudCatalogs: request.cloudCatalog ? await cloud.getCatalogs() : [],
         catalogs: catalogs(), diskHandle: disk(),
         isCurrent: () => !disposed && handle === root() && current === revision && !props.busy,
       });
       batch(() => {
-        if (selected.diskHandle) {
+        if (selected.diskHandle && !selected.root.cloud) {
           setDisk(selected.diskHandle); setCatalogs(selected.catalogs);
           setPendingDisk(null); setAccessNotice("");
         }
@@ -104,10 +106,11 @@ export function Tasks(props) {
       });
       if (selected.root !== handle) {
         props.onRootChange?.(selected.root);
-        await lastTaskHistory.open(selected.root);
+        if (selected.root.cloud) { lastTaskHistory.dispose(); setLastTask(null); setLastTaskNotice(""); }
+        else await lastTaskHistory.open(selected.root);
       }
       props.onShowTasks?.();
-      setSelectionNotice(`Выбрано задание из Editor: ${selected.root.name}/${selected.project.name}/${selected.task.name}`);
+      setSelectionNotice(`Выбрано задание из Editor: ${catalogDisplayName(selected.root)}/${selected.project.name}/${selected.task.name}`);
       queueMicrotask(() => {
         if (!disposed && current === revision) {
           const row = taskListElement?.querySelector(".selected");
@@ -117,7 +120,7 @@ export function Tasks(props) {
     } finally { setSelectionReceiving(false); }
   }
   async function showInEditor(event) {
-    if (!candidate() || candidate().handle.cloud || props.busy || browserBusy() || selectionSending()) return;
+    if (!candidate() || props.busy || browserBusy() || selectionSending()) return;
     const sourceButton = event.currentTarget;
     const item = candidate(), name = project(), handle = root();
     setSelectionSending(true); setSelectionNotice(""); setSelectionError("");
@@ -142,7 +145,7 @@ export function Tasks(props) {
     batch(() => {
       setRoot(handle); setProjects(entries); setProject(""); setTasks([]); setCandidate(null); setError("");
     });
-    props.onRootChange?.(handle?.cloud ? null : handle);
+    props.onRootChange?.(handle);
     if (handle && !handle.cloud) await lastTaskHistory.open(handle);
     else { lastTaskHistory.dispose(); setLastTask(null); setLastTaskNotice(""); }
   }
@@ -288,13 +291,12 @@ export function Tasks(props) {
     if (props.busy || browserBusy()) return;
     const item = candidate();
     if (!item) return;
-    if (item.handle.cloud) { setDownload(item); return; }
     const request = ++loadRequest;
     const snapshot = lastTaskHistory.capture(projects(), project(), tasks(), item);
     const handle = root();
     try {
-      const loaded = await props.onLoad(item.handle, `${handle.name}/${project()}/${item.name}`, { rootHandle: handle });
-      if (loaded === true && !disposed && request === loadRequest) await lastTaskHistory.remember(snapshot);
+      const loaded = await props.onLoad(item.handle, `${catalogDisplayName(handle)}/${project()}/${item.name}`, { rootHandle: handle });
+      if (loaded === true && !item.handle.cloud && !disposed && request === loadRequest) await lastTaskHistory.remember(snapshot);
     } catch (error) {
       if (!disposed && request === loadRequest && root() === handle) setError(error.message);
     }
@@ -303,7 +305,6 @@ export function Tasks(props) {
     <Show when={download()} keyed>{item => <CloudDownloadDialog task={item} project={project()} disk={disk()}
       catalogs={catalogs()} onDone={finishCloudDownload} onClose={() => setDownload(null)} />}</Show>
       <ProjectDiskDialog open={accessOpen() && props.active !== false} busy={props.busy || accessBusy()}
-      cloudCatalogs={cloud.catalogs()} onCloud={async id => { await changeCatalog(id); closeAccess(); }}
       picked={diskPicked()} count={catalogs().length} pending={pendingDisk()} notice={accessNotice() || error()}
       onPick={pickRoot} onAllow={allowDisk} onClose={closeAccess} />
     <section class="task-browser-panel">
@@ -321,14 +322,13 @@ export function Tasks(props) {
             <option value="" selected={!root()}>Выберите каталог</option>
             <For each={catalogs()}>{item => <option value={item.name} selected={cloud.value() === item.name}>{item.name}</option>}</For>
             {cloud.catalogs().map(item => <option value={item.id} selected={cloud.value() === item.id}>☁ {item.name}</option>)}
-            </select><button type="button" aria-label="Доступ к проектам" title="Выбрать диск с локальными проектами"
-              disabled={props.busy || browserBusy()} onClick={() => { setDiskPicked(false); setAccessOpen(true); }}>Доступ к проектам</button>
+            </select>
             <Show when={cloud.error()}><span role="status">{cloud.error()} <button type="button" onClick={cloud.refresh}>Повторить</button></span></Show>
         </div>
         <Show when={pendingDisk() && !accessOpen()}><button type="button" class="folder-button" disabled={props.busy || browserBusy()}
           onClick={allowDisk}>Разрешить доступ к диску «{pendingDisk().name}»</button></Show>
         <Show when={accessNotice() && !accessOpen()}><div class="task-access-notice" role="status">{accessNotice()}</div></Show>
-        <div class="root-name">{root() ? `Корневой каталог: ${root().name}${root().cloud ? "_cloud" : ""}` : "Каталог не выбран"}</div>
+        <div class="root-name">{root() ? `Корневой каталог: ${catalogDisplayName(root())}` : "Каталог не выбран"}</div>
         <div class="task-list-heading task-project-heading">
           <label class="field-label" for="listProject">Список проектов</label>
           <div class="task-project-actions">
@@ -374,7 +374,7 @@ export function Tasks(props) {
               }
             }}
             onDblClick={() => { if (candidate()?.handle === item.handle) void load(); }}
-            title={cloud.blocked(project(), item.name) ? "Windows обнаружила заблокированные файлы задания" : item.handle.cloud ? "Загрузить локальную копию задания" : "Двойной щелчок — загрузить задание для просмотра"}>
+            title={cloud.blocked(project(), item.name) ? "Windows обнаружила заблокированные файлы задания" : item.handle.cloud ? "Двойной щелчок — открыть результаты облачного задания" : "Двойной щелчок — загрузить задание для просмотра"}>
             <TaskStatusCells status={taskStatus(item.handle)} disabled={props.busy || browserBusy()}
               onOpenProtocols={() => { void openTestProtocols(item); }} /><span class="task-status-name">
               <span class="task-status-label"><Show when={isLastTask(item)}><LastOpenedTaskMarker label="Последнее открытое задание" /></Show>{item.name}</span>
@@ -384,13 +384,29 @@ export function Tasks(props) {
           </div>}</For>
         </div>
         <div class="task-load-row">
-        <button class="load-button" disabled={!candidate() || props.busy || browserBusy()} onClick={load}>{props.busy ? "Загрузка…" : candidate()?.handle.cloud ? "Загрузить" : "Загрузить для просмотра"}</button>
+          <div class="task-load-slot" classList={{ "has-cloud-task": candidate()?.handle.cloud }}>
+            <button class="load-button" aria-hidden={candidate()?.handle.cloud || undefined}
+              disabled={candidate()?.handle.cloud || !candidate() || props.busy || browserBusy()} onClick={load}>
+              {props.busy ? "Загрузка…" : "Загрузить для просмотра"}
+            </button>
+            <Show when={candidate()?.handle.cloud}>
+              <div class="cloud-task-actions">
+                <button type="button" disabled={props.busy || browserBusy()} onClick={() => setDownload(candidate())}>
+                  <span>Загрузить на</span>{" "}<span>локальный диск</span>
+                </button>
+                <button type="button" disabled={props.busy || browserBusy()} onClick={load}>
+                  <span>Открыть</span>{" "}<span>для чтения</span>
+                </button>
+              </div>
+            </Show>
+          </div>
         <button type="button" class="task-cross-open-button"
-          disabled={!candidate() || candidate().handle.cloud || !selectionChannel.supported || props.busy || browserBusy() || selectionSending()}
+          disabled={!candidate() || !selectionChannel.supported || props.busy || browserBusy() || selectionSending()}
           aria-busy={selectionSending()}
           title="Выбрать каталог проектов, проект и задание в открытом Editor; браузер может ограничить переключение вкладки"
           onClick={showInEditor}>Выбрать в Editor</button>
         </div>
+        <Show when={candidate()?.handle.cloud}><p class="cloud-task-notice" role="status">{props.busy ? "Загружаются результаты облачного задания…" : "Облачное задание. Загрузка результатов может занять время."}</p></Show>
         <Show when={lastTaskNotice()}><div class="task-last-opened-notice" role="status">{lastTaskNotice()}</div></Show>
         <Show when={error() || props.error || info.value()?.error}><div class="task-error" role="alert">{error() || props.error || info.value()?.error}</div></Show>
       </div>

@@ -23,18 +23,6 @@ export function ProjectDiskDialog(props) {
   return <dialog ref={dialog} class="task-selection-error-dialog task-disk-dialog" aria-labelledby="project-disk-title"
     onCancel={event => { event.preventDefault(); if (!props.busy) props.onClose(); }}>
     <h2 id="project-disk-title">Доступ к проектам</h2>
-    <Show when={props.cloudCatalogs?.length}><label>Облачные примеры
-      <select aria-label="Облачные примеры" value="" disabled={props.busy} onChange={event => {
-        const catalog = event.currentTarget.value;
-        event.currentTarget.value = "";
-        if (catalog) void props.onCloud(catalog);
-      }}>
-        <option value="">Выберите каталог</option>
-        {props.cloudCatalogs.map(item => <option value={item.id}>☁ {item.name}</option>)}
-      </select>
-    </label></Show>
-    <p>Выберите диск с проектами и разрешите чтение и запись.</p>
-    <p>Каталоги clark.* с проектами появятся в верхнем списке.</p>
     <div class="task-disk-dialog-row">
       <button ref={picker} type="button" autofocus onClick={() => confirmAccess(props.onPick, picker)} disabled={props.busy || props.picked}>Выбрать диск с проектами</button>
       <p>Выбрано каталогов: {props.count}</p>

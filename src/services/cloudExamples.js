@@ -2,6 +2,10 @@
 const key = value => value.normalize("NFC").toLowerCase();
 const readOnly = () => new DOMException("Облачный пример доступен только для чтения.", "NotAllowedError");
 
+export function catalogDisplayName(handle) {
+  return handle.name + (handle.cloud ? "_cloud" : "");
+}
+
 export function checkExampleName(name) {
   if (typeof name !== "string" || !name || name.length > 255 || name === "." || name === ".."
       || /[<>:"/\\|?*\u0000-\u001f\u007f]|[. ]$/u.test(name)
@@ -10,6 +14,8 @@ export function checkExampleName(name) {
   }
   return name;
 }
+
+const parents = new WeakMap();
 
 class CloudDirectory {
   kind = "directory";
@@ -20,6 +26,14 @@ class CloudDirectory {
   async *values() { yield* this.children.values(); }
   [Symbol.asyncIterator]() { return this.entries(); }
   async isSameEntry(other) { return this === other; }
+  async resolve(entry) {
+    const segments = [];
+    for (let current = entry; current; current = parents.get(current)) {
+      if (current === this) return segments.reverse();
+      segments.push(current.name);
+    }
+    return null;
+  }
   async queryPermission({ mode } = {}) { return mode === "readwrite" ? "denied" : "granted"; }
   child(name, kind, options) {
     if (options?.create) throw readOnly();
@@ -79,6 +93,7 @@ export function buildCloudCatalogs(manifest, manifestUrl, fetchImpl = globalThis
       if (!node) {
         node = folder ? new CloudDirectory(name)
           : new CloudFile(name, new URL(parts.map(encodeURIComponent).join("/"), base).href, entry.size, fetchImpl);
+        parents.set(node, parent);
         parent.children.set(id, node);
       }
       parent = node;

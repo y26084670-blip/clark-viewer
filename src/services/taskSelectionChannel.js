@@ -9,23 +9,28 @@ const validName = name => typeof name === "string" && name.length > 0
 
 // An explicit user command can carry an already granted disk handle.
 // Resolve exact entry identity; never prompt for permission or write files.
-export async function readTaskSelection(root, request, { catalogs = [], diskHandle = null, isCurrent = () => true } = {}) {
+export async function readTaskSelection(root, request, { catalogs = [], cloudCatalogs = [], diskHandle = null, isCurrent = () => true } = {}) {
   const checkCurrent = () => {
     if (!isCurrent()) throw new Error("Выбор задания отменён: состояние страницы изменилось.");
   };
   checkCurrent();
-  if (!request?.baseHandle || !validName(request.projectName) || !validName(request.taskName)) {
+  const cloudRequest = request?.cloudCatalog !== undefined;
+  if ((cloudRequest ? !validName(request.cloudCatalog) : !request?.baseHandle)
+      || !validName(request.projectName) || !validName(request.taskName)) {
     throw new Error("Получена некорректная команда выбора задания.");
   }
   const findRoot = async handles => {
-    for (const handle of handles.filter(Boolean)) {
+    for (const handle of handles.filter(handle => handle && !handle.cloud)) {
       const same = await handle.isSameEntry(request.baseHandle);
       checkCurrent();
       if (same) return handle;
     }
     return null;
   };
-  let selectedRoot = await findRoot([root, ...catalogs.map(item => item.handle)]);
+  let selectedRoot = cloudRequest
+    ? cloudCatalogs.find(item => item.id === "cloud:" + request.cloudCatalog)?.handle
+    : await findRoot([root, ...catalogs.map(item => item.handle)]);
+  if (cloudRequest && !selectedRoot) throw new Error(`Облачный каталог «${request.cloudCatalog}_cloud» недоступен. Обновите список облачных заданий.`);
   let selectedDisk = diskHandle, selectedCatalogs = catalogs;
   if (!selectedRoot) {
     // Refresh stale lists first, then resolve the sender's explicit disk. A
@@ -200,7 +205,9 @@ export function createTaskSelectionChannel({ app, onSelection,
         const discoveryTimer = setTimeout(() => dispatch(requestId), discoveryMs);
         pending.set(requestId, { resolve, reject, timer, discoveryTimer, discovering: true,
           offers: new Map(), tried: new Set(), errors: [], active: null,
-          selection: { baseHandle, diskHandle, projectName, taskName } });
+          selection: baseHandle.cloud
+            ? { cloudCatalog: baseHandle.name, projectName, taskName }
+            : { baseHandle, diskHandle, projectName, taskName } });
         try {
           send("find-receiver", requestId);
         } catch (error) { finish(requestId, `Не удалось передать команду: ${error?.message || String(error)}`); }

@@ -113,7 +113,7 @@ export function createGraphSettingsStore(task, { onNotice = () => {}, delay = 12
   }
   return { ready, flush,
     save(settings) {
-      if (disposed) return;
+      if (disposed || directory?.cloud) return;
       const text = JSON.stringify({ version: 1, settings }, null, 2) + "\n";
       if (text === pending || text === lastSaved) return;
       pending = text; clearTimeout(timer); timer = setTimeout(flush, delay);

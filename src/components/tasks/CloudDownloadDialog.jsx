@@ -28,17 +28,24 @@ export function useCloudCatalogs(app, root) {
       if (await refreshZones() === request || Date.now() > until) stopPolling();
     }, 1000);
   }
-  async function refresh() {
-    try {
-      setError("");
-      const entries = await loadCloudCatalogs(app, { signal: controller.signal });
+  let catalogRequest;
+  function refresh() {
+    if (catalogRequest) return catalogRequest;
+    setError("");
+    catalogRequest = loadCloudCatalogs(app, { signal: controller.signal }).then(entries => {
       if (!controller.signal.aborted) setCatalogs(entries);
-    } catch (e) { if (!controller.signal.aborted) setError("Облачные примеры недоступны. " + e.message); }
+      return entries;
+    }).catch(error => {
+      if (!controller.signal.aborted) setError("Облачные примеры недоступны. " + error.message);
+      return [];
+    }).finally(() => { catalogRequest = null; });
+    return catalogRequest;
   }
   createEffect(() => { root(); workspace = ""; stopPolling(); setZones(new Set()); void refreshZones(); });
   onMount(() => { void refresh(); window.addEventListener("focus", refreshZones); });
   onCleanup(() => { controller.abort(); stopPolling(); window.removeEventListener("focus", refreshZones); });
   return { catalogs, error, refresh, refreshZones, checkZones,
+    getCatalogs: () => catalogs().length ? catalogs() : refresh(),
     value: () => root()?.cloud ? "cloud:" + root().name : root()?.name ?? "",
     blocked: (project, task) => !root()?.cloud && zones().has((project + "/" + task).normalize("NFC").toLowerCase()),
   };

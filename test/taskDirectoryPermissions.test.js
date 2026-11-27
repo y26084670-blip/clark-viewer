@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { catalogDisplayName } from "../src/services/cloudExamples.js";
 import { listProjectCatalogs } from "../src/services/projectDiskAccessService.js";
 import { sortTaskDirectories } from "../src/services/taskLastOpenedService.js";
 
@@ -237,16 +238,16 @@ test("stale viewer metadata cannot reopen 3D after the user chooses another tab"
 const taskLoadStart = source.indexOf("  async function load() {");
 const taskLoadEnd = source.indexOf("  return <div", taskLoadStart);
 const createTaskLoad = new Function("dependencies", `
-    const { props, browserBusy, candidate, projects, project, tasks, root, lastTaskHistory, setError } = dependencies;
+    const { props, browserBusy, candidate, projects, project, tasks, root, catalogDisplayName, lastTaskHistory, setError } = dependencies;
     let loadRequest = 0, disposed = false;
     ${source.slice(taskLoadStart, taskLoadEnd)}
     return load;
 `);
-function taskLoadRuntime(onLoad) {
-    const first = { name: "First", handle: {} }, second = { name: "Second", handle: {} };
+function taskLoadRuntime(onLoad, { cloud = false } = {}) {
+    const first = { name: "First", handle: { cloud } }, second = { name: "Second", handle: { cloud } };
     const state = { candidate: first, saved: [], error: "" };
-    const rootHandle = { name: "Root" };
-    const load = createTaskLoad({ props: { busy: false, onLoad }, browserBusy: () => false,
+    const rootHandle = { name: "Root", cloud };
+    const load = createTaskLoad({ props: { busy: false, onLoad }, browserBusy: () => false, catalogDisplayName,
         candidate: () => state.candidate, projects: () => [{ name: "Project" }], project: () => "Project",
         tasks: () => [first, second], root: () => rootHandle, setError: value => { state.error = value; },
         lastTaskHistory: {
@@ -263,6 +264,14 @@ test("viewer saves the requested task's position only after successful loading, 
     const loading = h.load(); assert.deepEqual(h.state.saved, []);
     h.state.candidate = h.second; finish(true); await loading;
     assert.deepEqual(h.state.saved, [{ projectIndex: 1, taskIndex: 1 }]);
+});
+
+test("viewer opens the cloud path without updating local task history", async () => {
+    let opened;
+    const h = taskLoadRuntime(async (handle, path) => { opened = { handle, path }; return true; }, { cloud: true });
+    await h.load();
+    assert.deepEqual(opened, { handle: h.first.handle, path: "Root_cloud/Project/First" });
+    assert.deepEqual(h.state.saved, []);
 });
 
 test("viewer does not save failed, blocked or superseded loads", async () => {

@@ -10,7 +10,7 @@ export function ViewerToolsMenu(props) {
   const selectionTab = () => props.tabIndex === 0;
   const testProtocolTask = () => selectionTab() ? props.selectedTask : props.task;
   const testProtocolEligible = () => selectionTab() ? props.selectionActionsEligible : props.taskActionsEligible;
-  const canEditProtocol = createMemo(() => !selectionTab() && Boolean(props.taskActionsEligible));
+  const canEditProtocol = createMemo(() => !selectionTab() && !props.task?.handle?.cloud && Boolean(props.taskActionsEligible));
   let taskProtocolMenuItem, faceCurrentsMenuItem, comparisonMenuItem;
   const [currentsTask, setCurrentsTask] = createSignal(null);
   createEffect(() => { if (currentsTask() && currentsTask() !== props.task) setCurrentsTask(null); });
@@ -176,7 +176,7 @@ export function ViewerToolsMenu(props) {
   function openSetup() {
     if (selectionTab() || !props.eligible || running() || saving()) return;
     closeMenu(); discardResult(); setError(""); setPhase("setup");
-    setSaveInTask(true); setSavedNotice("");
+    setSaveInTask(!props.task?.handle?.cloud); setSavedNotice("");
     openedTask = props.task; openedTab = props.tabIndex; closeAfterRun = false;
     setDialogOpen(true);
     queueMicrotask(focusSetup);
@@ -427,7 +427,7 @@ export function ViewerToolsMenu(props) {
               <Show when={saveInTask()} fallback={<a ref={saveButton} class="viewer-movie-save" href={result()?.url} download={result()?.filename}>Сохранить WebM</a>}>
                 <button ref={saveButton} type="button" class="viewer-movie-save" disabled={saving()} onClick={saveToTask}>Сохранить WebM</button>
               </Show>
-              <label class="viewer-movie-task-save"><input type="checkbox" checked={saveInTask()} disabled={saving()}
+              <label class="viewer-movie-task-save"><input type="checkbox" checked={saveInTask()} disabled={saving() || props.task?.handle?.cloud}
                 onChange={event => changeSaveLocation(event.currentTarget.checked)} />в задании</label>
             </Show>
             <button type="button" disabled={saving()} onClick={closeDialog}>Закрыть</button>

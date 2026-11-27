@@ -2,6 +2,10 @@
 const key = value => value.normalize("NFC").toLowerCase();
 const readOnly = () => new DOMException("Облачный пример доступен только для чтения.", "NotAllowedError");
 
+export function catalogDisplayName(handle) {
+  return handle.name + (handle.cloud ? "_cloud" : "");
+}
+
 export function checkExampleName(name) {
   if (typeof name !== "string" || !name || name.length > 255 || name === "." || name === ".."
       || /[<>:"/\\|?*\u0000-\u001f\u007f]|[. ]$/u.test(name)
@@ -10,6 +14,8 @@ export function checkExampleName(name) {
   }
   return name;
 }
+
+const parents = new WeakMap();
 
 class CloudDirectory {
   kind = "directory";
@@ -20,6 +26,14 @@ class CloudDirectory {
   async *values() { yield* this.children.values(); }
   [Symbol.asyncIterator]() { return this.entries(); }
   async isSameEntry(other) { return this === other; }
+  async resolve(entry) {
+    const segments = [];
+    for (let current = entry; current; current = parents.get(current)) {
+      if (current === this) return segments.reverse();
+      segments.push(current.name);
+    }
+    return null;
+  }
   async queryPermission({ mode } = {}) { return mode === "readwrite" ? "denied" : "granted"; }
   child(name, kind, options) {
     if (options?.create) throw readOnly();
@@ -79,6 +93,7 @@ export function buildCloudCatalogs(manifest, manifestUrl, fetchImpl = globalThis
       if (!node) {
         node = folder ? new CloudDirectory(name)
           : new CloudFile(name, new URL(parts.map(encodeURIComponent).join("/"), base).href, entry.size, fetchImpl);
+        parents.set(node, parent);
         parent.children.set(id, node);
       }
       parent = node;
@@ -105,73 +120,6 @@ export async function loadCloudCatalogs(app, { signal } = {}) {
   const response = await fetch(url, { cache: "no-cache", credentials: "omit", redirect: "error", signal });
   if (!response.ok) throw new Error("Не удалось прочитать облачный каталог (HTTP " + response.status + ").");
   return buildCloudCatalogs(await response.json(), url);
-}
-
-export async function availableName(parent, requested) {
-  checkExampleName(requested);
-  const names = new Set();
-  for await (const [name] of parent.entries()) names.add(key(name));
-  if (!names.has(key(requested))) return requested;
-  const base = requested.slice(0, 235) + " — копия";
-  let name = base;
-  for (let i = 2; names.has(key(name)); i++) name = base + " " + i;
-  return name;
-}
-
-async function copyFile(source, handle, signal) {
-  const response = await source.response(signal);
-  const writable = await handle.createWritable();
-  try {
-    let size = 0;
-    if (response.body) {
-      for await (const chunk of response.body) {
-        signal?.throwIfAborted();
-        size += chunk.byteLength;
-        if (size > source.size) source.verify(size);
-        await writable.write(chunk);
-      }
-    }
-    source.verify(size);
-    await writable.close();
-  } catch (error) {
-    await writable.abort().catch(() => {});
-    throw error;
-  }
-}
-
-export async function copyCloudTask(source, parent, name, { signal, onFile } = {}) {
-  if (!source?.cloud || source.kind !== "directory" || parent?.cloud) throw new Error("Выберите локальный проект.");
-  checkExampleName(name);
-  const copy = async () => {
-    signal?.throwIfAborted();
-    const free = await availableName(parent, name);
-    if (free !== name) throw Object.assign(new Error("Имя занято. Проверьте предложенное имя и нажмите «Применить»."), { suggestedName: free });
-    const target = await parent.getDirectoryHandle(name, { create: true });
-    for await (const _ of target.entries()) throw new Error("Каталог назначения уже занят.");
-    const created = [[parent, name]];
-    async function visit(from, to) {
-      for await (const [leaf, item] of from.entries()) {
-        signal?.throwIfAborted();
-        const isDir = item.kind === "directory";
-        const next = isDir ? await to.getDirectoryHandle(leaf, { create: true }) : await to.getFileHandle(leaf, { create: true });
-        created.push([to, leaf]);
-        if (isDir) await visit(item, next);
-        else { onFile?.(leaf); await copyFile(item, next, signal); }
-      }
-    }
-    try {
-      await visit(source, target);
-      return target;
-    } catch (error) {
-      let incomplete = false;
-      for (const [directory, leaf] of created.reverse()) {
-        try { await directory.removeEntry(leaf); } catch (e) { if (e.name !== "NotFoundError") incomplete = true; }
-      }
-      if (incomplete) throw new Error("Копирование прервано. Проверьте неполный каталог «" + name + "». " + error.message);
-      throw error;
-    }
-  };
-  return globalThis.navigator?.locks ? navigator.locks.request("clark.cloud-copy/" + key(parent.name) + "/" + key(name), copy) : copy();
 }
 
 async function readLocalJson(catalog, name) {

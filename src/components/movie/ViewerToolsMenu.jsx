@@ -365,11 +365,12 @@ export function ViewerToolsMenu(props) {
             onClick={() => { setTextProtocolHandle(testProtocolTask().handle); closeMenu(); }}>Протоколы (текстовые)</button>
           <button ref={protocolsMenuItem} type="button" role="menuitem" disabled={Boolean(protocolsDisabledReason())}
             aria-disabled={Boolean(protocolsDisabledReason())}
-            title={protocolsDisabledReason() || "Открыть сохранённые HTML-протоколы тестов из каталога comparison задания"} onClick={openProtocols}>Протоколы тестов</button>
+            title={["Открыть сохранённые HTML-протоколы тестов из каталога comparison задания. Доступность определяется по символу T в строке списка заданий.", protocolsDisabledReason()].filter(Boolean).join(" ")} onClick={openProtocols}>Протоколы тестов</button>
           <button ref={faceCurrentsMenuItem} type="button" role="menuitem" disabled={Boolean(faceCurrentsDisabledReason())}
-            title={faceCurrentsDisabledReason() || "Показать полные токи через грани выбранного проводящего элемента"} onClick={openFaceCurrents}>Полные токи через грани</button>
+            title="При наличии токов проводимости вычисление токов через выбранные сечения элементов для загруженного задания"
+            aria-description={faceCurrentsDisabledReason() || undefined} onClick={openFaceCurrents}>Полные токи через грани</button>
           <button ref={comparisonMenuItem} type="button" role="menuitem" disabled={!props.comparisonEligible}
-            title="Выбрать два задания и сопоставить их рассчитанные результаты" onClick={openComparison}>Сравнить результаты</button>
+            title="Выбрать два задания и сопоставить их рассчитанные результаты. Вычисляет СКВ норму для разницы результатов двух идентичных заданий. Также показывает таблицу сравнения тайминга расчета." onClick={openComparison}>Сравнить результаты</button>
         </div>
       </Show>
       <Show when={textProtocolHandle()} keyed>{handle => <TaskTextProtocolsDialog taskHandle={handle}

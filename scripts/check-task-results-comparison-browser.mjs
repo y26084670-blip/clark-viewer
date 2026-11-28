@@ -69,6 +69,12 @@ try {
   await tools.click();
   const menu = page.getByRole("menu", { name: "Инструменты", exact: true });
   assert.equal(await menu.getByRole("menuitem").last().textContent(), "Сравнить результаты");
+  const item = name => menu.getByRole("menuitem", { name, exact: true });
+  assert.match(await item("Протоколы тестов").getAttribute("title"), /Доступность определяется по символу T в строке списка заданий/);
+  assert.equal(await item("Полные токи через грани").getAttribute("title"),
+    "При наличии токов проводимости вычисление токов через выбранные сечения элементов для загруженного задания");
+  assert.match(await item("Сравнить результаты").getAttribute("title"),
+    /Вычисляет СКВ норму для разницы результатов двух идентичных заданий\. Также показывает таблицу сравнения тайминга расчета\./);
   await menu.getByRole("menuitem", { name: "Сравнить результаты", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Сравнить результаты", exact: true });
   await dialog.waitFor();

@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import { TaskTextProtocolsDialog } from "../tasks/TaskTextProtocolsDialog.jsx";
 import { ElementFaceCurrentsDialog } from "../ElementFaceCurrentsDialog.jsx";
 import { saveTaskGif } from "../../services/taskGifService.js";
 import { listTaskTestProtocols, readTaskTestProtocol } from "../../services/taskTestProtocolService.js";
@@ -10,8 +11,9 @@ export function ViewerToolsMenu(props) {
   const selectionTab = () => props.tabIndex === 0;
   const testProtocolTask = () => selectionTab() ? props.selectedTask : props.task;
   const testProtocolEligible = () => selectionTab() ? props.selectionActionsEligible : props.taskActionsEligible;
-  const canEditProtocol = createMemo(() => !selectionTab() && !props.task?.handle?.cloud && Boolean(props.taskActionsEligible));
-  let taskProtocolMenuItem, faceCurrentsMenuItem, comparisonMenuItem;
+  const canEditProtocol = createMemo(() => Boolean(testProtocolTask()) && !testProtocolTask()?.handle?.cloud && Boolean(testProtocolEligible()));
+  const [textProtocolHandle, setTextProtocolHandle] = createSignal(null);
+  let taskProtocolMenuItem, textProtocolMenuItem, faceCurrentsMenuItem, comparisonMenuItem;
   const [currentsTask, setCurrentsTask] = createSignal(null);
   createEffect(() => { if (currentsTask() && currentsTask() !== props.task) setCurrentsTask(null); });
   const [menuOpen, setMenuOpen] = createSignal(false);
@@ -268,7 +270,7 @@ export function ViewerToolsMenu(props) {
       event.preventDefault(); closeMenu(true);
     }
   }
-  const menuItems = () => [menuItem, taskProtocolMenuItem, protocolsMenuItem, faceCurrentsMenuItem, comparisonMenuItem].filter(item => item && !item.disabled);
+  const menuItems = () => [menuItem, taskProtocolMenuItem, textProtocolMenuItem, protocolsMenuItem, faceCurrentsMenuItem, comparisonMenuItem].filter(item => item && !item.disabled);
   function onMenuKeyDown(event) {
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.code)) {
       event.preventDefault();
@@ -354,18 +356,24 @@ export function ViewerToolsMenu(props) {
         <div ref={menu} id={menuId} class="viewer-tools-popup" role="menu" tabindex="-1" aria-label="Инструменты"
           style={{ left: `${menuPosition().left}px`, top: `${menuPosition().top}px` }} onKeyDown={onMenuKeyDown}>
           <button ref={menuItem} type="button" role="menuitem" disabled={selectionTab()} aria-disabled={selectionTab() || !props.eligible}
-            onClick={openSetup}>Создать moview</button>
+            title="анимационные или статические картинки результатов для загруженного задания" onClick={openSetup}>Создать moview</button>
           <button ref={taskProtocolMenuItem} type="button" role="menuitem" disabled={!canEditProtocol()}
-            onClick={() => { if (canEditProtocol()) { closeMenu(); props.onCreateProtocol?.(trigger); } }}>Протокол</button>
+            title="Создание или редактирование html протокола с результатами, предварительно отобранными с помощью опции 'в протокол' для задания, выделенного в списке"
+            onClick={() => { if (canEditProtocol()) { closeMenu(); props.onCreateProtocol?.(trigger); } }}>Протокол (интерактивный)</button>
+          <button ref={textProtocolMenuItem} type="button" role="menuitem" disabled={!canEditProtocol() || !testProtocolTask()?.handle}
+            title="Создание или удаление стандартных текстовых протоколов источников в элементах и поля в областях для загруженного задания"
+            onClick={() => { setTextProtocolHandle(testProtocolTask().handle); closeMenu(); }}>Протоколы (текстовые)</button>
           <button ref={protocolsMenuItem} type="button" role="menuitem" disabled={Boolean(protocolsDisabledReason())}
             aria-disabled={Boolean(protocolsDisabledReason())}
-            onClick={openProtocols}>Протоколы тестов</button>
+            title={protocolsDisabledReason() || "Открыть сохранённые HTML-протоколы тестов из каталога comparison задания"} onClick={openProtocols}>Протоколы тестов</button>
           <button ref={faceCurrentsMenuItem} type="button" role="menuitem" disabled={Boolean(faceCurrentsDisabledReason())}
-            title={faceCurrentsDisabledReason()} onClick={openFaceCurrents}>Полные токи через грани</button>
+            title={faceCurrentsDisabledReason() || "Показать полные токи через грани выбранного проводящего элемента"} onClick={openFaceCurrents}>Полные токи через грани</button>
           <button ref={comparisonMenuItem} type="button" role="menuitem" disabled={!props.comparisonEligible}
-            onClick={openComparison}>Сравнить результаты</button>
+            title="Выбрать два задания и сопоставить их рассчитанные результаты" onClick={openComparison}>Сравнить результаты</button>
         </div>
       </Show>
+      <Show when={textProtocolHandle()} keyed>{handle => <TaskTextProtocolsDialog taskHandle={handle}
+        onBusyChange={props.onBusyChange} onClose={() => { setTextProtocolHandle(null); queueMicrotask(() => trigger?.focus()); }} />}</Show>
       <Show when={currentsTask() && currentsTask() === props.task}>
         <ElementFaceCurrentsDialog task={props.task} time={props.time} workspace={props.getWorkspace()} hidden={selectionTab()}
           onFaceCurrentSelection={props.onFaceCurrentSelection} onClose={closeFaceCurrents} />

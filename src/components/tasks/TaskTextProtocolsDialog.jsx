@@ -1,15 +1,16 @@
-import { createSignal, createUniqueId, onCleanup, Show } from "solid-js";
+import { createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { listExistingTextProtocols, textProtocolWriteAccess } from "../../services/taskTextProtocols.js";
 import "./TaskTextProtocolsDialog.css";
 
 export function TaskTextProtocolsDialog(props) {
   const titleId = createUniqueId();
-  const [selected, setSelected] = createSignal(null), [busy, setBusy] = createSignal(false);
+  const selected = () => props.taskHandle;
+  const [busy, setBusy] = createSignal(false);
   const [status, setStatus] = createSignal(""), [error, setError] = createSignal("");
   const [committing, setCommitting] = createSignal(false);
   const [action, setAction] = createSignal(null), [checking, setChecking] = createSignal(false);
-  let dialog, opener, worker, presence, disposed = false, cancelRequested = false;
+  let dialog, worker, presence, disposed = false, cancelRequested = false;
   async function refreshAction() {
     presence?.abort();
     if (disposed || !selected()) return;
@@ -31,7 +32,7 @@ export function TaskTextProtocolsDialog(props) {
       if (!committing()) { cancelRequested = true; worker?.postMessage({ action: "cancel" }); setStatus("Отмена…"); }
       return;
     }
-    presence?.abort(); dialog.close(); setSelected(null); opener?.focus();
+    presence?.abort(); dialog.close(); props.onClose();
   }
   async function run() {
     if (busy() || checking() || !action() || !selected()) return;
@@ -76,12 +77,8 @@ export function TaskTextProtocolsDialog(props) {
       pendingWorker.onerror = () => pendingWorker.terminate();
     }
   });
-  return <>
-    <button class="task-text-protocols-button" type="button" disabled={props.disabled || props.active === false || !props.taskHandle}
-      title="Создать или удалить текстовые протоколы расчёта выделенного задания" onClick={event => {
-        opener = event.currentTarget; setSelected(props.taskHandle); setStatus(""); setError(""); dialog.showModal(); void refreshAction();
-      }}>Протоколы...</button>
-    <Portal><dialog ref={dialog} class="task-text-protocols-dialog" aria-labelledby={titleId}
+  onMount(() => { dialog.showModal(); void refreshAction(); });
+  return <Portal><dialog ref={dialog} class="task-text-protocols-dialog" aria-labelledby={titleId}
       onCancel={event => { event.preventDefault(); close(); }}>
       <h2 id={titleId}>Протоколы расчёта</h2>
       <p class="task-text-protocols-name">{selected()?.name}</p>
@@ -96,6 +93,5 @@ export function TaskTextProtocolsDialog(props) {
         <button type="button" disabled={busy() || checking() || !action()} onClick={run}>{action() === "delete" ? "Удалить" : "Создать"}</button>
         <button type="button" autofocus disabled={committing()} onClick={close}>Отмена</button>
       </div>
-    </dialog></Portal>
-  </>;
+    </dialog></Portal>;
 }

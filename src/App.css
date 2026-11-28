@@ -68,8 +68,8 @@ input[type=range] { accent-color: #2077b5; cursor: pointer; }
 .task-selection-error-dialog button:hover { background: #43596b; }
 .task-selection-error-dialog button:focus-visible { outline: 2px solid #73beef; outline-offset: 2px; }
 .task-selection-error-dialog::backdrop { background: rgba(0, 0, 0, .6); }
-.task-disk-dialog { width: min(550px, calc(100vw - 32px)); }
-.task-disk-dialog h2 { margin: 0; font-size: 20px; }
+.task-disk-dialog { --access-title-line: 24px; width: min(550px, calc(100vw - 32px)); transform: translateY(calc(var(--access-title-line) / -2)); }
+.task-disk-dialog h2 { margin: 0 0 var(--access-title-line); font-size: 20px; line-height: var(--access-title-line); }
 .task-disk-dialog-row { display: flex; align-items: center; gap: 16px; width: 100%; }
 .task-disk-dialog-row > button { flex: 0 0 auto; }
 .task-disk-dialog .task-disk-dialog-row p { text-align: left; }

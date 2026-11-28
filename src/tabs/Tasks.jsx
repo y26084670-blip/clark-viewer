@@ -9,7 +9,6 @@ import { loadTaskInput, readTaskSummaries } from "../services/taskLoadService.js
 import { useAsyncResult } from "../services/results/resultRequests.js";
 import { buildGeometryScene } from "../services/visualization/geometrySceneModel.js";
 import { ThreeGeometryViewport } from "../components/geometry/ThreeGeometryViewport.jsx";
-import { TaskTextProtocolsDialog } from "../components/tasks/TaskTextProtocolsDialog.jsx";
 import { TaskMediaPanel } from "../components/tasks/TaskMediaPanel.jsx";
 import { TaskStatusCells } from "../components/tasks/TaskStatusCells.jsx";
 import { ProjectDiskDialog } from "../components/tasks/ProjectDiskDialog.jsx";
@@ -38,14 +37,14 @@ export function Tasks(props) {
   );
   const [candidate, setCandidate] = createSignal(null), [error, setError] = createSignal("");
   const [galleryBusy, setGalleryBusy] = createSignal(false);
-  const [textProtocolsBusy, setTextProtocolsBusy] = createSignal(false);
   const [protocolBusy, setProtocolBusy] = createSignal(false);
   const [selectionReceiving, setSelectionReceiving] = createSignal(false);
   const [selectionSending, setSelectionSending] = createSignal(false);
   const [selectionNotice, setSelectionNotice] = createSignal("");
   const [selectionError, setSelectionError] = createSignal("");
-  const browserBusy = () => accessBusy() || projectListBusy() || taskListBusy() || galleryBusy() || selectionReceiving() || protocolBusy() || textProtocolsBusy();
-  createEffect(() => props.onToolsSelection?.(props.busy || browserBusy() || accessOpen() ? null : candidate()));
+  const browserBusy = () => accessBusy() || projectListBusy() || taskListBusy() || galleryBusy() || selectionReceiving() || protocolBusy();
+  createEffect(() => props.onToolsSelection?.(props.busy || browserBusy() || accessOpen() || !candidate() ? null
+    : { ...candidate(), plotLabel: `${root().name}/${project()}/${candidate().name}`, workspace: { rootHandle: root() } }));
   createEffect(() => props.onComparisonContextChange?.({
     projects:projects(), preferred:candidate() ? `${project()}/${candidate().name}` : "",
     eligible:Boolean(projects().length) && !props.busy && !browserBusy() && !accessOpen(),
@@ -335,13 +334,9 @@ export function Tasks(props) {
         <Show when={projectBrowseNotice()}><div class="task-access-notice" role="status">{projectBrowseNotice()}</div></Show>
         <div class="task-list-heading">
           <div class="field-label">Список заданий</div>
-          <div class="task-list-protocol-controls">
-            <TaskTextProtocolsDialog taskHandle={candidate()?.handle.cloud ? null : candidate()?.handle} active={props.active}
-              disabled={props.busy || browserBusy()} onBusyChange={setTextProtocolsBusy} />
             <button type="button" class="task-status-refresh" disabled={!project() || props.busy || browserBusy() || taskStatus.busy()}
               aria-label="Обновить список заданий" aria-busy={taskListBusy() || taskStatus.busy()}
               title="Обновить список заданий" onClick={refreshTasks}>↻</button>
-          </div>
         </div>
         <div class="task-list" ref={taskListElement} role="listbox" aria-label="Список заданий" onClick={event => {
           if (browserBusy()) return;

@@ -18,10 +18,12 @@ try {
   page.setDefaultTimeout(20000); page.on("pageerror", e => errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/test/browser/textProtocols.html`);
   await page.waitForFunction(() => window.textProtocolsReady);
-  const button = page.getByRole("button", { name: "Протоколы...", exact: true });
-  assert.equal(await button.isDisabled(), true);
+  const tools = page.getByRole("button", { name: "Инструменты", exact: true });
+  const button = page.getByRole("menuitem", { name: "Протоколы (текстовые)", exact: true });
+  const openText = async () => { await tools.click(); await button.click(); };
   await page.getByRole("button", {name:"Выбрать диск с проектами",exact:true}).click();
   await page.getByRole("button", {name:"Продолжить",exact:true}).click();
+  await tools.click(); assert.ok(await button.isDisabled()); await page.keyboard.press("Escape");
   await page.getByRole("combobox",{name:"Список проектов",exact:true}).selectOption("Project");
   const row = name => page.locator('.task-status-row').filter({has:page.locator('.task-status-label',{hasText:new RegExp(`^(?:▶\\s*)?${name}$`)})});
   await row("A").click();await page.getByRole("button",{name:"Загрузить для просмотра",exact:true}).click();
@@ -29,11 +31,9 @@ try {
   await row("B").click();
   // A is loaded and already has all five protocols; B is selected and has none.
   await page.evaluate(() => textProtocolFixture.seed("A"));
-  const buttonBox = await button.boundingBox(), refreshBox = await page.getByRole("button", { name:"Обновить список заданий",exact:true }).boundingBox();
-  assert.ok(buttonBox.x + buttonBox.width <= refreshBox.x && Math.abs(buttonBox.y-refreshBox.y)<4);
-  assert.equal(await button.evaluate(e => getComputedStyle(e).fontWeight), "400");
-  assert.match(await button.getAttribute("title"), /протоколы расчёта выделенного задания/);
-  assert.equal(await page.locator('.task-media-panel .task-text-protocols-button').count(),0);
+  await tools.click();
+  assert.match(await button.getAttribute("title"), /стандартных текстовых протоколов/);
+  assert.equal(await page.getByRole("button",{name:"Протоколы...",exact:true}).count(),0);
   await button.click();
   const dialog = page.getByRole("dialog", { name: "Протоколы расчёта", exact:true });
   const action = label => dialog.getByRole("button", {name:label,exact:true});
@@ -45,10 +45,10 @@ try {
   const dialogBox=await dialog.boundingBox(),actionBox=await action("Создать").boundingBox();
   assert.equal(dialogBox.width,360);assert.ok(actionBox.x-dialogBox.x<20);
   await page.screenshot({ path: `${output}/dialog-create.png` });
-  await action("Отмена").click();assert.equal(await button.evaluate(e => e === document.activeElement),true);
-  pass("Heading button left of refresh, normal weight, calculation tooltip, 360px panel and two left-aligned actions; selected B determines Create despite loaded A's files");
+  await action("Отмена").click();assert.equal(await tools.evaluate(e => e === document.activeElement),true);
+  pass("Tools menu, tooltip, restore focus, 360px panel and original actions; selected B determines Create despite loaded A's files");
 
-  await button.click();await ready("Создать");await action("Создать").click();
+  await openText();await ready("Создать");await action("Создать").click();
   await status("Создано протоколов: 5.");await ready("Удалить");
   const texts = await page.evaluate(async names => Object.fromEntries(await Promise.all(names.map(async n => [n, await textProtocolFixture.text("B", `output3XX/${n}`)]))), names);
   for (const [name, text] of Object.entries(texts)) await writeFile(`${output}/${name}`, text);
@@ -67,7 +67,7 @@ try {
   assert.equal(await page.evaluate(() => textProtocolFixture.text("B", "DOCS/README.txt")), "Documentation");
   pass("Batch Delete changes back to Create, preserving HDF5, integral protocols, DOCS and other tasks");
 
-  await action("Отмена").click();await page.evaluate(() => textProtocolFixture.seedSingle("B"));await button.click();await ready("Удалить");
+  await action("Отмена").click();await page.evaluate(() => textProtocolFixture.seedSingle("B"));await openText();await ready("Удалить");
   assert.equal(await action("Создать").count(),0);
   await action("Удалить").click();await status("Удалено протоколов: 1.");await ready("Создать");
   pass("One empty accepted protocol in selected B is sufficient for Delete");
@@ -84,7 +84,7 @@ try {
   assert.ok(!(await page.evaluate(() => textProtocolFixture.list("B"))).some(n => names.includes(n)));
   await page.evaluate(() => textProtocolFixture.restore("B"));
   await page.keyboard.press("Escape");assert.equal(await dialog.count(),0);
-  await row("A").click();await button.click();await ready("Удалить");
+  await row("A").click();await openText();await ready("Удалить");
   assert.equal(await dialog.locator(".task-text-protocols-name").textContent(),"A");
   await action("Отмена").click();
   pass("Damaged HDF5 leaves no protocols and keeps Create; Escape/Cancel close the panel; selecting A yields Delete");

@@ -1,3 +1,5 @@
+import { createSignal } from "solid-js";
+import { ViewerToolsMenu } from "../../src/components/movie/ViewerToolsMenu.jsx";
 import { render } from "solid-js/web";
 import h5wasm from "h5wasm";
 import { Tasks } from "../../src/tabs/Tasks.jsx";
@@ -55,6 +57,7 @@ for (const name of ["A", "B"]) {
 }
 function Fixture() {
   let loadedHandle = null, loadCount = 0;
+  const [selection, setSelection] = createSignal(null), [busy, setBusy] = createSignal(false);
   window.textProtocolFixture = {
     loaded: () => loadedHandle?.name, loadCount: () => loadCount,
     seedSingle: (name, filename = "prot-source-M.txt") => put(tasks[name], `output3XX/${filename}`, ""),
@@ -73,7 +76,8 @@ function Fixture() {
     },
   };
   return <div style={{ height: "100vh" }}>
-    <Tasks active={true} onLoad={handle => { loadedHandle = handle; loadCount++; return true; }} />
+    <ViewerToolsMenu tabIndex={0} selectedTask={selection()} selectionActionsEligible={!busy()} onBusyChange={setBusy} />
+    <Tasks active={true} busy={busy()} onToolsSelection={setSelection} onLoad={handle => { loadedHandle = handle; loadCount++; return true; }} />
   </div>;
 }
 render(() => <Fixture />, document.getElementById("root"));

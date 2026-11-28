@@ -101,8 +101,8 @@ export default function App() {
   const movieController = createMovieExportController({ createEncoder: createMovieWebmEncoder,
     onAdapterChange: adapter => setMovieAdapter(() => adapter) });
   function createProtocol(opener) {
-    if (active() === 0 || !task() || busy() || movieBusy()) return;
-    setProtocolRequest({ task: task(), filename: "", opener, loadedTask: task() });
+    const target = active() === 0 ? toolsSelection() : task();
+    if (target?.handle && !target.handle.cloud) void editProtocol(target, "", opener);
   }
   async function editProtocol(documentTask, filename, opener) {
     if (busy() || movieBusy()) return;
@@ -113,7 +113,7 @@ export default function App() {
       if (!same && loaded?.handle?.isSameEntry) same = await loaded.handle.isSameEntry(documentTask.handle);
     } catch { /* An unrelated or unavailable loaded task contributes no snapshots. */ }
     finally { setMovieBusy(false); }
-    setProtocolRequest({ task: documentTask, filename, opener, loadedTask: same ? loaded : null });
+    setProtocolRequest({ task: same ? loaded : documentTask, filename, opener, loadedTask: same ? loaded : null });
   }
   const protocolUsesSelection = () => Boolean(protocolRequest()?.loadedTask) && protocolRequest().loadedTask === task();
   // Keep the condition out of the JSX getter: the dialog also reads it after await.

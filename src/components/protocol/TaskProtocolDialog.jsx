@@ -131,7 +131,7 @@ export function TaskProtocolDialog(props) {
       }
       setDoc(saved.document); setOpenedName(saved.name); setFilename(saved.name); setExists(true); remember();
       setNames(previous => [...new Set([...previous, saved.name])].sort((a, b) => a.localeCompare(b, "ru", { numeric: true })));
-      setNotice(`Сохранено: DOCS/${saved.name}. Повторная правка — через «Инструменты → Протокол».`);
+      setNotice(`Сохранено: DOCS/${saved.name}. Повторная правка — через «Инструменты → Протокол (интерактивный)».`);
       props.onChanged?.({ task, name: saved.name });
     } catch (failure) { setError(failure.message); }
     finally { writeAbort = null; setSaving(false); props.onBusyChange?.(false); }

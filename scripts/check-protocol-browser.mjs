@@ -69,7 +69,7 @@ try {
   };
   const dialog = () => page.locator(".protocol-dialog[open]");
   const opened = async () => { await dialog().waitFor(); await page.waitForFunction(() => document.querySelector('.protocol-dialog[open]')?.getAttribute('aria-busy') === 'false'); };
-  const tools = async () => { await page.locator(".viewer-tools-trigger").click(); await page.getByRole("menuitem", { name: "Протокол", exact: true }).click(); await opened(); };
+  const tools = async () => { await page.locator(".viewer-tools-trigger").click(); await page.getByRole("menuitem", { name: "Протокол (интерактивный)", exact: true }).click(); await opened(); };
   const close = () => dialog().getByRole("button", { name: "Закрыть", exact: true }).click();
   const save = async () => { await dialog().getByRole("button", { name: "Сохранить в DOCS", exact: true }).click(); await dialog().getByText(/^Сохранено:/).waitFor(); };
   const imageBlocks = () => dialog().locator('.protocol-block').filter({ has: page.locator('img'), hasNot: page.locator('.protocol-scene-preview') });
